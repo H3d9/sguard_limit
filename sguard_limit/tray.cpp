@@ -10,7 +10,7 @@ void CreateTray() {
 	icon.uID = 0;
 	icon.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
 	icon.uCallbackMessage = WM_TRAYACTIVATE;
-	icon.hIcon = (HICON)GetClassLongPtr(g_hWnd, GCL_HICON);
+	icon.hIcon = (HICON)GetClassLongPtr(g_hWnd, GCLP_HICON);
 	strcpy(icon.szTip, "SGuard限制工具");
 
 	Shell_NotifyIcon(NIM_ADD, &icon);
@@ -23,7 +23,7 @@ void RemoveTray() {
 	icon.uID = 0;
 	icon.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
 	icon.uCallbackMessage = WM_TRAYACTIVATE;
-	icon.hIcon = (HICON)GetClassLongPtr(g_hWnd, GCL_HICON);
+	icon.hIcon = (HICON)GetClassLongPtr(g_hWnd, GCLP_HICON);
 	strcpy(icon.szTip, "SGuard限制工具");
 
 	Shell_NotifyIcon(NIM_DELETE, &icon);

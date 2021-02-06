@@ -148,7 +148,7 @@ BOOL Hijack(DWORD pid) {
 				for (DWORD i = 0; i < numThreads; i++) {
 					if (threadHandleList[i]) {
 						if (SuspendThread(threadHandleList[i]) != (DWORD)-1) {
-							suspended = true; // set suspended flag if at least one of threads are suspended.
+							suspended = true; // true if at least one of threads is suspended.
 						} else {
 							ERROR_SUSPEND = 1;
 						}
@@ -198,6 +198,6 @@ BOOL Hijack(DWORD pid) {
 		}
 	}
 
-	// user stopped limitng, exit.
+	// user stopped limitng, exit to wait.
 	return TRUE;
 }

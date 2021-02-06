@@ -1,4 +1,4 @@
-// SGuard64 限制工具
+// SGuard64 行为限制工具
 // H3d9, 写于2021.2.5晚。
 
 #include <Windows.h>
@@ -12,7 +12,7 @@ HINSTANCE g_hInstance = NULL;
 volatile bool HijackThreadWaiting = true;
 
 
-ATOM RegisterMyClass() {
+static ATOM RegisterMyClass() {
 	WNDCLASS wc = {0};
 
 	wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -29,7 +29,7 @@ ATOM RegisterMyClass() {
 	return RegisterClass(&wc);
 }
 
-void EnableDebugPrivilege()
+static void EnableDebugPrivilege()
 {
 	HANDLE hToken;
 	LUID Luid;
@@ -48,7 +48,7 @@ void EnableDebugPrivilege()
 	CloseHandle(hToken);
 }
 
-BOOL CheckDebugPrivilege() {
+static BOOL CheckDebugPrivilege() {
 	HANDLE hToken;
 
 	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
@@ -68,7 +68,7 @@ BOOL CheckDebugPrivilege() {
 	return bResult;
 }
 
-DWORD WINAPI HijackCreater(LPVOID param) {
+static DWORD WINAPI HijackThreadWorker(LPVOID param) {
 
 	static int failCount = 0;
 
@@ -79,7 +79,7 @@ DWORD WINAPI HijackCreater(LPVOID param) {
 			HijackThreadWaiting = false;
 			if (!Hijack(pid)) { // start hijack.
 				++failCount;
-				if (failCount == 10) {
+				if (failCount == 20) {
 					MessageBox(0, "限制资源可能未成功；请观察任务管理器以检查限制是否生效。", 0, MB_OK);
 				}
 			} else {
@@ -140,7 +140,7 @@ INT WINAPI WinMain(
 	CreateTray();
 	
 	// 
-	HANDLE hijackThread = CreateThread(NULL, NULL, HijackCreater, NULL, 0, 0);
+	HANDLE hijackThread = CreateThread(NULL, NULL, HijackThreadWorker, NULL, 0, 0);
 	if (!hijackThread) {
 		MessageBox(0, "创建线程失败", 0, MB_OK);
 		return -1;
@@ -158,5 +158,5 @@ INT WINAPI WinMain(
 
 	RemoveTray();
 
-	return msg.wParam;
+	return (INT) msg.wParam;
 }
