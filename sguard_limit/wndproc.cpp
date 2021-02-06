@@ -80,7 +80,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		case IDM_EXIT:
 		{
 			// before exit, stop limit work.
-			limitWorking = false;
+			limitWorking = 0;
+			while (!HijackThreadWaiting); // spin; wait till hijack release target thread.
 			PostMessage(g_hWnd, WM_CLOSE, 0, 0);
 		}
 			break;
@@ -92,7 +93,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				"该工具仅供研究交流dnf优化使用，目的为提供更好的游戏环境，并且将来可能失效。\n"
 				"若您发现该工具失效，请停止使用并等待论坛更新。\n\n"
 				"注意：谨慎使用较高的限制等级。若您几乎完全限制SGuard的行为，则游戏可能发生异常。\n",
-				"SGuard限制工具 21.2.5  colg@H3d9",
+				"SGuard限制工具 21.2.6  colg@H3d9",
 				MB_OK);
 		}
 			break;

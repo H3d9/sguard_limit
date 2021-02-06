@@ -198,6 +198,6 @@ BOOL Hijack(DWORD pid) {
 		}
 	}
 
-	// user stopped limitng, exit to wait.
+	// user stopped limiting, exit to wait.
 	return TRUE;
 }
