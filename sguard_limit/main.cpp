@@ -65,18 +65,22 @@ static BOOL CheckDebugPrivilege() {
 
 	PrivilegeCheck(hToken, &RequiredPrivileges, &bResult);
 
+	CloseHandle(hToken);
+
 	return bResult;
 }
 
 static DWORD WINAPI HijackThreadWorker(LPVOID param) {
 
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
 	static int failCount = 0;
 
 	while (1) {
-		// scan per 1 second when idle; if process is found, trap into hijack()¡£
+		// scan per 3 second when idle; if process is found, trap into hijack()¡£
 		DWORD pid = GetProcessID("SGuard64.exe");
 		if (pid) {
-			HijackThreadWaiting = false;
+			HijackThreadWaiting = false; // i should use semaphore.
 			if (!Hijack(pid)) { // start hijack.
 				++failCount;
 				if (failCount == 20) {
@@ -86,8 +90,9 @@ static DWORD WINAPI HijackThreadWorker(LPVOID param) {
 				failCount = 0; // process terminated, or user stopped limitation.
 			}
 			HijackThreadWaiting = true;
+			Sleep(100); // call sys schedule
 		} else {
-			Sleep(1000); // no target found, wait.
+			Sleep(3000); // no target found, wait.
 		}
 	}
 }
@@ -135,7 +140,7 @@ INT WINAPI WinMain(
 	}
 
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+	//SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 
 	CreateTray();
 	
