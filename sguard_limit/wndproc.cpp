@@ -68,6 +68,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				CheckMenuItem(hMenu, IDM_STOPLIMIT, MF_CHECKED);
 			}
 			GetCursorPos(&pt);
+			SetForegroundWindow(g_hWnd);
 			TrackPopupMenu(hMenu, TPM_LEFTALIGN, pt.x, pt.y, 0, g_hWnd, NULL);
 			DestroyMenu(hMenu);
 		}

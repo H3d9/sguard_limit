@@ -121,10 +121,7 @@ INT WINAPI WinMain(
 		CW_USEDEFAULT,
 		1,
 		1,
-		0,
-		0,
-		g_hInstance,
-		0);
+		0, 0, g_hInstance, 0);
 
 	if (!g_hWnd) {
 		MessageBox(0, "´´½¨´°¿ÚÊ§°Ü", 0, MB_OK);
