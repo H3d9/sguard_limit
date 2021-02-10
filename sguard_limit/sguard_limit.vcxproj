@@ -144,11 +144,13 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="limitcore.cpp" />
+    <ClCompile Include="panic.cpp" />
     <ClCompile Include="tray.cpp" />
     <ClCompile Include="wndproc.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="limitcore.h" />
+    <ClInclude Include="panic.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="tray.h" />
     <ClInclude Include="wndproc.h" />

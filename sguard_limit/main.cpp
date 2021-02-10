@@ -3,6 +3,7 @@
 
 #include <Windows.h>
 #include "tray.h"
+#include "panic.h"
 #include "wndproc.h"
 #include "limitcore.h"
 #include "resource.h"
@@ -83,8 +84,9 @@ static DWORD WINAPI HijackThreadWorker(LPVOID param) {
 			HijackThreadWaiting = false; // i should use semaphore.
 			if (!Hijack(pid)) { // start hijack.
 				++failCount;
-				if (failCount == 20) {
-					MessageBox(0, "限制资源可能未成功；请观察任务管理器以检查限制是否生效。", 0, MB_OK);
+				if (failCount == 5) {
+					panic("限制资源可能未成功；请观察任务管理器以检查限制是否生效。");
+					Sleep(5000);
 				}
 			} else {
 				failCount = 0; // process terminated, or user stopped limitation.
@@ -109,7 +111,7 @@ INT WINAPI WinMain(
 	(void)nShowCmd;
 
 	if (!RegisterMyClass()) {
-		MessageBox(0, "创建窗口类失败", 0, MB_OK);
+		panic("创建窗口类失败。");
 		return -1;
 	}
 
@@ -124,7 +126,7 @@ INT WINAPI WinMain(
 		0, 0, g_hInstance, 0);
 
 	if (!g_hWnd) {
-		MessageBox(0, "创建窗口失败", 0, MB_OK);
+		panic("创建窗口失败。");
 		return -1;
 	}
 
@@ -132,7 +134,7 @@ INT WINAPI WinMain(
 
 	EnableDebugPrivilege();
 	if (!CheckDebugPrivilege()) {
-		MessageBox(0, "提升权限失败，请右键管理员运行", 0, MB_OK);
+		panic("提升权限失败，请右键管理员运行。");
 		return -1;
 	}
 
@@ -144,7 +146,7 @@ INT WINAPI WinMain(
 	// 
 	HANDLE hijackThread = CreateThread(NULL, NULL, HijackThreadWorker, NULL, 0, 0);
 	if (!hijackThread) {
-		MessageBox(0, "创建线程失败", 0, MB_OK);
+		panic("创建工作线程失败。");
 		return -1;
 	}
 	CloseHandle(hijackThread);

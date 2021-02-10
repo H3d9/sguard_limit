@@ -5,12 +5,14 @@
     <ClCompile Include="tray.cpp" />
     <ClCompile Include="wndproc.cpp" />
     <ClCompile Include="limitcore.cpp" />
+    <ClCompile Include="panic.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
     <ClInclude Include="tray.h" />
     <ClInclude Include="wndproc.h" />
     <ClInclude Include="limitcore.h" />
+    <ClInclude Include="panic.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sguard_limit.rc" />

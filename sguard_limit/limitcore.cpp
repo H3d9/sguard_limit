@@ -1,4 +1,3 @@
-#include "limitcore.h"
 #include <Windows.h>
 #include <tlhelp32.h>
 #include <shellapi.h>
@@ -10,6 +9,8 @@
 #include <time.h>
 #include <locale.h>
 #include <Psapi.h>
+#include "limitcore.h"
+#include "panic.h"
 
 #pragma comment(lib, "Advapi32.lib") // invoke OpenProcessToken
 
@@ -70,7 +71,7 @@ bool suspended = false;
 DWORD suspendRetry = 0;
 DWORD resumeRetry = 0;
 volatile DWORD limitPercent = 90;
-volatile DWORD limitWorking = true;
+volatile DWORD limitEnabled = true;
 
 BOOL Hijack(DWORD pid) {
 
@@ -83,13 +84,15 @@ BOOL Hijack(DWORD pid) {
 			if (!hProcess) {
 				hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
 			} else {
+				panic("无法打开Process。");
+				Sleep(5000); // Sleep after panic: long wait for user.
 				return FALSE;
 			}
 		}
 	}
 
 	// assert: process is alive.
-	while (limitWorking) {
+	while (limitEnabled) {
 		EnumCurrentThread(pid); // note: 每10+秒重新枚举线程
 		if (numThreads == 0) {
 			return TRUE; // process is no more alive, exit.
@@ -97,6 +100,8 @@ BOOL Hijack(DWORD pid) {
 
 		DWORD numOpenedThreads = 0;
 		DWORD openThreadRetry = 0;
+		DWORD ERROR_SUSPEND_TOTAL = 0;
+		DWORD ERROR_RESUME_TOTAL = 0;
 		ZeroMemory(threadHandleList, sizeof(threadHandleList));
 
 		while (1) {
@@ -126,6 +131,8 @@ BOOL Hijack(DWORD pid) {
 			}
 			if (openThreadRetry > 10) {
 				// no thread is opened, exit.
+				panic("无法打开Thread：需要打开的总数为%d个。", numThreads);
+				Sleep(5000);
 				return FALSE;
 			}
 
@@ -133,14 +140,16 @@ BOOL Hijack(DWORD pid) {
 			Sleep(100);
 		}
 
+		Sleep(300); // forbid busy wait if user stopped limitation.
+
 		// assert: !threadHandleList.empty && threadHandleList[elem].valid
 		// each loop we manipulate 10+s in target process.
-		for (DWORD msElapsed = 0; limitWorking && msElapsed < 10000;) {
+		for (DWORD msElapsed = 0; limitEnabled && msElapsed < 10000;) {
 
 			DWORD TimeRed = limitPercent;
 			DWORD TimeGreen = 100 - TimeRed;
 			if (limitPercent >= 100) {
-				TimeGreen = 1;
+				TimeGreen = 1; // 99.9: use 1 slice in 1000
 			}
 
 			if (!suspended) {
@@ -194,6 +203,8 @@ BOOL Hijack(DWORD pid) {
 
 		if (suspendRetry > 100 || resumeRetry > 50) {
 			// always fail(more than 10 loop WITHOUT success), jump out.
+			panic("suspend/resume失败数过多，已停止本次限制。");
+			Sleep(5000);
 			return FALSE;
 		}
 	}
