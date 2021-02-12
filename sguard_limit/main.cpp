@@ -81,12 +81,13 @@ static DWORD WINAPI HijackThreadWorker(LPVOID param) {
 		// scan per 3 second when idle; if process is found, trap into hijack()。
 		DWORD pid = GetProcessID("SGuard64.exe");
 		if (pid) {
-			HijackThreadWaiting = false; // i should use semaphore.
+			HijackThreadWaiting = false; // i should use semaphore. but whatever :)
 			if (!Hijack(pid)) { // start hijack.
 				++failCount;
 				if (failCount == 5) {
-					panic("限制资源可能未成功；请观察任务管理器以检查限制是否生效。");
-					Sleep(5000);
+					panic(
+						"限制资源可能未成功；请观察任务管理器以检查限制是否生效。\n"
+						"您可以前往论坛下载包含错误提示版，以检查失败的原因。");
 				}
 			} else {
 				failCount = 0; // process terminated, or user stopped limitation.

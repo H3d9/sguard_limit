@@ -84,8 +84,10 @@ BOOL Hijack(DWORD pid) {
 			if (!hProcess) {
 				hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
 			} else {
+#ifdef SHOW_ERROR_HINT
 				panic("无法打开Process。");
 				Sleep(5000); // Sleep after panic: long wait for user.
+#endif
 				return FALSE;
 			}
 		}
@@ -131,8 +133,10 @@ BOOL Hijack(DWORD pid) {
 			}
 			if (openThreadRetry > 10) {
 				// no thread is opened, exit.
+#ifdef SHOW_ERROR_HINT
 				panic("无法打开Thread：需要打开的总数为%d个。", numThreads);
 				Sleep(5000);
+#endif
 				return FALSE;
 			}
 
@@ -203,8 +207,10 @@ BOOL Hijack(DWORD pid) {
 
 		if (suspendRetry > 100 || resumeRetry > 50) {
 			// always fail(more than 10 loop WITHOUT success), jump out.
+#ifdef SHOW_ERROR_HINT
 			panic("suspend/resume失败数过多，已停止本次限制。");
 			Sleep(5000);
+#endif
 			return FALSE;
 		}
 	}
