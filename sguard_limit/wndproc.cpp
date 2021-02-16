@@ -4,7 +4,7 @@
 extern HWND g_hWnd;
 extern HINSTANCE g_hInstance;
 extern volatile DWORD limitPercent;
-extern volatile DWORD limitEnabled;
+extern volatile bool limitEnabled;
 extern volatile bool HijackThreadWaiting;
 
 void ShowAbout() {  // show about dialog.
@@ -14,7 +14,7 @@ void ShowAbout() {  // show about dialog.
 		"若您发现该工具失效，请停止使用并等待论坛更新。\n\n"
 		"注意：若您的电脑性能较差，请谨慎使用较高的限制等级。若SGuard无法上报数据，则游戏可能发生异常。"
 		"（性能较好的可忽略）\n",
-		"SGuard行为限制工具 21.2.12  colg@H3d9",
+		"SGuard行为限制工具 21.2.16  colg@H3d9",
 		MB_OK);
 }
 
@@ -96,7 +96,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		case IDM_EXIT:
 		{
 			// before exit, stop limit work.
-			limitEnabled = 0;
+			limitEnabled = false;
 			while (!HijackThreadWaiting); // spin; wait till hijack release target thread.
 			PostMessage(g_hWnd, WM_CLOSE, 0, 0);
 		}
@@ -105,23 +105,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			ShowAbout();
 			break;
 		case IDM_PERCENT90:
-			limitEnabled = 1;
+			limitEnabled = true;
 			limitPercent = 90;
 			break;
 		case IDM_PERCENT95:
-			limitEnabled = 1;
+			limitEnabled = true;
 			limitPercent = 95;
 			break;
 		case IDM_PERCENT99:
-			limitEnabled = 1;
+			limitEnabled = true;
 			limitPercent = 99;
 			break;
 		case IDM_PERCENT999:
-			limitEnabled = 1;
+			limitEnabled = true;
 			limitPercent = 999;
 			break;
 		case IDM_STOPLIMIT:
-			limitEnabled = 0;
+			limitEnabled = false;
 			limitPercent = 90;
 			break;
 		}

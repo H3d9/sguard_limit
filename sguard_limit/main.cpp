@@ -81,7 +81,7 @@ static DWORD WINAPI HijackThreadWorker(LPVOID param) {
 		// scan per 3 second when idle; if process is found, trap into hijack()。
 		DWORD pid = GetProcessID("SGuard64.exe");
 		if (pid) {
-			HijackThreadWaiting = false; // i should use semaphore. but whatever :)
+			HijackThreadWaiting = false; // sync is done as we call schedule
 			if (!Hijack(pid)) { // start hijack.
 				++failCount;
 				if (failCount == 5) {
@@ -151,6 +151,13 @@ INT WINAPI WinMain(
 		return -1;
 	}
 	CloseHandle(hijackThread);
+
+#ifdef SHOW_ERROR_HINT
+	MessageBox(0, 
+		"注意：这是带错误提示版，仅供报告错误使用。\n"
+		"你应该将遇到的所有错误弹窗截图并发送至论坛，以供查找原因和修复。\n",
+		"提示信息", MB_OK);
+#endif
 
 	// assert: se_debug
 	MSG msg;
