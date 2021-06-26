@@ -30,8 +30,7 @@ static ATOM RegisterMyClass() {
 	return RegisterClass(&wc);
 }
 
-static void EnableDebugPrivilege()
-{
+static void EnableDebugPrivilege() {
 	HANDLE hToken;
 	LUID Luid;
 	TOKEN_PRIVILEGES tp;
@@ -48,6 +47,14 @@ static void EnableDebugPrivilege()
 
 	CloseHandle(hToken);
 }
+
+// 另一种提权方法（使用未公开接口）
+//static void Enable_se_debug() { // stdcall convention declaration can be omitted if use x64.
+//	typedef int(__stdcall* pf)(ULONG Privilege, BOOLEAN Enable, BOOLEAN CurrentThread, PBOOLEAN Enabled);
+//	pf RtlAdjustPrivilege = (pf)GetProcAddress(GetModuleHandle("Ntdll.dll"), "RtlAdjustPrivilege");
+//	BOOLEAN prev;
+//	int ret = RtlAdjustPrivilege(0x14, 1, 0, &prev);
+//}
 
 static BOOL CheckDebugPrivilege() {
 	HANDLE hToken;
@@ -71,27 +78,16 @@ static BOOL CheckDebugPrivilege() {
 	return bResult;
 }
 
-static DWORD WINAPI HijackThreadWorker(LPVOID param) {
+static DWORD WINAPI HijackThreadWorker(LPVOID) {
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-
-	static int failCount = 0;
 
 	while (1) {
 		// scan per 3 second when idle; if process is found, trap into hijack()。
 		DWORD pid = GetProcessID("SGuard64.exe");
 		if (pid) {
 			HijackThreadWaiting = false; // sync is done as we call schedule
-			if (!Hijack(pid)) { // start hijack.
-				++failCount;
-				if (failCount == 5) {
-					panic(
-						"限制资源可能未成功；请观察任务管理器以检查限制是否生效。\n"
-						"您可以前往论坛下载包含错误提示版，以检查失败的原因。");
-				}
-			} else {
-				failCount = 0; // process terminated, or user stopped limitation.
-			}
+			Hijack(pid); // start hijack.
 			HijackThreadWaiting = true;
 			Sleep(100); // call sys schedule
 		} else {
@@ -139,12 +135,11 @@ INT WINAPI WinMain(
 		return -1;
 	}
 
-	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-	//SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-
 	CreateTray();
-	
-	// 
+
+
+	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+
 	HANDLE hijackThread = CreateThread(NULL, NULL, HijackThreadWorker, NULL, 0, 0);
 	if (!hijackThread) {
 		panic("创建工作线程失败。");
@@ -152,21 +147,15 @@ INT WINAPI WinMain(
 	}
 	CloseHandle(hijackThread);
 
-#ifdef SHOW_ERROR_HINT
-	MessageBox(0, 
-		"注意：这是带错误提示版，仅供报告错误使用。\n"
-		"你应该将遇到的所有错误弹窗截图并发送至论坛，以供查找原因和修复。\n",
-		"提示信息", MB_OK);
-#endif
 
-	// assert: se_debug
 	MSG msg;
 
-	while (GetMessage(&msg, nullptr, 0, 0))
+	while (GetMessage(&msg, nullptr, 0, 0)) 
 	{
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
+
 
 	RemoveTray();
 

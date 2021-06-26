@@ -16,25 +16,6 @@ void panic(const char* format, ...) {
 	MessageBox(0, buf, 0, MB_OK);
 }
 
-void showErrorMessage(const char* hint, DWORD errorCode) {
-	char* messageBuf = NULL;
-
-	FormatMessage(
-		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-		NULL,
-		errorCode,
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-		(LPSTR)&messageBuf,
-		0, NULL);
-
-	char* dialogBuf = (char*)LocalAlloc(LMEM_ZEROINIT,  strlen(messageBuf) + strlen(hint) + 100);
-	sprintf(dialogBuf, "%s：(error %d)%s", hint, errorCode, messageBuf);
-	MessageBox(0, dialogBuf, 0, MB_OK);
-
-	LocalFree(messageBuf);
-	LocalFree(dialogBuf);
-}
-
 void showErrorMessageInList(const char* hint, DWORD* errorList, DWORD errorCount) {
 	char* dialogBuf = (char*)LocalAlloc(LMEM_ZEROINIT, strlen(hint) + 100);
 	sprintf(dialogBuf, "%s，发生了%d个错误：\n", hint, errorCount);

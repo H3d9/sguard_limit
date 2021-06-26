@@ -1,7 +1,6 @@
 #include "tray.h"
 
 extern HWND g_hWnd;
-extern HINSTANCE g_hInstance;
 
 void CreateTray() {
 	NOTIFYICONDATA icon = {};

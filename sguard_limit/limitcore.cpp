@@ -7,8 +7,6 @@
 #include <shlobj.h>
 #include <process.h>
 #include <time.h>
-#include <locale.h>
-#include <Psapi.h>
 #include "limitcore.h"
 #include "panic.h"
 
@@ -73,13 +71,6 @@ DWORD resumeRetry = 0;
 volatile DWORD limitPercent = 90;
 volatile bool limitEnabled = true;
 
-#ifdef SHOW_ERROR_HINT
-DWORD errorCodeList[512];
-DWORD errorCount;
-DWORD errorCodeList2[512];
-DWORD errorCount2;
-#endif
-
 BOOL Hijack(DWORD pid) {
 
 	HANDLE
@@ -91,10 +82,6 @@ BOOL Hijack(DWORD pid) {
 			if (!hProcess) {
 				hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
 			} else {
-#ifdef SHOW_ERROR_HINT
-				showErrorMessage("打开Process失败", GetLastError());
-				Sleep(5000); // Sleep after panic: long wait for user interaction.
-#endif
 				return FALSE;
 			}
 		}
@@ -110,10 +97,6 @@ BOOL Hijack(DWORD pid) {
 		DWORD openThreadRetry = 0;
 		ZeroMemory(threadHandleList, sizeof(threadHandleList));
 
-#ifdef SHOW_ERROR_HINT
-		errorCount = 0;
-#endif
-
 		// assert: process is alive.
 		while (1) {
 			DWORD ERROR_THREAD_OPEN = 0;
@@ -123,9 +106,6 @@ BOOL Hijack(DWORD pid) {
 					if (!threadHandleList[i]) {
 						threadHandleList[i] = OpenThread(THREAD_SUSPEND_RESUME, FALSE, threadIDList[i]);
 						if (!threadHandleList[i]) {
-#ifdef SHOW_ERROR_HINT
-							errorCodeList[errorCount++] = GetLastError();
-#endif
 							ERROR_THREAD_OPEN = 1;
 						}
 					}
@@ -145,29 +125,14 @@ BOOL Hijack(DWORD pid) {
 			}
 			if (openThreadRetry > 10) {
 				// no thread is opened, exit.
-#ifdef SHOW_ERROR_HINT
-				showErrorMessageInList("全部Thread打开失败", errorCodeList, errorCount);
-				Sleep(5000);
-#endif
 				return FALSE;
 			}
 
-			// open-thread retry internal.
+			// open-thread retry interval.
 			Sleep(100);
 		}
 
-#ifdef SHOW_ERROR_HINT
-		if (numOpenedThreads != numThreads) {
-			showErrorMessageInList("部分Thread打开失败", errorCodeList, errorCount);
-		}
-#endif
-
 		Sleep(300); // forbid busy wait if user stopped limitation.
-
-#ifdef SHOW_ERROR_HINT
-		errorCount = 0;
-		errorCount2 = 0;
-#endif
 
 		// assert: !threadHandleList.empty && threadHandleList[elem].valid
 		// each loop we manipulate 10+s in target process.
@@ -186,9 +151,6 @@ BOOL Hijack(DWORD pid) {
 						if (SuspendThread(threadHandleList[i]) != (DWORD)-1) {
 							suspended = true; // true if at least one of threads is suspended.
 						} else {
-#ifdef SHOW_ERROR_HINT
-							errorCodeList[errorCount++] = GetLastError();
-#endif
 							ERROR_SUSPEND = 1;
 						}
 					}
@@ -210,9 +172,6 @@ BOOL Hijack(DWORD pid) {
 						if (ResumeThread(threadHandleList[i]) != (DWORD)-1) {
 							suspended = false;
 						} else {
-#ifdef SHOW_ERROR_HINT
-							errorCodeList2[errorCount2++] = GetLastError();
-#endif
 							ERROR_RESUME = 1;
 						}
 					}
@@ -233,15 +192,6 @@ BOOL Hijack(DWORD pid) {
 				CloseHandle(threadHandleList[i]);
 			}
 		}
-
-#ifdef SHOW_ERROR_HINT
-		if (errorCount != 0) {
-			showErrorMessageInList("Suspend失败", errorCodeList, errorCount);
-		}
-		if (errorCount2 != 0) {
-			showErrorMessageInList("Resume失败", errorCodeList, errorCount);
-		}
-#endif
 
 		if (suspendRetry > 100 || resumeRetry > 50) {
 			// always fail(more than 10 loop WITHOUT success), jump out.
