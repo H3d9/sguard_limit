@@ -215,6 +215,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="limitcore.cpp" />
     <ClCompile Include="panic.cpp" />
+    <ClCompile Include="tlockcore.cpp" />
     <ClCompile Include="tray.cpp" />
     <ClCompile Include="wndproc.cpp" />
   </ItemGroup>
@@ -222,6 +223,7 @@
     <ClInclude Include="limitcore.h" />
     <ClInclude Include="panic.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="tlockcore.h" />
     <ClInclude Include="tray.h" />
     <ClInclude Include="wndproc.h" />
   </ItemGroup>
@@ -229,7 +231,7 @@
     <ResourceCompile Include="sguard_limit.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="favicon.ico" />
+    <Image Include="logo.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

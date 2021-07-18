@@ -6,12 +6,16 @@
 #include "panic.h"
 #include "wndproc.h"
 #include "limitcore.h"
+#include "tlockcore.h"
 #include "resource.h"
 
 HWND g_hWnd = NULL;
 HINSTANCE g_hInstance = NULL;
 volatile bool HijackThreadWaiting = true;
+volatile int g_Mode = 1;  // 0: lim 1: lock
 
+extern volatile bool limitEnabled;
+extern volatile bool lockEnabled;
 
 static ATOM RegisterMyClass() {
 	WNDCLASS wc = {0};
@@ -83,16 +87,21 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 
 	while (1) {
-		// scan per 3 second when idle; if process is found, trap into hijack()¡£
+		// scan per 5 seconds when idle; if process is found, trap into hijack()¡£
 		DWORD pid = GetProcessID("SGuard64.exe");
 		if (pid) {
-			HijackThreadWaiting = false; // sync is done as we call schedule
-			Hijack(pid); // start hijack.
-			HijackThreadWaiting = true;
-			Sleep(100); // call sys schedule
-		} else {
-			Sleep(3000); // no target found, wait.
+			if (g_Mode == 0 && limitEnabled) {
+				HijackThreadWaiting = false; // sync is done as we call schedule
+				Hijack(pid); // start hijack.
+				HijackThreadWaiting = true;
+			}
+			if (g_Mode == 1 && lockEnabled) {
+				HijackThreadWaiting = false;
+				threadLock(pid);
+				HijackThreadWaiting = true;
+			}
 		}
+		Sleep(5000); // call sys schedule | no target found, wait.
 	}
 }
 

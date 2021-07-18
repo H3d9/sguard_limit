@@ -52,7 +52,7 @@ END
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_ICON1               ICON                    "favicon.ico"
+IDI_ICON1               ICON                    "E:\\Backup\\My Documents\\Visual Studio 2017\\source\\_projects\\sguard_limit\\sguard_limit\\logo.ico"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////
