@@ -138,8 +138,11 @@ BOOL Hijack(DWORD pid) {
 		// each loop we manipulate 10+s in target process.
 		for (DWORD msElapsed = 0; limitEnabled && msElapsed < 10000;) {
 
-			DWORD TimeRed = 9;
-			DWORD TimeGreen = 1;
+			DWORD TimeRed = limitPercent;
+			DWORD TimeGreen = 100 - TimeRed;
+			if (limitPercent >= 100) {
+				TimeGreen = 1; // 99.9: use 1 slice in 1000
+			}
 
 			if (!suspended) {
 				DWORD ERROR_SUSPEND = 0;
