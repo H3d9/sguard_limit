@@ -25,7 +25,7 @@ static void ShowAbout() {  // show about dialog.
 		"2 线程锁（新模式）：一些机器使用旧模式会出现安全数据上报异常(96)，可以尝试该模式，经测试基本确定不会出现问题（但不保证，因为手头电脑有限）。\n\n"
 		"更新链接：https://bbs.colg.cn/thread-8087898-1-1.html \n"
 		"项目地址：https://github.com/H3d9/sguard_limit （点ctrl+C复制到记事本）",
-		"SGuard限制器 21.7.19  colg@H3d9",
+		"SGuard限制器 21.7.21  colg@H3d9",
 		MB_OK);
 }
 

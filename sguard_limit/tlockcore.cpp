@@ -207,8 +207,7 @@ void threadLock(DWORD pid) {
 
 	// userwait: exit if process is killed or user interactive.
 	while (lockEnabled) {
-		Sleep(5000);
-		if (!GetProcessID("SGuard64.exe")) {
+		if (lockPid != GetProcessID("SGuard64.exe")) {
 			lockPid = 0;
 			break;
 		}
@@ -219,5 +218,6 @@ void threadLock(DWORD pid) {
 				lockedThreads[i].locked = true;
 			}
 		}
+		Sleep(5000);
 	}
 }
