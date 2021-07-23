@@ -29,7 +29,7 @@ static void ShowAbout() {  // show about dialog.
 		MB_OK);
 }
 
-static void disableLimitation() {  // undo control.
+static void disableLimit() {  // undo control.
 	limitEnabled = false;
 	while (!HijackThreadWaiting); // spin; wait till hijack release target thread.
 }
@@ -138,7 +138,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		case IDM_EXIT:
 		{
 			if (g_Mode == 0 && limitEnabled == true) {
-				disableLimitation();
+				disableLimit();
 			} else if (g_Mode == 1 && lockEnabled == true) {
 				disableLock();
 			}
@@ -150,7 +150,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			break;
 		case IDM_SWITCHMODE:
 			if (g_Mode == 0) {
-				disableLimitation();
+				disableLimit();
 				lockEnabled = true;
 				g_Mode = 1;
 			} else { // if g_Mode == 1

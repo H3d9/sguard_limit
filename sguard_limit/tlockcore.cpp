@@ -25,7 +25,7 @@ using map = std::unordered_map<DWORD, threadinfo>;  // tid -> {...}
 using mapIt = decltype(map().begin());
 
 
-static void EnumThreadInfo(DWORD pid, map* m) {
+static bool EnumThreadInfo(DWORD pid, map* m) {
 	/* process threads info->map. */
 
 	THREADENTRY32 te;
@@ -60,6 +60,8 @@ static void EnumThreadInfo(DWORD pid, map* m) {
 	}
 
 	CloseHandle(hSnapshot);
+
+	return !m->empty();
 }
 
 void threadLock(DWORD pid) {
@@ -83,7 +85,9 @@ void threadLock(DWORD pid) {
 		for (auto time = 0; lockEnabled && time < 30; time++) {
 
 			// each loop we re-scan all threads in target.
-			EnumThreadInfo(pid, &threadMap);
+			if (!EnumThreadInfo(pid, &threadMap)) {
+				break;
+			}
 
 			// open threads which are not opened yet.
 			for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
@@ -118,7 +122,8 @@ void threadLock(DWORD pid) {
 			Sleep(1000);
 		}
 
-		if (lockEnabled && (m1->second.cycleDelta >= 30000000 || m1->second.dieCount >= 5)) {
+		if (lockEnabled && !threadMap.empty() &&
+			(m1->second.cycleDelta >= 30000000 || m1->second.dieCount >= 5)) {
 			SuspendThread(m1->second.handle);
 			lockedThreads[0].tid = m1->first;
 			lockedThreads[0].handle = m1->second.handle;
@@ -126,7 +131,7 @@ void threadLock(DWORD pid) {
 		}
 
 		// wait till system is stable.
-		for (auto i = 0; lockEnabled && i < 30; i++) {
+		for (auto i = 0; lockEnabled && !threadMap.empty() && i < 30; i++) {
 			Sleep(1000);
 		}
 
@@ -139,8 +144,10 @@ void threadLock(DWORD pid) {
 		// we use the same methods as above.
 		for (auto time = 0; lockEnabled && time < 15; time++) {
 
-			// open and query thread info.
-			EnumThreadInfo(pid, &threadMap);
+			if (!EnumThreadInfo(pid, &threadMap)) {
+				break;
+			}
+
 			for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
 				if (!it->second.handle) {
 					it->second.handle = OpenThread(STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3FF, FALSE, it->first);
@@ -186,21 +193,23 @@ void threadLock(DWORD pid) {
 			Sleep(1000);
 		}
 
-		if (lockEnabled && m2->second.dieCount >= 7) {
+		if (lockEnabled && !threadMap.empty() && m2->second.dieCount >= 7) {
 			SuspendThread(m2->second.handle);
 			lockedThreads[1].tid = m2->first;
 			lockedThreads[1].handle = m2->second.handle;
 			lockedThreads[1].locked = true;
 		}
-		if (lockEnabled && m3->second.dieCount >= 7) {
+		if (lockEnabled && !threadMap.empty() && m3->second.dieCount >= 7) {
 			SuspendThread(m3->second.handle);
 			lockedThreads[2].tid = m3->first;
 			lockedThreads[2].handle = m3->second.handle;
 			lockedThreads[2].locked = true;
 		}
 
-		if (lockEnabled) {
+		if (lockEnabled && !threadMap.empty()) {
 			lockPid = pid;
+		} else {
+			return;
 		}
 	}
 
