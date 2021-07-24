@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include "tray.h"
 #include "panic.h"
+#include "config.h"
 #include "wndproc.h"
 #include "limitcore.h"
 #include "tlockcore.h"
@@ -146,6 +147,8 @@ INT WINAPI WinMain(
 	}
 
 	CreateTray();
+
+	loadConfig();
 
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 

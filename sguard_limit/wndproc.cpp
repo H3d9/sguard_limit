@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "tray.h"
+#include "config.h"
 #include "tlockcore.h"
 
 #include "wndproc.h"
@@ -161,23 +162,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				limitEnabled = true;
 				g_Mode = 0;
 			}
+			writeConfig();
 			break;
 
 		case IDM_PERCENT90:
 			limitEnabled = true;
 			limitPercent = 90;
+			writeConfig();
 			break;
 		case IDM_PERCENT95:
 			limitEnabled = true;
 			limitPercent = 95;
+			writeConfig();
 			break;
 		case IDM_PERCENT99:
 			limitEnabled = true;
 			limitPercent = 99;
+			writeConfig();
 			break;
 		case IDM_PERCENT999:
 			limitEnabled = true;
 			limitPercent = 999;
+			writeConfig();
 			break;
 		case IDM_STOPLIMIT:
 			disableLimit();
@@ -185,6 +191,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 		case IDM_LOCK3:
 			lockEnabled = true;
+			writeConfig();
 			break;
 		case IDM_UNLOCK:
 			disableLock();
