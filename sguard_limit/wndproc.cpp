@@ -1,19 +1,22 @@
 #include <stdio.h>
-#include "wndproc.h"
 #include "tray.h"
 #include "tlockcore.h"
 
-extern HWND g_hWnd;
-extern HINSTANCE g_hInstance;
-extern volatile bool HijackThreadWaiting;
-extern volatile int g_Mode;
+#include "wndproc.h"
 
-extern volatile bool limitEnabled;
-extern volatile DWORD limitPercent;
+extern HWND						g_hWnd;
+extern HINSTANCE				g_hInstance;
+extern volatile bool			g_bHijackThreadWaiting;
 
-extern volatile bool lockEnabled;
-extern volatile lockedThreads_t lockedThreads[3];
-extern volatile DWORD lockPid;
+extern volatile DWORD			g_Mode;
+
+extern volatile bool			limitEnabled;
+extern volatile DWORD			limitPercent;
+
+extern volatile bool			lockEnabled;
+extern volatile lockedThreads_t	lockedThreads[3];
+extern volatile DWORD			lockPid;
+
 
 static void ShowAbout() {  // show about dialog.
 	MessageBox(0,
@@ -31,7 +34,7 @@ static void ShowAbout() {  // show about dialog.
 
 static void disableLimit() {  // undo control.
 	limitEnabled = false;
-	while (!HijackThreadWaiting); // spin; wait till hijack release target thread.
+	while (!g_bHijackThreadWaiting); // spin; wait till hijack release target thread.
 }
 
 static void disableLock() {  // undo control.
@@ -55,7 +58,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			if (g_Mode == 0) {
 				if (!limitEnabled) {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
-				} else if (HijackThreadWaiting) {
+				} else if (g_bHijackThreadWaiting) {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
 				} else {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 侦测到SGuard");
@@ -95,7 +98,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			} else { // if g_Mode == 1
 				if (!lockEnabled) {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
-				} else if (HijackThreadWaiting) {
+				} else if (g_bHijackThreadWaiting) {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
 				} else { // entered func: threadLock()
 					if (lockPid == 0) {
@@ -177,8 +180,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			limitPercent = 999;
 			break;
 		case IDM_STOPLIMIT:
-			limitEnabled = false;
-			limitPercent = 90;
+			disableLimit();
 			break;
 
 		case IDM_LOCK3:

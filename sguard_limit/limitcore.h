@@ -1,4 +1,4 @@
 #pragma once
 
-DWORD GetProcessID(const char*);
+DWORD GetProcessID();
 BOOL Hijack(DWORD);

@@ -4,30 +4,28 @@
 #include <tlhelp32.h>
 #include <process.h>
 #include <unordered_map>
-
 #include "limitcore.h"  // GetProcessID
+
 #include "tlockcore.h"
 
-
-volatile bool lockEnabled = true;
-volatile lockedThreads_t lockedThreads[3];
-volatile DWORD lockPid = 0;
+volatile bool				lockEnabled			= true;
+volatile lockedThreads_t	lockedThreads[3]	= {};
+volatile DWORD				lockPid				= 0;
 
 
 struct threadinfo {
-	HANDLE    handle = 0;
-	ULONG64   cycles = 0;
-	ULONG64   cycleDelta = 0;
-	int       dieCount = 0;
+	HANDLE    handle		= 0;
+	ULONG64   cycles		= 0;
+	ULONG64   cycleDelta	= 0;
+	int       dieCount		= 0;
 };
 
-using map = std::unordered_map<DWORD, threadinfo>;  // tid -> {...}
+using map = std::unordered_map<DWORD, threadinfo>;  // hashmap: tid -> {...}
 using mapIt = decltype(map().begin());
 
 
 static bool EnumThreadInfo(DWORD pid, map* m) {
-	/* process threads info->map. */
-
+	
 	THREADENTRY32 te;
 	te.dwSize = sizeof(THREADENTRY32);
 
@@ -216,7 +214,7 @@ void threadLock(DWORD pid) {
 
 	// userwait: exit if process is killed or user interactive.
 	while (lockEnabled) {
-		if (lockPid != GetProcessID("SGuard64.exe")) {
+		if (lockPid != GetProcessID()) {
 			lockPid = 0;
 			break;
 		}

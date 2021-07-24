@@ -1,6 +1,5 @@
 // SGuard64 行为限制工具
 // H3d9, 写于2021.2.5晚。
-
 #include <Windows.h>
 #include "tray.h"
 #include "panic.h"
@@ -9,13 +8,15 @@
 #include "tlockcore.h"
 #include "resource.h"
 
-HWND g_hWnd = NULL;
-HINSTANCE g_hInstance = NULL;
-volatile bool HijackThreadWaiting = true;
-volatile int g_Mode = 1;  // 0: lim 1: lock
+extern volatile	bool limitEnabled;
+extern volatile	bool lockEnabled;
 
-extern volatile bool limitEnabled;
-extern volatile bool lockEnabled;
+HWND				g_hWnd					= NULL;
+HINSTANCE			g_hInstance				= NULL;
+volatile bool		g_bHijackThreadWaiting	= true;
+
+volatile DWORD		g_Mode					= 1;  // 0: lim 1: lock
+
 
 static ATOM RegisterMyClass() {
 	WNDCLASS wc = {0};
@@ -88,17 +89,17 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 
 	while (1) {
 		// scan per 5 seconds when idle; if process is found, trap into hijack()。
-		DWORD pid = GetProcessID("SGuard64.exe");
+		DWORD pid = GetProcessID();
 		if (pid) {
 			if (g_Mode == 0 && limitEnabled) {
-				HijackThreadWaiting = false; // sync is done as we call schedule
+				g_bHijackThreadWaiting = false; // sync is done as we call schedule
 				Hijack(pid); // start hijack.
-				HijackThreadWaiting = true;
+				g_bHijackThreadWaiting = true;
 			}
 			if (g_Mode == 1 && lockEnabled) {
-				HijackThreadWaiting = false;
+				g_bHijackThreadWaiting = false;
 				threadLock(pid);
-				HijackThreadWaiting = true;
+				g_bHijackThreadWaiting = true;
 			}
 		}
 		Sleep(5000); // call sys schedule | no target found, wait.
@@ -145,7 +146,6 @@ INT WINAPI WinMain(
 	}
 
 	CreateTray();
-
 
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 

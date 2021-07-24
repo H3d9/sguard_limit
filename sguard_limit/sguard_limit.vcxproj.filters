@@ -7,6 +7,7 @@
     <ClCompile Include="limitcore.cpp" />
     <ClCompile Include="panic.cpp" />
     <ClCompile Include="tlockcore.cpp" />
+    <ClCompile Include="config.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
@@ -15,6 +16,7 @@
     <ClInclude Include="limitcore.h" />
     <ClInclude Include="panic.h" />
     <ClInclude Include="tlockcore.h" />
+    <ClInclude Include="config.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sguard_limit.rc" />

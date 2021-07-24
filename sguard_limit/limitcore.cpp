@@ -6,13 +6,15 @@
 #include <shlwapi.h>
 #include <shlobj.h>
 #include <process.h>
-#include <time.h>
-#include "limitcore.h"
 #include "panic.h"
 
-#pragma comment(lib, "Advapi32.lib") // invoke OpenProcessToken
+#include "limitcore.h"
 
-DWORD GetProcessID(const char* szProcessName) { // ret == 0 if no proc.
+volatile bool		limitEnabled	= true;
+volatile DWORD		limitPercent	= 90;
+
+
+DWORD GetProcessID() {  // ret == 0 if no proc.
 	PROCESSENTRY32 ps = { 0 };
 	ps.dwSize = sizeof(PROCESSENTRY32);
 
@@ -23,17 +25,13 @@ DWORD GetProcessID(const char* szProcessName) { // ret == 0 if no proc.
 
 	DWORD targetPID = 0;
 
-	if (!Process32First(hSnapshot, &ps)) {
-		return 0;
+	for (BOOL next = Process32First(hSnapshot, &ps); next; next = Process32Next(hSnapshot, &ps)) {
+		if (lstrcmpi(ps.szExeFile, "SGuard64.exe") == 0) {
+			targetPID = ps.th32ProcessID;
+			break; // assert: only 1 pinstance.
+		}
 	}
 
-	do {
-		if (lstrcmpi(ps.szExeFile, szProcessName) == 0) {
-			targetPID = ps.th32ProcessID;
-			// assert: only 1 pinstance.
-			break;
-		}
-	} while (Process32Next(hSnapshot, &ps));
 	CloseHandle(hSnapshot);
 
 	return targetPID;
@@ -42,17 +40,17 @@ DWORD GetProcessID(const char* szProcessName) { // ret == 0 if no proc.
 DWORD  threadIDList[512];
 DWORD  numThreads;
 
-static BOOL EnumCurrentThread(DWORD pid) { // => threadIDList & numThreads
+static void EnumCurrentThread(DWORD pid) { // => threadIDList & numThreads
 
-	numThreads = 0;
 	THREADENTRY32 te;
 	te.dwSize = sizeof(THREADENTRY32);
 
 	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
 	if (hSnapshot == INVALID_HANDLE_VALUE) {
-		return FALSE;
+		return;
 	}
 
+	numThreads = 0;
 	for (BOOL next = Thread32First(hSnapshot, &te); next; next = Thread32Next(hSnapshot, &te)) {
 		if (te.th32OwnerProcessID == pid) {
 			threadIDList[numThreads++] = te.th32ThreadID;
@@ -60,16 +58,12 @@ static BOOL EnumCurrentThread(DWORD pid) { // => threadIDList & numThreads
 	}
 
 	CloseHandle(hSnapshot);
-
-	return TRUE;
 }
 
 HANDLE threadHandleList[512];
 bool suspended = false;
 DWORD suspendRetry = 0;
 DWORD resumeRetry = 0;
-volatile DWORD limitPercent = 90;
-volatile bool limitEnabled = true;
 
 BOOL Hijack(DWORD pid) {
 

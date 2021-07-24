@@ -4,6 +4,7 @@
 
 #include "panic.h"
 
+
 // assert: !UNICODE
 
 void panic(const char* format, ...) {

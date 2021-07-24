@@ -2,6 +2,7 @@
 
 extern HWND g_hWnd;
 
+
 void CreateTray() {
 	NOTIFYICONDATA icon = {};
 	icon.cbSize = sizeof(icon);
