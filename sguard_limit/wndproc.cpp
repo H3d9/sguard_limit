@@ -15,30 +15,35 @@ extern volatile bool			limitEnabled;
 extern volatile DWORD			limitPercent;
 
 extern volatile bool			lockEnabled;
+extern volatile DWORD			lockMode;
 extern volatile lockedThreads_t	lockedThreads[3];
 extern volatile DWORD			lockPid;
 
 
-static void ShowAbout() {  // show about dialog.
+// about func: show about dialog box.
+static void ShowAbout() {
 	MessageBox(0,
-		"本工具启动后自动优化后台SGuard的资源占用。\n"
-		"该工具仅供研究交流dnf优化使用，将来可能失效，不保证稳定性。\n"
-		"若您发现该工具已无法正常使用，请更换模式；若还不行请停止使用并等待论坛更新。\n\n"
+		"本工具启动后自动优化后台ACE-Guard Client EXE的资源占用。\n"
+		"该工具仅供研究交流游戏优化使用，将来可能失效，不保证稳定性。\n"
+		"若您发现该工具已无法正常使用，请更换模式或选项；若还不行请停止使用，并将遇到的错误反馈至下方链接。\n\n"
 		"工作模式说明：\n"
-		"1 时间片轮转（旧模式）：如果你可以正常使用该模式，继续使用即可。当然你也可以使用新模式。\n"
-		"2 线程锁（新模式）：一些机器使用旧模式会出现安全数据上报异常(96)，可以尝试该模式，经测试基本确定不会出现问题（但不保证，因为手头电脑有限）。\n\n"
+		"1 时间片轮转（旧模式）：已知可能导致出现“96-0”，若出现该情况可切换至【线程锁】。"
+		"  (当然，即使没有出现错误你也可以使用新模式，不会有任何影响)\n\n"
+		"2 线程锁（新模式）：已知少数机器使用<锁定>时会出现“3009-0”，若出现该情况请切换至【其他锁定选项】。\n"
+		"【提示】菜单中所列举的锁定功能从上到下的约束等级逐级减弱，建议你先尝试上边的，如果不行再换下边的。\n\n"
 		"更新链接：https://bbs.colg.cn/thread-8087898-1-1.html \n"
 		"项目地址：https://github.com/H3d9/sguard_limit （点ctrl+C复制到记事本）",
-		"SGuard限制器 21.7.21  colg@H3d9",
+		"SGuard限制器 21.7.25  colg@H3d9",
 		MB_OK);
 }
 
-static void disableLimit() {  // undo control.
+// disable func: undo functional control.
+static void disableLimit() {
 	limitEnabled = false;
 	while (!g_bHijackThreadWaiting); // spin; wait till hijack release target thread.
 }
 
-static void disableLock() {  // undo control.
+static void disableLock() {
 	lockEnabled = false;
 	for (auto i = 0; i < 3; i++) {
 		if (lockedThreads[i].locked) {
@@ -105,9 +110,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					if (lockPid == 0) {
 						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 正在分析");
 					} else {
-						char titleBuf[512] = "SGuard限制器 - 已锁定：";
-						for (auto i = 0; i < 3; i++) {
-							sprintf(titleBuf + strlen(titleBuf), "%x(%d) ", lockedThreads[i].tid, i);
+						char titleBuf[512] = "SGuard限制器 - ";
+						switch (lockMode) {
+							case 0:
+								for (auto i = 0; i < 3; i++) {
+									sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", lockedThreads[i].tid, lockedThreads[i].locked ? 'O' : 'X');
+								}
+								break;
+							case 1:
+								for (auto i = 0; i < 3; i++) {
+									sprintf(titleBuf + strlen(titleBuf), "%x[..] ", lockedThreads[i].tid);
+								}
+								break;
+							case 2:
+								sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", lockedThreads[0].tid, lockedThreads[0].locked ? 'O' : 'X');
+								break;
+							case 3:
+								sprintf(titleBuf + strlen(titleBuf), "%x[..] ", lockedThreads[0].tid);
+								break;
 						}
 						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, titleBuf);
 					}
@@ -115,13 +135,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：线程锁 [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3, "锁定");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1, "弱锁定");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR, "锁定-rr");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR, "弱锁定-rr");
 				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK, "解除锁定");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
 				CheckMenuItem(hMenu, IDM_LOCK3, MF_UNCHECKED);
+				CheckMenuItem(hMenu, IDM_LOCK1, MF_UNCHECKED);
+				CheckMenuItem(hMenu, IDM_LOCK3RR, MF_UNCHECKED);
+				CheckMenuItem(hMenu, IDM_LOCK1RR, MF_UNCHECKED);
 				CheckMenuItem(hMenu, IDM_UNLOCK, MF_UNCHECKED);
 				if (lockEnabled) {
-					CheckMenuItem(hMenu, IDM_LOCK3, MF_CHECKED);
+					switch (lockMode) {
+						case 0:
+							CheckMenuItem(hMenu, IDM_LOCK3, MF_CHECKED);
+							break;
+						case 1:
+							CheckMenuItem(hMenu, IDM_LOCK3RR, MF_CHECKED);
+							break;
+						case 2:
+							CheckMenuItem(hMenu, IDM_LOCK1, MF_CHECKED);
+							break;
+						case 3:
+							CheckMenuItem(hMenu, IDM_LOCK1RR, MF_CHECKED);
+							break;
+					}
 				} else {
 					CheckMenuItem(hMenu, IDM_UNLOCK, MF_CHECKED);
 				}
@@ -191,6 +230,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 		case IDM_LOCK3:
 			lockEnabled = true;
+			lockMode = 0;
+			writeConfig();
+			break;
+		case IDM_LOCK3RR:
+			lockEnabled = true;
+			lockMode = 1;
+			writeConfig();
+			break;
+		case IDM_LOCK1:
+			lockEnabled = true;
+			lockMode = 2;
+			writeConfig();
+			break;
+		case IDM_LOCK1RR:
+			lockEnabled = true;
+			lockMode = 3;
 			writeConfig();
 			break;
 		case IDM_UNLOCK:

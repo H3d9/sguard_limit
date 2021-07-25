@@ -148,7 +148,14 @@ INT WINAPI WinMain(
 
 	CreateTray();
 
-	loadConfig();
+	if (!loadConfig()) {
+		MessageBox(0,
+			"首次使用说明：\n"
+			"已知“线程锁”模式中少数机器使用<锁定>时会出现“3009-0”；\n若出现该情况请尝试切换至【其他锁定选项】。\n"
+			"菜单中所列举的锁定选项【从上到下】的约束等级逐级减弱。\n建议你先尝试上边的，如果不行再换下边的。\n\n"
+			"提示：双击右下角托盘图标，可以查看详细说明。",
+			"注意", MB_OK);
+	}
 
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 

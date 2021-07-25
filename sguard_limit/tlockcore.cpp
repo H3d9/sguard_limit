@@ -1,4 +1,4 @@
-// 规则针对性线程锁
+// 线程锁（手动规则）
 // H3d9于2021.7.17，雨。
 #include <Windows.h>
 #include <tlhelp32.h>
@@ -9,6 +9,7 @@
 #include "tlockcore.h"
 
 volatile bool				lockEnabled			= true;
+volatile DWORD				lockMode			= 0;
 volatile lockedThreads_t	lockedThreads[3]	= {};
 volatile DWORD				lockPid				= 0;
 
@@ -219,12 +220,79 @@ void threadLock(DWORD pid) {
 			break;
 		}
 		// fallback: process is not restarted && retrieved thread handles
-		for (auto i = 0; lockEnabled && i < 3; i++) {
-			if (lockedThreads[i].handle && !lockedThreads[i].locked) {
-				SuspendThread(lockedThreads[i].handle);
-				lockedThreads[i].locked = true;
+		switch (lockMode) {
+			case 0:  // lock 3
+			{
+				for (auto i = 0; i < 3; i++) {
+					if (lockedThreads[i].handle && !lockedThreads[i].locked) {
+						SuspendThread(lockedThreads[i].handle);
+						lockedThreads[i].locked = true;
+					}
+				}
+				Sleep(5000);
 			}
+			break;
+			case 1:  // lock 3 rr
+			{
+				for (auto ms = 0; lockEnabled && ms < 5000; ms += 100) {
+					for (auto i = 0; i < 3; i++) {
+						if (lockedThreads[i].handle && !lockedThreads[i].locked) {
+							SuspendThread(lockedThreads[i].handle);
+							lockedThreads[i].locked = true;
+						}
+					}
+					Sleep(95);
+					for (auto i = 0; i < 3; i++) {
+						if (lockedThreads[i].handle && lockedThreads[i].locked) {
+							ResumeThread(lockedThreads[i].handle);
+							lockedThreads[i].locked = false;
+						}
+					}
+					Sleep(5);
+				}
+			}
+			break;
+			case 2:  // lock 1
+			{
+				if (lockedThreads[0].handle && !lockedThreads[0].locked) {
+					SuspendThread(lockedThreads[0].handle);
+					lockedThreads[0].locked = true;
+				}
+				if (lockedThreads[1].handle && lockedThreads[1].locked) {
+					ResumeThread(lockedThreads[1].handle);
+					lockedThreads[1].locked = false;
+				}
+				if (lockedThreads[2].handle && lockedThreads[2].locked) {
+					ResumeThread(lockedThreads[2].handle);
+					lockedThreads[2].locked = false;
+				}
+				Sleep(5000);
+			}
+			break;
+			case 3:  // lock 1 rr
+			{
+				if (lockedThreads[1].handle && lockedThreads[1].locked) {
+					ResumeThread(lockedThreads[1].handle);
+					lockedThreads[1].locked = false;
+				}
+				if (lockedThreads[2].handle && lockedThreads[2].locked) {
+					ResumeThread(lockedThreads[2].handle);
+					lockedThreads[2].locked = false;
+				}
+				for (auto ms = 0; lockEnabled && ms < 5000; ms += 100) {
+					if (lockedThreads[0].handle && !lockedThreads[0].locked) {
+						SuspendThread(lockedThreads[0].handle);
+						lockedThreads[0].locked = true;
+					}
+					Sleep(95);
+					if (lockedThreads[0].handle && lockedThreads[0].locked) {
+						ResumeThread(lockedThreads[0].handle);
+						lockedThreads[0].locked = false;
+					}
+					Sleep(5);
+				}
+			}
+			break;
 		}
-		Sleep(5000);
 	}
 }

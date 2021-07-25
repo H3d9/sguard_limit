@@ -1,4 +1,4 @@
 #pragma once
 
-void loadConfig();
+bool loadConfig();
 void writeConfig();

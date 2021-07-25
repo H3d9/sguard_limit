@@ -10,12 +10,14 @@ extern volatile DWORD g_Mode;
 extern volatile DWORD limitPercent;
 
 // extern volatile bool lockEnabled;  (while selected, default to enabled.)
+extern volatile DWORD lockMode;
 
 
 char confFile[4096];
 
-void loadConfig() {  // executes only when program is initalizing.
+bool loadConfig() {  // executes only when program is initalizing.
 
+    bool ret = true;
     HANDLE hToken;
     char confPath[4096];
     DWORD size = 4096;
@@ -32,6 +34,7 @@ void loadConfig() {  // executes only when program is initalizing.
     DWORD pathAttr = GetFileAttributes(confPath);
     if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
         CreateDirectory(confPath, NULL);
+        ret = false;
     }
 
     // load configurations.
@@ -50,6 +53,16 @@ void loadConfig() {  // executes only when program is initalizing.
     } else {
         limitPercent = res;
     }
+
+    res = GetPrivateProfileInt("Lock", "Mode", -1, confFile);
+    if (res == (UINT)-1 || (res != 0 && res != 1 && res != 2 && res != 3)) {
+        WritePrivateProfileString("Lock", "Mode", "0", confFile);
+        lockMode = 0;
+    } else {
+        lockMode = res;
+    }
+
+    return ret;
 }
 
 void writeConfig() {
@@ -61,4 +74,7 @@ void writeConfig() {
 
     sprintf(buf, "%u", limitPercent);
     WritePrivateProfileString("Limit", "Percent", buf, confFile);
+
+    sprintf(buf, "%u", lockMode);
+    WritePrivateProfileString("Lock", "Mode", buf, confFile);
 }
