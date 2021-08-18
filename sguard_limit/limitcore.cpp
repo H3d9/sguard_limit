@@ -1,3 +1,5 @@
+// 应用层调度器（分时round-robin）
+// H3d9于21.2.5，夜。
 #include <Windows.h>
 #include <tlhelp32.h>
 #include <shellapi.h>
@@ -15,6 +17,7 @@ volatile DWORD		limitPercent	= 90;
 
 
 DWORD GetProcessID() {  // ret == 0 if no proc.
+	
 	PROCESSENTRY32 ps = { 0 };
 	ps.dwSize = sizeof(PROCESSENTRY32);
 

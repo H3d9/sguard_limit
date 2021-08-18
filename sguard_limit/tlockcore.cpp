@@ -123,10 +123,8 @@ void threadLock(DWORD pid) {
 
 		if (lockEnabled && !threadMap.empty() &&
 			(m1->second.cycleDelta >= 30000000 || m1->second.dieCount >= 5)) {
-			SuspendThread(m1->second.handle);
 			lockedThreads[0].tid = m1->first;
 			lockedThreads[0].handle = m1->second.handle;
-			lockedThreads[0].locked = true;
 		}
 
 		// wait till system is stable.
@@ -134,7 +132,7 @@ void threadLock(DWORD pid) {
 			Sleep(1000);
 		}
 
-		// prepare to lock other threads. 
+		// prepare to determine other threads. 
 		for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
 			it->second.dieCount = 0;
 		}
@@ -193,16 +191,12 @@ void threadLock(DWORD pid) {
 		}
 
 		if (lockEnabled && !threadMap.empty() && m2->second.dieCount >= 7) {
-			SuspendThread(m2->second.handle);
 			lockedThreads[1].tid = m2->first;
 			lockedThreads[1].handle = m2->second.handle;
-			lockedThreads[1].locked = true;
 		}
 		if (lockEnabled && !threadMap.empty() && m3->second.dieCount >= 7) {
-			SuspendThread(m3->second.handle);
 			lockedThreads[2].tid = m3->first;
 			lockedThreads[2].handle = m3->second.handle;
-			lockedThreads[2].locked = true;
 		}
 
 		if (lockEnabled && !threadMap.empty()) {

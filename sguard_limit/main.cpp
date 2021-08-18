@@ -20,6 +20,7 @@ volatile DWORD		g_Mode					= 1;  // 0: lim 1: lock
 
 
 static ATOM RegisterMyClass() {
+
 	WNDCLASS wc = {0};
 
 	wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -37,6 +38,7 @@ static ATOM RegisterMyClass() {
 }
 
 static void EnableDebugPrivilege() {
+
 	HANDLE hToken;
 	LUID Luid;
 	TOKEN_PRIVILEGES tp;
@@ -63,12 +65,13 @@ static void EnableDebugPrivilege() {
 //}
 
 static BOOL CheckDebugPrivilege() {
-	HANDLE hToken;
 
-	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
+	HANDLE hToken;
 	LUID luidPrivilege = { 0 };
 	PRIVILEGE_SET RequiredPrivileges = { 0 };
 	BOOL bResult = 0;
+
+	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
 
 	LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luidPrivilege);
 
@@ -126,12 +129,7 @@ INT WINAPI WinMain(
 	g_hWnd = CreateWindow(
 		"SGuardLimit_WindowClass",
 		"SGuardLimit_Window",
-		WS_EX_TOPMOST,
-		CW_USEDEFAULT,
-		CW_USEDEFAULT,
-		1,
-		1,
-		0, 0, g_hInstance, 0);
+		WS_EX_TOPMOST, CW_USEDEFAULT, CW_USEDEFAULT, 1, 1, 0, 0, g_hInstance, 0);
 
 	if (!g_hWnd) {
 		panic("创建窗口失败。");
@@ -147,14 +145,13 @@ INT WINAPI WinMain(
 	}
 
 	CreateTray();
-
+	
 	if (!loadConfig()) {
 		MessageBox(0,
 			"首次使用说明：\n"
-			"已知“线程锁”模式中少数机器使用<锁定>时会出现“3009-0”；\n若出现该情况请尝试切换至【其他锁定选项】。\n"
-			"菜单中所列举的锁定选项【从上到下】的约束等级逐级减弱。\n建议你先尝试上边的，如果不行再换下边的。\n\n"
+			"修复旧版出现“3009-0”的问题，若你出现该情况请直接切换到【锁定-rr】。\n\n"
 			"提示：双击右下角托盘图标，可以查看详细说明。",
-			"注意", MB_OK);
+			VERSION " colg@H3d9", MB_OK);
 	}
 
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);

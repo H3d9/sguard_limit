@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <UserEnv.h>
 #include <stdio.h>
+#include "wndproc.h"  // macro: VERSION
 
 #include "config.h"
 
@@ -21,9 +22,10 @@ bool loadConfig() {  // executes only when program is initalizing.
     HANDLE hToken;
     char confPath[4096];
     DWORD size = 4096;
+    char version[128];
 
     // acquire config directory and file.
-    OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken);
+    OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
     GetUserProfileDirectory(hToken, confPath, &size);
     sprintf(confPath + strlen(confPath), "\\AppData\\Roaming\\sguard_limit");
     strcpy(confFile, confPath);
@@ -34,6 +36,13 @@ bool loadConfig() {  // executes only when program is initalizing.
     DWORD pathAttr = GetFileAttributes(confPath);
     if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
         CreateDirectory(confPath, NULL);
+        ret = false;
+    }
+
+    // check version.
+    GetPrivateProfileString("Global", "Version", NULL, version, 128, confFile);
+    if (strcmp(version, VERSION) != 0) {
+        WritePrivateProfileString("Global", "Version", VERSION, confFile);
         ret = false;
     }
 

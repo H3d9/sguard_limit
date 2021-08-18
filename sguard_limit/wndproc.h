@@ -2,6 +2,8 @@
 
 #include <Windows.h>
 
+#define VERSION				"21.8.18"
+
 #define IDM_TITLE			200
 #define IDM_EXIT			201
 #define IDM_SWITCHMODE		202
@@ -17,5 +19,6 @@
 #define IDM_LOCK3RR			210
 #define IDM_LOCK1RR			211
 #define IDM_UNLOCK			212
+
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
