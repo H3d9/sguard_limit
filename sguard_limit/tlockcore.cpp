@@ -15,7 +15,7 @@ volatile DWORD				lockPid				= 0;
 
 
 struct threadinfo {
-	HANDLE    handle		= 0;
+	HANDLE    handle		= NULL;
 	ULONG64   cycles		= 0;
 	ULONG64   cycleDelta	= 0;
 	int       dieCount		= 0;
@@ -145,6 +145,14 @@ void threadLock(DWORD pid) {
 				break;
 			}
 
+			// remove those identified.
+			for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
+				if (it->first == lockedThreads[0].tid) {
+					threadMap.erase(it);
+					break;
+				}
+			}
+
 			for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
 				if (!it->second.handle) {
 					it->second.handle = OpenThread(STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3FF, FALSE, it->first);
@@ -172,7 +180,7 @@ void threadLock(DWORD pid) {
 				m2->second.dieCount += 1;
 			}
 
-			ULONG64 maxCycles = m2->second.cycleDelta;
+			ULONG64 m2cycleDelta = m2->second.cycleDelta;
 			m2->second.cycleDelta = 0;
 
 			m3 = threadMap.begin();
@@ -185,7 +193,7 @@ void threadLock(DWORD pid) {
 				m3->second.dieCount += 1;
 			}
 
-			m2->second.cycleDelta = maxCycles;
+			m2->second.cycleDelta = m2cycleDelta;
 
 			Sleep(1000);
 		}
@@ -197,6 +205,17 @@ void threadLock(DWORD pid) {
 		if (lockEnabled && !threadMap.empty() && m3->second.dieCount >= 7) {
 			lockedThreads[2].tid = m3->first;
 			lockedThreads[2].handle = m3->second.handle;
+		}
+
+		// release useless handles.
+		for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
+			if (it->first != 0) {
+				if (it->first != lockedThreads[0].tid &&
+					it->first != lockedThreads[1].tid &&
+					it->first != lockedThreads[2].tid) {
+					CloseHandle(it->second.handle);
+				}
+			}
 		}
 
 		if (lockEnabled && !threadMap.empty()) {
