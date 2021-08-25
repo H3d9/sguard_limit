@@ -6,7 +6,7 @@
     <ClCompile Include="wndproc.cpp" />
     <ClCompile Include="limitcore.cpp" />
     <ClCompile Include="panic.cpp" />
-    <ClCompile Include="tlockcore.cpp" />
+    <ClCompile Include="tracecore.cpp" />
     <ClCompile Include="config.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -15,7 +15,7 @@
     <ClInclude Include="wndproc.h" />
     <ClInclude Include="limitcore.h" />
     <ClInclude Include="panic.h" />
-    <ClInclude Include="tlockcore.h" />
+    <ClInclude Include="tracecore.h" />
     <ClInclude Include="config.h" />
   </ItemGroup>
   <ItemGroup>

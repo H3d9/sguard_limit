@@ -12,6 +12,7 @@ extern volatile DWORD limitPercent;
 
 // extern volatile bool lockEnabled;  (while selected, default to enabled.)
 extern volatile DWORD lockMode;
+extern volatile DWORD lockRound;
 
 
 char confFile[4096];
@@ -71,6 +72,14 @@ bool loadConfig() {  // executes only when program is initalizing.
         lockMode = res;
     }
 
+    res = GetPrivateProfileInt("Lock", "Round", -1, confFile);
+    if (res == (UINT)-1 || (res < 1 || res > 99)) {
+        WritePrivateProfileString("Lock", "Round", "95", confFile);
+        lockRound = 95;
+    } else {
+        lockRound = res;
+    }
+
     return ret;
 }
 
@@ -86,4 +95,7 @@ void writeConfig() {
 
     sprintf(buf, "%u", lockMode);
     WritePrivateProfileString("Lock", "Mode", buf, confFile);
+
+    sprintf(buf, "%u", lockRound);
+    WritePrivateProfileString("Lock", "Round", buf, confFile);
 }

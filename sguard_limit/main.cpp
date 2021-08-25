@@ -6,7 +6,7 @@
 #include "config.h"
 #include "wndproc.h"
 #include "limitcore.h"
-#include "tlockcore.h"
+#include "tracecore.h"
 #include "resource.h"
 
 extern volatile	bool limitEnabled;
@@ -102,7 +102,7 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 			}
 			if (g_Mode == 1 && lockEnabled) {
 				g_bHijackThreadWaiting = false;
-				threadLock(pid);
+				threadChase(pid);
 				g_bHijackThreadWaiting = true;
 			}
 		}
@@ -149,8 +149,8 @@ INT WINAPI WinMain(
 	if (!loadConfig()) {
 		MessageBox(0,
 			"首次使用说明：\n"
-			"修复旧版出现“3009-0”的问题，若你出现该情况请直接切换到【锁定-rr】。\n\n"
-			"提示：双击右下角托盘图标，可以查看详细说明。",
+			"修复旧版【锁定-rr】依旧出现“3009-0”的问题，若你出现该情况请点击【设置时间切分】，并设置一个更小的时间。\n\n"
+			"【提示】双击右下角托盘图标，可以查看新版详细说明。",
 			VERSION " colg@H3d9", MB_OK);
 	}
 
