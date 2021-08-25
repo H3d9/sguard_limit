@@ -9,4 +9,4 @@ struct lockedThreads_t {
 };
 
 
-void threadLock(DWORD);
+void threadChase(DWORD);

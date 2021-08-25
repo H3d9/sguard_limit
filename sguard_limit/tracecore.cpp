@@ -1,4 +1,4 @@
-// 线程锁（手动规则）
+// 线程追踪（手动规则）
 // H3d9于2021.7.17，雨。
 #include <Windows.h>
 #include <tlhelp32.h>
@@ -6,12 +6,13 @@
 #include <unordered_map>
 #include "limitcore.h"  // GetProcessID
 
-#include "tlockcore.h"
+#include "tracecore.h"
 
 volatile bool				lockEnabled			= true;
 volatile DWORD				lockMode			= 0;
 volatile lockedThreads_t	lockedThreads[3]	= {};
 volatile DWORD				lockPid				= 0;
+volatile DWORD				lockRound			= 95;
 
 
 struct threadinfo {
@@ -63,7 +64,8 @@ static bool EnumThreadInfo(DWORD pid, map* m) {
 	return !m->empty();
 }
 
-void threadLock(DWORD pid) {
+
+void threadChase(DWORD pid) {   // Chase? trace maybe, but i like that word.
 
 	if (lockPid != pid) {
 
@@ -145,12 +147,9 @@ void threadLock(DWORD pid) {
 				break;
 			}
 
-			// remove those identified.
-			for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
-				if (it->first == lockedThreads[0].tid) {
-					threadMap.erase(it);
-					break;
-				}
+			// diff: remove thread which have been identified before.
+			if (lockedThreads[0].tid) {
+				threadMap.erase(const_cast<const DWORD&>(lockedThreads[0].tid));
 			}
 
 			for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
@@ -169,7 +168,7 @@ void threadLock(DWORD pid) {
 				it->second.cycles = cycles;
 			}
 
-			// find top 2 which have maximum cycles.
+			// find top 2, which have maximum cycles.
 			m2 = threadMap.begin();
 			for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
 				if (it->second.cycleDelta > m2->second.cycleDelta) {
@@ -228,10 +227,15 @@ void threadLock(DWORD pid) {
 
 	// userwait: exit if process is killed or user interactive.
 	while (lockEnabled) {
+
 		if (lockPid != GetProcessID()) {
 			lockPid = 0;
 			break;
 		}
+
+		// assert: 1 <= lockRound <= 99
+		DWORD unlockRound = 100 - lockRound;
+
 		// fallback: process is not restarted && retrieved thread handles
 		switch (lockMode) {
 			case 0:  // lock 3
@@ -254,14 +258,14 @@ void threadLock(DWORD pid) {
 							lockedThreads[i].locked = true;
 						}
 					}
-					Sleep(95);
+					Sleep(lockRound);
 					for (auto i = 0; i < 3; i++) {
 						if (lockedThreads[i].handle && lockedThreads[i].locked) {
 							ResumeThread(lockedThreads[i].handle);
 							lockedThreads[i].locked = false;
 						}
 					}
-					Sleep(5);
+					Sleep(unlockRound);
 				}
 			}
 			break;
@@ -297,12 +301,12 @@ void threadLock(DWORD pid) {
 						SuspendThread(lockedThreads[0].handle);
 						lockedThreads[0].locked = true;
 					}
-					Sleep(95);
+					Sleep(lockRound);
 					if (lockedThreads[0].handle && lockedThreads[0].locked) {
 						ResumeThread(lockedThreads[0].handle);
 						lockedThreads[0].locked = false;
 					}
-					Sleep(5);
+					Sleep(unlockRound);
 				}
 			}
 			break;
