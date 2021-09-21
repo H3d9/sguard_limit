@@ -19,6 +19,28 @@ volatile bool		g_bHijackThreadWaiting	= true;
 volatile DWORD		g_Mode					= 1;  // 0: lim 1: lock
 
 
+static void setupProcessDpi() {
+
+	typedef NTSTATUS (WINAPI* fnp)(OSVERSIONINFOEX*);
+	fnp RtlGetVersion = (fnp)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
+
+	if (RtlGetVersion) {
+
+		DWORD WIN_7 = 7600;
+		DWORD WIN_10_1809 = 17763;
+		OSVERSIONINFOEX osInfo;
+		osInfo.dwOSVersionInfoSize = sizeof(osInfo);
+
+		RtlGetVersion(&osInfo);
+
+		if (osInfo.dwBuildNumber >= WIN_10_1809) {
+			SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
+		} else if (osInfo.dwBuildNumber >= WIN_7) {
+			SetProcessDPIAware();
+		}
+	}
+}
+
 static ATOM RegisterMyClass() {
 
 	WNDCLASS wc = {0};
@@ -120,6 +142,8 @@ INT WINAPI WinMain(
 	(void)hPrevInstance;
 	(void)lpCmdLine;
 	(void)nShowCmd;
+
+	setupProcessDpi();
 
 	if (!RegisterMyClass()) {
 		panic("创建窗口类失败。");
