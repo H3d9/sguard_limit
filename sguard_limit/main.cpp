@@ -21,24 +21,46 @@ volatile DWORD		g_Mode					= 1;  // 0: lim 1: lock
 
 static void setupProcessDpi() {
 
+	HMODULE hUser32 = LoadLibrary("User32.dll");
+	
+	if (hUser32) {
+
+		typedef BOOL(WINAPI* fp)(DPI_AWARENESS_CONTEXT);
+		fp SetProcessDpiAwarenessContext = (fp)GetProcAddress(hUser32, "SetProcessDpiAwarenessContext");
+
+		if (SetProcessDpiAwarenessContext) {
+			SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
+		} else {
+            
+			typedef BOOL(WINAPI* fp2)();
+			fp2 SetProcessDPIAware = (fp2)GetProcAddress(hUser32, "SetProcessDPIAware");
+			if (SetProcessDPIAware) {
+				SetProcessDPIAware();
+			}
+		}
+
+		FreeLibrary(hUser32);
+	}
+
+	/*
+	// 以下代码的执行流不正确（可能为msvc的bug），故采用上述显示载入动态库的方法。
 	typedef NTSTATUS (WINAPI* fnp)(OSVERSIONINFOEX*);
 	fnp RtlGetVersion = (fnp)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
 
 	if (RtlGetVersion) {
 
-		DWORD WIN_7 = 7600;
-		DWORD WIN_10_1809 = 17763;
 		OSVERSIONINFOEX osInfo;
 		osInfo.dwOSVersionInfoSize = sizeof(osInfo);
 
 		RtlGetVersion(&osInfo);
 
-		if (osInfo.dwBuildNumber >= WIN_10_1809) {
+		if ((osInfo.dwMajorVersion == 10 && osInfo.dwMinorVersion == 0 && osInfo.dwBuildNumber >= 17763)
+		|| osInfo.dwMajorVersion >= 10) {
 			SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
-		} else if (osInfo.dwBuildNumber >= WIN_7) {
+		} else {
 			SetProcessDPIAware();
 		}
-	}
+	}*/
 }
 
 static ATOM RegisterMyClass() {
