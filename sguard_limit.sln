@@ -5,6 +5,8 @@ VisualStudioVersion = 16.0.30804.86
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sguard_limit", "sguard_limit\sguard_limit.vcxproj", "{D5FD8D95-F3F0-4EF3-9E45-EFC2A1E8E7F2}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SGuardLimit_VMIO", "SGuardLimit_VMIO\SGuardLimit_VMIO.vcxproj", "{83681946-B59A-4B14-8D9B-3EE8212D6BA8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -15,6 +17,12 @@ Global
 		{D5FD8D95-F3F0-4EF3-9E45-EFC2A1E8E7F2}.Debug|x64.Build.0 = Debug|x64
 		{D5FD8D95-F3F0-4EF3-9E45-EFC2A1E8E7F2}.Release|x64.ActiveCfg = Release|x64
 		{D5FD8D95-F3F0-4EF3-9E45-EFC2A1E8E7F2}.Release|x64.Build.0 = Release|x64
+		{83681946-B59A-4B14-8D9B-3EE8212D6BA8}.Debug|x64.ActiveCfg = Debug|x64
+		{83681946-B59A-4B14-8D9B-3EE8212D6BA8}.Debug|x64.Build.0 = Debug|x64
+		{83681946-B59A-4B14-8D9B-3EE8212D6BA8}.Debug|x64.Deploy.0 = Debug|x64
+		{83681946-B59A-4B14-8D9B-3EE8212D6BA8}.Release|x64.ActiveCfg = Release|x64
+		{83681946-B59A-4B14-8D9B-3EE8212D6BA8}.Release|x64.Build.0 = Release|x64
+		{83681946-B59A-4B14-8D9B-3EE8212D6BA8}.Release|x64.Deploy.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

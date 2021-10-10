@@ -1,4 +1,4 @@
-// Memory Patch（驱动模式）
+// Memory Patch（用户态模块）
 // 2021.10.4 雨
 // 2.2 复刻胡桃，开心。但是昨天吃坏肚子了，很疼。
 #include <Windows.h>
