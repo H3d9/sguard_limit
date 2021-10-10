@@ -8,6 +8,7 @@
     <ClCompile Include="panic.cpp" />
     <ClCompile Include="tracecore.cpp" />
     <ClCompile Include="config.cpp" />
+    <ClCompile Include="mempatch.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
@@ -17,6 +18,7 @@
     <ClInclude Include="panic.h" />
     <ClInclude Include="tracecore.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="mempatch.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sguard_limit.rc" />

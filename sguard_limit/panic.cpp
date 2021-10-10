@@ -8,11 +8,24 @@
 // assert: !UNICODE
 
 void panic(const char* format, ...) {
-	char buf[1024];
+	char buf[2048];
 	va_list arg;
 	va_start(arg, format);
 	vsprintf(buf, format, arg);
 	va_end(arg);
+
+	DWORD error = GetLastError();
+
+	char* description = NULL;
+	FormatMessage(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+		error,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		(LPSTR)&description,
+		0, NULL);
+
+	sprintf(buf + strlen(buf), "\n\n·¢ÉúµÄ´íÎó£º(0x%x)%s", error, description);
+	LocalFree(description);
 
 	MessageBox(0, buf, 0, MB_OK);
 }
@@ -25,8 +38,7 @@ void showErrorMessageInList(const char* hint, DWORD* errorList, DWORD errorCount
 		char* messageBuf = NULL;
 
 		FormatMessage(
-			FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-			NULL,
+			FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
 			errorList[i],
 			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
 			(LPSTR)&messageBuf,

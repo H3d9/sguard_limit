@@ -7,21 +7,21 @@
 
 extern volatile DWORD g_Mode;
 
-// extern volatile bool limitEnabled;  (while selected, default to enabled.)
 extern volatile DWORD limitPercent;
 
-// extern volatile bool lockEnabled;  (while selected, default to enabled.)
 extern volatile DWORD lockMode;
 extern volatile DWORD lockRound;
 
+extern volatile DWORD patchDelay;
 
+
+char confPath[4096];
 char confFile[4096];
 
 bool loadConfig() {  // executes only when program is initalizing.
 
     bool ret = true;
     HANDLE hToken;
-    char confPath[4096];
     DWORD size = 4096;
     char version[128];
 
@@ -49,9 +49,9 @@ bool loadConfig() {  // executes only when program is initalizing.
 
     // load configurations.
     UINT res = GetPrivateProfileInt("Global", "Mode", -1, confFile);
-    if (res == (UINT)-1 || (res != 0 && res != 1)) {
-        WritePrivateProfileString("Global", "Mode", "1", confFile);
-        g_Mode = 1;
+    if (res == (UINT)-1 || (res != 0 && res != 1 && res != 2)) {
+        WritePrivateProfileString("Global", "Mode", "2", confFile);
+        g_Mode = 2;
     } else {
         g_Mode = res;
     }
@@ -80,6 +80,19 @@ bool loadConfig() {  // executes only when program is initalizing.
         lockRound = res;
     }
 
+    res = GetPrivateProfileInt("Patch", "Delay", -1, confFile);
+    if (res == (UINT)-1 || (res < 200 || res > 2000)) {
+        WritePrivateProfileString("Patch", "Delay", "1250", confFile);
+        patchDelay = 1250;
+    } else {
+        patchDelay = res;
+    }
+
+    // if it's first time user updates to this version, force to mode 2.
+    if (!ret) {
+        g_Mode = 2;
+    }
+
     return ret;
 }
 
@@ -98,4 +111,7 @@ void writeConfig() {
 
     sprintf(buf, "%u", lockRound);
     WritePrivateProfileString("Lock", "Round", buf, confFile);
+
+    sprintf(buf, "%u", patchDelay);
+    WritePrivateProfileString("Patch", "Delay", buf, confFile);
 }

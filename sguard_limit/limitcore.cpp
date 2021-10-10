@@ -12,8 +12,8 @@
 
 #include "limitcore.h"
 
-volatile bool		limitEnabled	= true;
-volatile DWORD		limitPercent	= 90;
+volatile bool       limitEnabled    = true;
+volatile DWORD      limitPercent    = 90;
 
 
 DWORD GetProcessID() {  // ret == 0 if no proc.
@@ -43,24 +43,27 @@ DWORD GetProcessID() {  // ret == 0 if no proc.
 DWORD  threadIDList[512];
 DWORD  numThreads;
 
-static void EnumCurrentThread(DWORD pid) { // => threadIDList & numThreads
+bool EnumCurrentThread(DWORD pid) { // => threadIDList & numThreads
 
 	THREADENTRY32 te;
 	te.dwSize = sizeof(THREADENTRY32);
 
 	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
 	if (hSnapshot == INVALID_HANDLE_VALUE) {
-		return;
+		return false;
 	}
 
 	numThreads = 0;
+	bool found = false;
 	for (BOOL next = Thread32First(hSnapshot, &te); next; next = Thread32Next(hSnapshot, &te)) {
 		if (te.th32OwnerProcessID == pid) {
+			found = true;
 			threadIDList[numThreads++] = te.th32ThreadID;
 		}
 	}
 
 	CloseHandle(hSnapshot);
+	return found;
 }
 
 HANDLE threadHandleList[512];

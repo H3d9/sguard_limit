@@ -2,8 +2,8 @@
 
 #include "tray.h"
 
-extern HWND			g_hWnd;
-NOTIFYICONDATA		icon		= {};
+extern HWND         g_hWnd;
+NOTIFYICONDATA      icon        = {};
 
 
 void CreateTray() {

@@ -8,18 +8,18 @@
 
 #include "tracecore.h"
 
-volatile bool				lockEnabled			= true;
-volatile DWORD				lockMode			= 0;
-volatile lockedThreads_t	lockedThreads[3]	= {};
-volatile DWORD				lockPid				= 0;
-volatile DWORD				lockRound			= 95;
+volatile bool               lockEnabled         = true;
+volatile DWORD              lockMode            = 0;
+volatile lockedThreads_t    lockedThreads[3]    = {};
+volatile DWORD              lockPid             = 0;
+volatile DWORD              lockRound           = 95;
 
 
 struct threadinfo {
-	HANDLE    handle		= NULL;
-	ULONG64   cycles		= 0;
-	ULONG64   cycleDelta	= 0;
-	int       dieCount		= 0;
+	HANDLE    handle        = NULL;
+	ULONG64   cycles        = 0;
+	ULONG64   cycleDelta    = 0;
+	int       dieCount      = 0;
 };
 
 using map = std::unordered_map<DWORD, threadinfo>;  // hashmap: tid -> {...}

@@ -1,4 +1,4 @@
-// SGuard64 行为限制工具
+// SGuard64限制器，适用于各种tx游戏
 // H3d9, 写于2021.2.5晚。
 #include <Windows.h>
 #include "tray.h"
@@ -7,16 +7,18 @@
 #include "wndproc.h"
 #include "limitcore.h"
 #include "tracecore.h"
+#include "mempatch.h"
 #include "resource.h"
 
 extern volatile	bool limitEnabled;
 extern volatile	bool lockEnabled;
+extern volatile bool patchEnabled;
 
-HWND				g_hWnd					= NULL;
-HINSTANCE			g_hInstance				= NULL;
-volatile bool		g_bHijackThreadWaiting	= true;
+HWND                g_hWnd                  = NULL;
+HINSTANCE           g_hInstance             = NULL;
+volatile bool       g_bHijackThreadWaiting  = true;
 
-volatile DWORD		g_Mode					= 1;  // 0: lim 1: lock
+volatile DWORD      g_Mode                  = 2;  // 0: lim 1: lock 3: patch
 
 
 static void setupProcessDpi() {
@@ -31,7 +33,7 @@ static void setupProcessDpi() {
 		if (SetProcessDpiAwarenessContext) {
 			SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
 		} else {
-            
+
 			typedef BOOL(WINAPI* fp2)();
 			fp2 SetProcessDPIAware = (fp2)GetProcAddress(hUser32, "SetProcessDPIAware");
 			if (SetProcessDPIAware) {
@@ -149,6 +151,11 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 				threadChase(pid);
 				g_bHijackThreadWaiting = true;
 			}
+			if (g_Mode == 2 && patchEnabled) {
+				g_bHijackThreadWaiting = false;
+				memoryPatch(pid);
+				g_bHijackThreadWaiting = true;
+			}
 		}
 		Sleep(5000); // call sys schedule | no target found, wait.
 	}
@@ -191,13 +198,29 @@ INT WINAPI WinMain(
 	}
 
 	CreateTray();
+
+	if (IDYES == MessageBox(0,
+		"注意：这是SGUARD限制器新模式的测试版本。\n"
+		"你应该把使用中遇到的问题提交至论坛。即使使用正常也建议将使用情况发送过来，以便统计。若测试无问题则后续会发布新版。\n"
+		"点击“是”打开论坛链接；点鸡“否”不打开。\n你也可以加交流群反馈使用问题：775176979",
+		VERSION " colg@H3d9", MB_YESNO)) {
+		ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);
+	}
+	
 	
 	if (!loadConfig()) {
 		MessageBox(0,
 			"首次使用说明：\n"
-			"修复旧版【锁定-rr】依旧出现“3009-0”的问题，若你出现该情况请点击【设置时间切分】，并设置一个更小的时间。\n\n"
+			"新增模式：Memory Patch\n"
+			"修复win7无法使用问题，以及加载驱动时“设备不存在”。\n"
+			"\n\n"
 			"【提示】双击右下角托盘图标，可以查看新版详细说明。",
 			VERSION " colg@H3d9", MB_OK);
+	}
+
+	if (!initializePatchModule()) {
+		panic("MemoryPatch模块初始化失败。");
+		return -1;
 	}
 
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
