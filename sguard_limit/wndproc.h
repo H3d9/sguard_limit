@@ -2,7 +2,7 @@
 
 #include <Windows.h>
 
-#define VERSION             "21.10.10 beta"
+#define VERSION             "21.10.11 beta"
 
 #define IDM_TITLE           200
 #define IDM_EXIT            201
@@ -24,5 +24,9 @@
 #define IDM_COMMITPATCH     214
 #define IDM_UNDOPATCH       215
 #define IDM_SETDELAY        216
+#define IDM_PATCHSWITCH1    217
+#define IDM_PATCHSWITCH2    218
+#define IDM_PATCHSWITCH3    219
+
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

@@ -2,18 +2,19 @@
 #include <UserEnv.h>
 #include <stdio.h>
 #include "wndproc.h"  // macro: VERSION
+#include "mempatch.h"
 
 #include "config.h"
 
-extern volatile DWORD g_Mode;
+extern volatile DWORD           g_Mode;
 
-extern volatile DWORD limitPercent;
+extern volatile DWORD           limitPercent;
 
-extern volatile DWORD lockMode;
-extern volatile DWORD lockRound;
+extern volatile DWORD           lockMode;
+extern volatile DWORD           lockRound;
 
-extern volatile DWORD patchDelay;
-
+extern volatile DWORD           patchDelay;
+extern volatile patchSwitches_t patchSwitches;
 
 char confPath[4096];
 char confFile[4096];
@@ -56,6 +57,7 @@ bool loadConfig() {  // executes only when program is initalizing.
         g_Mode = res;
     }
 
+    // limit module
     res = GetPrivateProfileInt("Limit", "Percent", -1, confFile);
     if (res == (UINT)-1 || (res != 90 && res != 95 && res != 99 && res != 999)) {
         WritePrivateProfileString("Limit", "Percent", "90", confFile);
@@ -64,6 +66,7 @@ bool loadConfig() {  // executes only when program is initalizing.
         limitPercent = res;
     }
 
+    // lock module
     res = GetPrivateProfileInt("Lock", "Mode", -1, confFile);
     if (res == (UINT)-1 || (res != 0 && res != 1 && res != 2 && res != 3)) {
         WritePrivateProfileString("Lock", "Mode", "0", confFile);
@@ -80,12 +83,37 @@ bool loadConfig() {  // executes only when program is initalizing.
         lockRound = res;
     }
 
+    // patch module
     res = GetPrivateProfileInt("Patch", "Delay", -1, confFile);
     if (res == (UINT)-1 || (res < 200 || res > 2000)) {
         WritePrivateProfileString("Patch", "Delay", "1250", confFile);
         patchDelay = 1250;
     } else {
         patchDelay = res;
+    }
+
+    res = GetPrivateProfileInt("Patch", "NtDelayExecution", -1, confFile);
+    if (res == (UINT)-1 || (res != 0 && res != 1)) {
+        WritePrivateProfileString("Patch", "NtDelayExecution", "0", confFile);
+        patchSwitches.patchDelayExecution = false;
+    } else {
+        patchSwitches.patchDelayExecution = res ? true : false;
+    }
+
+    res = GetPrivateProfileInt("Patch", "NtResumeThread", -1, confFile);
+    if (res == (UINT)-1 || (res != 0 && res != 1)) {
+        WritePrivateProfileString("Patch", "NtResumeThread", "1", confFile);
+        patchSwitches.patchResumeThread = true;
+    } else {
+        patchSwitches.patchResumeThread = res ? true : false;
+    }
+
+    res = GetPrivateProfileInt("Patch", "NtQueryVirtualMemory", -1, confFile);
+    if (res == (UINT)-1 || (res != 0 && res != 1)) {
+        WritePrivateProfileString("Patch", "NtQueryVirtualMemory", "1", confFile);
+        patchSwitches.patchQueryVirtualMemory = true;
+    } else {
+        patchSwitches.patchQueryVirtualMemory = res ? true : false;
     }
 
     // if it's first time user updates to this version, force to mode 2.
@@ -114,4 +142,13 @@ void writeConfig() {
 
     sprintf(buf, "%u", patchDelay);
     WritePrivateProfileString("Patch", "Delay", buf, confFile);
+
+    sprintf(buf, patchSwitches.patchDelayExecution ? "1" : "0");
+    WritePrivateProfileString("Patch", "NtDelayExecution", buf, confFile);
+
+    sprintf(buf, patchSwitches.patchResumeThread ? "1" : "0");
+    WritePrivateProfileString("Patch", "NtResumeThread", buf, confFile);
+    
+    sprintf(buf, patchSwitches.patchQueryVirtualMemory ? "1" : "0");
+    WritePrivateProfileString("Patch", "NtReadVirtualMemory", buf, confFile);
 }

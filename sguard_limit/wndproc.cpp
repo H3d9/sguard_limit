@@ -25,7 +25,7 @@ extern volatile DWORD           lockRound;
 extern volatile bool            patchEnabled;
 extern volatile DWORD           patchPid;
 extern volatile DWORD           patchDelay;
-
+extern volatile patchSwitches_t patchSwitches;
 
 // about func: show about dialog box.
 static void ShowAbout() {
@@ -39,7 +39,7 @@ static void ShowAbout() {
 		"2 线程追踪（21.7.17）：已知部分机器使用“锁定”选项时会出现“3009-0”，若出现该情况可以尝试【锁定-rr】。\n"
 		"如果你使用【锁定-rr】依旧出问题，可点击【设置时间切分】，并尝试较小的时间。例如尝试90，85，80...直到合适即可。\n"
 		"注：【时间切分】设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n\n"
-		"3 Memory Patch（21.10.6）：（测试功能）修改SGUARD64地址空间中0x34号(win7下为0x31号)系统调用引用的参数令其强制延时。\n"
+		"3 Memory Patch（21.10.6）：（测试功能）修改SGUARD64地址空间中0x34号系统调用引用的参数令其强制延时。\n"
 		"如果你觉得限制不够，可以适当调大延迟，但不要过大，以免出现未知问题。\n"
 		"【注意】方式3需要临时装载一次驱动（提交更改后会立即将之卸载）。若你使用时出现问题，可以去论坛原贴下载证书。\n\n\n"
 		"SGUARD讨论群：775176979\n\n"
@@ -255,10 +255,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已提交更改");
 					}
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：Memory Patch [点击切换]");
+				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V1.1 [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_COMMITPATCH, "自动");
 				AppendMenu(hMenu, MFT_STRING, IDM_UNDOPATCH, "撤销修改（慎用）");
+				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+				//patchSwitches
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1, "patch!NtDelayExecution");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "patch!NtResumeThread");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "patch!NtQueryVirtualMemory");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				char buf[128];
 				sprintf(buf, "设置延时（当前：%u）", patchDelay);
@@ -269,6 +274,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					CheckMenuItem(hMenu, IDM_COMMITPATCH, MF_CHECKED);
 				} else {
 					CheckMenuItem(hMenu, IDM_UNDOPATCH, MF_CHECKED);
+				}
+				if (patchSwitches.patchDelayExecution) {
+					CheckMenuItem(hMenu, IDM_PATCHSWITCH1, MF_CHECKED);
+				}
+				if (patchSwitches.patchResumeThread) {
+					CheckMenuItem(hMenu, IDM_PATCHSWITCH2, MF_CHECKED);
+				}
+				if (patchSwitches.patchQueryVirtualMemory) {
+					CheckMenuItem(hMenu, IDM_PATCHSWITCH3, MF_CHECKED);
 				}
 			}
 			GetCursorPos(&pt);
@@ -379,6 +393,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			break;
 		case IDM_SETDELAY:
 			DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), g_hWnd, SetDelayDlgProc);
+			writeConfig();
+			break;
+		case IDM_PATCHSWITCH1:
+			if (patchSwitches.patchDelayExecution) {
+				patchSwitches.patchDelayExecution = false;
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+			} else {
+				if (IDYES == MessageBox(0, "如果你之前出现“3009”, “96”等问题，不要启用该选项。要继续么？", "注意", MB_YESNO)) {
+					patchSwitches.patchDelayExecution = true;
+					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				}
+			}
+			writeConfig();
+			break;
+		case IDM_PATCHSWITCH2:
+			if (patchSwitches.patchResumeThread) {
+				patchSwitches.patchResumeThread = false;
+			} else {
+				patchSwitches.patchResumeThread = true;
+			}
+			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+			writeConfig();
+			break;
+		case IDM_PATCHSWITCH3:
+			if (patchSwitches.patchQueryVirtualMemory) {
+				patchSwitches.patchQueryVirtualMemory = false;
+			} else {
+				patchSwitches.patchQueryVirtualMemory = true;
+			}
+			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 			writeConfig();
 			break;
 		}

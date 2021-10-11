@@ -11,9 +11,12 @@
 #include "limitcore.h"  // GetProcessID, EnumCurrentThread
 #include "panic.h"
 
-volatile bool     patchEnabled   = true;
-volatile DWORD    patchPid       = 0;
-volatile DWORD    patchDelay     = 1250;
+#include "mempatch.h"
+
+volatile bool            patchEnabled   = true;
+volatile DWORD           patchPid       = 0;
+volatile DWORD           patchDelay     = 1250;
+volatile patchSwitches_t patchSwitches;
 
 
 // driver interface
@@ -239,7 +242,7 @@ void driver_Unload(HANDLE hDriver) {
 
 bool driver_ReadVM(HANDLE hDriver, HANDLE pid, PVOID out, PVOID targetAddress) {
 
-	// assert: "out" is a 8K buffer.
+	// assert: "out" is a 16K buffer.
 	VMIO_REQUEST  ReadRequest;
 	DWORD         Bytes;
 
@@ -247,53 +250,42 @@ bool driver_ReadVM(HANDLE hDriver, HANDLE pid, PVOID out, PVOID targetAddress) {
 	ReadRequest.errorCode = 0;
 
 
-	ReadRequest.address = (PVOID)targetAddress;
-	DeviceIoControl(hDriver, VMIO_READ, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL);
-	if (ReadRequest.errorCode != 0) {
-		panic("Çý¶¯ÄÚ²¿´íÎó£º%s(%x)", ReadRequest.errorFunc, ReadRequest.errorCode);
-		return false;
+	for (auto page = 0; page < 4; page++) {
+
+		ReadRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
+		
+		DeviceIoControl(hDriver, VMIO_READ, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL);
+		if (ReadRequest.errorCode != 0) {
+			panic("Çý¶¯ÄÚ²¿´íÎó£º%s(%x)", ReadRequest.errorFunc, ReadRequest.errorCode);
+		}
+
+		memcpy((PVOID)((ULONG64)out + page * 0x1000), ReadRequest.data, 0x1000);
 	}
-	memcpy(out, ReadRequest.data, 4096);
-
-
-	ReadRequest.address = (PVOID)((ULONG64)targetAddress + 4096);
-	DeviceIoControl(hDriver, VMIO_READ, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL);
-	if (ReadRequest.errorCode != 0) {
-		panic("Çý¶¯ÄÚ²¿´íÎó£º%s(%x)", ReadRequest.errorFunc, ReadRequest.errorCode);
-	}
-	memcpy((PVOID)((ULONG64)out + 4096), ReadRequest.data, 4096);
-
 
 	return true;
 }
 
 bool driver_WriteVM(HANDLE hDriver, HANDLE pid, PVOID in, PVOID targetAddress) {
 	
-	// assert: "in" is a 8K buffer.
+	// assert: "in" is a 16K buffer.
 	VMIO_REQUEST  WriteRequest;
 	DWORD         Bytes;
 
 	WriteRequest.pid = pid;
 	WriteRequest.errorCode = 0;
 
+	for (auto page = 0; page < 4; page++) {
 
-	WriteRequest.address = (PVOID)targetAddress;
-	memcpy(WriteRequest.data, in, 4096);
-	DeviceIoControl(hDriver, VMIO_WRITE, &WriteRequest, sizeof(WriteRequest), &WriteRequest, sizeof(WriteRequest), &Bytes, NULL);
-	if (WriteRequest.errorCode != 0) {
-		panic("Çý¶¯ÄÚ²¿´íÎó£º%s(0x%x)", WriteRequest.errorFunc, WriteRequest.errorCode);
-		return false;
+		WriteRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
+
+		memcpy(WriteRequest.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
+
+		DeviceIoControl(hDriver, VMIO_WRITE, &WriteRequest, sizeof(WriteRequest), &WriteRequest, sizeof(WriteRequest), &Bytes, NULL);
+		if (WriteRequest.errorCode != 0) {
+			panic("Çý¶¯ÄÚ²¿´íÎó£º%s(0x%x)", WriteRequest.errorFunc, WriteRequest.errorCode);
+			return false;
+		}
 	}
-
-
-	WriteRequest.address = (PVOID)((ULONG64)targetAddress + 4096);
-	memcpy(WriteRequest.data, (PVOID)((ULONG64)in + 4096), 4096);
-	DeviceIoControl(hDriver, VMIO_WRITE, &WriteRequest, sizeof(WriteRequest), &WriteRequest, sizeof(WriteRequest), &Bytes, NULL);
-	if (WriteRequest.errorCode != 0) {
-		panic("Çý¶¯ÄÚ²¿´íÎó£º%s(0x%x)", WriteRequest.errorFunc, WriteRequest.errorCode);
-		return false;
-	}
-
 
 	return true;
 }
@@ -301,8 +293,8 @@ bool driver_WriteVM(HANDLE hDriver, HANDLE pid, PVOID in, PVOID targetAddress) {
 
 // controller
 ULONG64 vmStartAddress = 0;
-CHAR original_vm[8192] = {};
-CHAR commited_vm[8192] = {};
+CHAR original_vm[0x4000] = {};
+CHAR commited_vm[0x4000] = {};
 
 void enablePatch() {
 	patchEnabled = true;
@@ -327,17 +319,16 @@ void disablePatch() {
 extern DWORD  threadIDList[512];
 extern DWORD  numThreads;
 
-
 void memoryPatch(DWORD pid) {
 	
 	if (patchPid != pid) {
 
 		vmStartAddress = 0;
-		memset(original_vm, 0, 8192);
-		memset(commited_vm, 0, 8192);
+		memset(original_vm, 0, 0x4000);
+		memset(commited_vm, 0, 0x4000);
 
 		// wait a second..
-		for (auto i = 0; patchEnabled && i < 30; i++) {
+		for (auto i = 0; patchEnabled && i < 15; i++) {
 			if (pid != GetProcessID()) {
 				return;
 			}
@@ -359,62 +350,66 @@ void memoryPatch(DWORD pid) {
 		}
 
 		// find rip.
-		struct {DWORD tid;HANDLE handle;} targets[3];
+		ULONG64 rip;
 		{
-			struct {
-				DWORD tid;
-				HANDLE handle;
-				ULONG64 cycles;
-				ULONG64 dcycles;
-			} all_threads[100];
 
-			for (auto i = 0; i < numThreads; i++) {
-				all_threads[i].tid = threadIDList[i];
-				all_threads[i].handle = threadHandleList[i];
-				all_threads[i].cycles = 0;
-				all_threads[i].dcycles = 0;
-			}
+			struct { DWORD tid; HANDLE handle; } targets[3];
+			{
+				struct {
+					DWORD tid;
+					HANDLE handle;
+					ULONG64 cycles;
+					ULONG64 dcycles;
+				} all_threads[100];
 
-			for (auto a = 1; a < 100; a++) {
 				for (auto i = 0; i < numThreads; i++) {
-					ULONG64 c = 0;
-					QueryThreadCycleTime(threadHandleList[i], &c);
-					all_threads[i].cycles += c;
-					all_threads[i].dcycles = all_threads[i].cycles / a;
+					all_threads[i].tid = threadIDList[i];
+					all_threads[i].handle = threadHandleList[i];
+					all_threads[i].cycles = 0;
+					all_threads[i].dcycles = 0;
+				}
+
+				for (auto a = 1; a < 100; a++) {
+					for (auto i = 0; i < numThreads; i++) {
+						ULONG64 c = 0;
+						QueryThreadCycleTime(threadHandleList[i], &c);
+						all_threads[i].cycles += c;
+						all_threads[i].dcycles = all_threads[i].cycles / a;
+					}
+					Sleep(5);
+				}
+
+				std::sort(all_threads, all_threads + numThreads, [](auto& a, auto& b) {
+					return a.dcycles > b.dcycles;
+					});
+
+				for (auto i = 0; i < 3; i++) {
+					targets[i].tid = all_threads[i].tid;
+					targets[i].handle = all_threads[i].handle;
+				}
+			}
+			std::map< ULONG64, int > contextMap[3]; // for each thread, instruction address ->  visit times
+			CONTEXT context;
+			context.ContextFlags = CONTEXT_ALL;
+
+			for (auto i = 0; i < 100; i++) {
+				for (auto i = 0; i < 3; i++) {
+					SuspendThread(targets[i].handle);
+					if (GetThreadContext(targets[i].handle, &context)) {
+						contextMap[i][context.Rip] ++;
+					}
+					ResumeThread(targets[i].handle);
 				}
 				Sleep(5);
 			}
-
-			std::sort(all_threads, all_threads + numThreads, [](auto& a, auto& b) {
-				return a.dcycles > b.dcycles;
-				});
+			int max = 0;
 
 			for (auto i = 0; i < 3; i++) {
-				targets[i].tid = all_threads[i].tid;
-				targets[i].handle = all_threads[i].handle;
-			}
-		}
-		std::map< ULONG64, int > contextMap[3]; // for each thread, instruction address ->  visit times
-		CONTEXT context;
-		context.ContextFlags = CONTEXT_ALL;
-
-		for (auto i = 0; i < 100; i++) {
-			for (auto i = 0; i < 3; i++) {
-				SuspendThread(targets[i].handle);
-				if (GetThreadContext(targets[i].handle, &context)) {
-					contextMap[i][context.Rip] ++;
-				}
-				ResumeThread(targets[i].handle);
-			}
-			Sleep(5);
-		}
-		int max = 0;
-		ULONG64 rip;
-		for (auto i = 0; i < 3; i++) {
-			for (auto it = contextMap[i].begin(); it != contextMap[i].end(); it++) {
-				if (max < it->second) {
-					max = it->second;
-					rip = it->first;
+				for (auto it = contextMap[i].begin(); it != contextMap[i].end(); it++) {
+					if (max < it->second) {
+						max = it->second;
+						rip = it->first;
+					}
 				}
 			}
 		}
@@ -428,78 +423,60 @@ void memoryPatch(DWORD pid) {
 		}
 
 
-		// find virtual page.
-		ULONG64 rwBeginAddress = rip;
-		rwBeginAddress &= ~0xfff;
-		rwBeginAddress -= 0x1000;
+		// find syscall page.
+		vmStartAddress = rip;     // %rip: near 16xx, round up.
+		vmStartAddress &= ~0xfff;
+		vmStartAddress -= 0x1000;
 
-		vmStartAddress = rwBeginAddress;
+		static CHAR vmbuf[0x4000];
 
 		// start driver.
 		HANDLE hDriver = driver_Load();
 
 		if (hDriver == INVALID_HANDLE_VALUE) {
-			panic("CreateFileÊ§°Ü¡£", GetLastError());
+			panic("CreateFileÊ§°Ü¡£");
 			return;
 		}
 
-		static CHAR vmbuf[8192];
-		memset(vmbuf, 0, 8192);
-		bool found_rip = false;
+		// read memory.
+		if (!driver_ReadVM(hDriver, (HANDLE)pid, vmbuf, (PVOID)vmStartAddress)) {
+			panic("driver_ReadVMÊ§°Ü¡£");
+			driver_Unload(hDriver);
+			return;
+		}
+		memcpy(original_vm, vmbuf, 0x4000);
 
-		// load pages around rip.
-		for (auto bias = 0; bias < 4; bias++) {
+		// find & set offset0 to syscall 0.
+		ULONG offset0 = 0;
 
-			bias % 2 ? rwBeginAddress += 0x1000 * bias : rwBeginAddress -= 0x1000 * bias;
-
-
-			// read memory.
-			if (!driver_ReadVM(hDriver, (HANDLE)pid, vmbuf, (PVOID)rwBeginAddress)) { 
-				panic("driver_ReadVMÊ§°Ü¡£");
-				driver_Unload(hDriver);
-				return;
+		// syscall traits: 4c 8b d1 b8 ?? 00 00 00
+		bool found = false;
+		for (; offset0 < 0x4000 - 32 /* buf sz - bytes to write */; offset0++) {
+			if (vmbuf[offset0] == '\x4c' &&
+				vmbuf[offset0 + 1] == '\x8b' &&
+				vmbuf[offset0 + 2] == '\xd1' &&
+				vmbuf[offset0 + 3] == '\xb8' &&
+				vmbuf[offset0 + 5] == '\x00' &&
+				vmbuf[offset0 + 6] == '\x00' &&
+				vmbuf[offset0 + 7] == '\x00') {
+				found = true;
+				break;
 			}
-			memcpy(original_vm, vmbuf, 8192);
+		}
 
+		if (!found) {
+			driver_Unload(hDriver);
+			return;
+		}
 
-			// find mem trait (@Ntdll!NtDelayExecution)
-			ULONG64 offset = 0;
-			bool found = false;
+		offset0 -= 0x20 * *(ULONG*)((ULONG64)vmbuf + offset0 + 4);
 
-			if (OS_Version == WIN_10) {
-				for (; offset < 8192 - 32 /* buf sz - bytes to write */; offset++) {
-					if (vmbuf[offset] == '\x4c' &&
-						vmbuf[offset + 1] == '\x8b' &&
-						vmbuf[offset + 2] == '\xd1' &&
-						vmbuf[offset + 3] == '\xb8' &&
-						vmbuf[offset + 4] == '\x34' &&
-						vmbuf[offset + 5] == '\x00' &&
-						vmbuf[offset + 6] == '\x00' &&
-						vmbuf[offset + 7] == '\x00') {
-						found = true;
-						break;
-					}
-				}
-			} else { // if WIN_7
-				for (; offset < 8192 - 32 /* buf sz - bytes to write */; offset++) {
-					if (vmbuf[offset] == '\x4c' &&
-						vmbuf[offset + 1] == '\x8b' &&
-						vmbuf[offset + 2] == '\xd1' &&
-						vmbuf[offset + 3] == '\xb8' &&
-						vmbuf[offset + 4] == '\x31' &&
-						vmbuf[offset + 5] == '\x00' &&
-						vmbuf[offset + 6] == '\x00' &&
-						vmbuf[offset + 7] == '\x00') {
-						found = true;
-						break;
-					}
-				}
-			}
+		// patch calls, according to switches.
+		if (patchSwitches.patchDelayExecution) {
 			
-			if (!found) {
-				continue;
-			}
-
+			LONG offset = offset0 + 0x20 * 0x34;
+			CHAR patch_bytes[] = 
+				"\x49\xC7\xC2\xE0\x43\x41\xFF\x4C\x89\x12\x49\x89\xCA\xB8\x34\x00\x00\x00\x0F\x05\xC3";
 			/*
 				mov r10, 0xFFFFFFFFFF4143E0 ; 1250
 				mov qword ptr [rdx], r10
@@ -508,37 +485,86 @@ void memoryPatch(DWORD pid) {
 				syscall
 				ret
 			*/
-			CHAR patch_bytes[] =
-				"\x49\xC7\xC2\xE0\x43\x41\xFF\x4C\x89\x12\x49\x89\xCA\xB8\x34\x00\x00\x00\x0F\x05\xC3";
-			
+
 			if (OS_Version == WIN_7) {
+				offset = offset0 + 0x20 * 31;
 				patch_bytes[14] = '\x31';
 			}
 
 			LONG64 delay_param = (LONG64)-10000 * patchDelay;
 			memcpy(patch_bytes + 3, &delay_param, 4);
-			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes));
-
-
-			// write back.
-			if (!driver_WriteVM(hDriver, (HANDLE)pid, vmbuf, (PVOID)rwBeginAddress)) {
-				panic("driver_WriteVMÊ§°Ü¡£");
-				driver_Unload(hDriver);
-				return;
-			}
-
-			memcpy(commited_vm, vmbuf, 8192);
-
-			driver_Unload(hDriver);
-			found_rip = true;
-			break;
+			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
 		}
 
-		if (!found_rip) {
+		if (patchSwitches.patchResumeThread) {
+
+			LONG offset = offset0 + 0x20 * 0x52;
+			CHAR patch_bytes[] =
+				"\x49\x89\xCA\xB8\x52\x00\x00\x00\x0F\x05\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A\xC3";
+			/*
+				mov r10, rcx
+				mov eax, 0x52
+				syscall
+				mov r10, 0xFFFFFFFFFF4143E0
+				push r10
+				mov rdx, rsp
+				mov eax, 0x34
+				syscall
+				pop r10
+				ret
+			*/
+
+			if (OS_Version == WIN_7) {
+				offset = offset0 + 0x20 * 0x4f;
+				patch_bytes[4] = '\x4f';
+				patch_bytes[23] = '\x31';
+			}
+
+			LONG64 delay_param = (LONG64)-10000 * patchDelay;
+			memcpy(patch_bytes + 13, &delay_param, 4);
+			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+		}
+
+		if (patchSwitches.patchQueryVirtualMemory) {
+
+			LONG offset = offset0 + 0x20 * 0x23;
+			CHAR patch_bytes[] =
+				"\x49\x89\xCA\xB8\x23\x00\x00\x00\x0F\x05\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A\xC3";
+			/*
+				mov r10, rcx
+				mov eax, 0x23
+				syscall
+				mov r10, 0xFFFFFFFFFF4143E0
+				push r10
+				mov rdx, rsp
+				mov eax, 0x34
+				syscall
+				pop r10
+				ret
+			*/
+
+			if (OS_Version == WIN_7) {
+				offset = offset0 + 0x20 * 0x20;
+				patch_bytes[4] = '\x20';
+				patch_bytes[23] = '\x31';
+			}
+
+			LONG64 delay_param = (LONG64)-10000 * patchDelay;
+			memcpy(patch_bytes + 13, &delay_param, 4);
+			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+		}
+
+		// write back.
+		if (!driver_WriteVM(hDriver, (HANDLE)pid, vmbuf, (PVOID)vmStartAddress)) {
+			panic("driver_WriteVMÊ§°Ü¡£");
 			driver_Unload(hDriver);
 			return;
 		}
 
+
+		memcpy(commited_vm, vmbuf, 0x4000);
+
+		driver_Unload(hDriver);
 		patchPid = pid;
 	}
 
@@ -550,3 +576,13 @@ void memoryPatch(DWORD pid) {
 		}
 	}
 }
+
+//// out memory
+//FILE* fp = fopen("mem.txt", "w");
+//for (auto i = 0; i < 0x4000; i++) {
+//	fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
+//	if (i % 32 == 31) fprintf(fp, "\n");
+//}
+//fclose(fp);
+//driver_Unload(hDriver);
+//return;

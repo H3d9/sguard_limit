@@ -199,20 +199,22 @@ INT WINAPI WinMain(
 
 	CreateTray();
 
-	if (IDYES == MessageBox(0,
-		"注意：这是SGUARD限制器新模式的测试版本。\n"
-		"你应该把使用中遇到的问题提交至论坛。即使使用正常也建议将使用情况发送过来，以便统计。若测试无问题则后续会发布新版。\n"
-		"点击“是”打开论坛链接；点鸡“否”不打开。\n你也可以加交流群反馈使用问题：775176979",
-		VERSION " colg@H3d9", MB_YESNO)) {
-		ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);
-	}
-	
 	
 	if (!loadConfig()) {
+
+		if (IDYES == MessageBox(0,
+			"注意：这是SGUARD限制器的【测试版本】。你应该把使用中遇到的问题提交至论坛。\n\n"
+			"即使使用正常也建议将使用情况发送过来，以便统计。\n\n"
+			"你也可以加交流群反馈使用问题：775176979\n\n"
+			"点击“是”打开论坛链接；点鸡“否”不打开。\n\n",
+			VERSION " colg@H3d9", MB_YESNO)) {
+			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);
+		}
+
 		MessageBox(0,
 			"首次使用说明：\n"
-			"新增模式：Memory Patch\n"
-			"修复win7无法使用问题，以及加载驱动时“设备不存在”。\n"
+			"更新模式：MemPatch V1.1\n"
+			"新增多个位点，以尝试避免数据交互的延迟。\n"
 			"\n\n"
 			"【提示】双击右下角托盘图标，可以查看新版详细说明。",
 			VERSION " colg@H3d9", MB_OK);
