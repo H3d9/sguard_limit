@@ -1,6 +1,6 @@
 // Memory Patch（用户态模块）
 // 2021.10.4 雨
-// 2.2 复刻胡桃，开心。但是昨天吃坏肚子了，很疼。
+// 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
 #include <Windows.h>
 #include <tlhelp32.h>
 #include <UserEnv.h>
@@ -328,7 +328,7 @@ void memoryPatch(DWORD pid) {
 		memset(commited_vm, 0, 0x4000);
 
 		// wait a second..
-		for (auto i = 0; patchEnabled && i < 15; i++) {
+		for (auto i = 0; patchEnabled && i < 25; i++) {
 			if (pid != GetProcessID()) {
 				return;
 			}
@@ -451,7 +451,7 @@ void memoryPatch(DWORD pid) {
 
 		// syscall traits: 4c 8b d1 b8 ?? 00 00 00
 		bool found = false;
-		for (; offset0 < 0x4000 - 32 /* buf sz - bytes to write */; offset0++) {
+		for (; offset0 < 0x4000 - 0x20 /* buf sz - bytes to write */; offset0++) {
 			if (vmbuf[offset0] == '\x4c' &&
 				vmbuf[offset0 + 1] == '\x8b' &&
 				vmbuf[offset0 + 2] == '\xd1' &&
@@ -470,7 +470,7 @@ void memoryPatch(DWORD pid) {
 		}
 
 		offset0 -= 0x20 * *(ULONG*)((ULONG64)vmbuf + offset0 + 4);
-
+		
 		// patch calls, according to switches.
 		if (patchSwitches.patchDelayExecution) {
 			
@@ -487,7 +487,7 @@ void memoryPatch(DWORD pid) {
 			*/
 
 			if (OS_Version == WIN_7) {
-				offset = offset0 + 0x20 * 31;
+				offset = offset0 + 0x20 * 0x31;
 				patch_bytes[14] = '\x31';
 			}
 
