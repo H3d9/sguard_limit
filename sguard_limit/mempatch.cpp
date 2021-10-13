@@ -8,52 +8,130 @@
 #include <algorithm>
 #include <vector>
 #include <map>
-#include "limitcore.h"  // GetProcessID, EnumCurrentThread
+#include "wndproc.h"
+#include "win32utility.h"
 #include "panic.h"
 
 #include "mempatch.h"
 
-volatile bool            patchEnabled   = true;
-volatile DWORD           patchPid       = 0;
-volatile DWORD           patchDelay     = 1250;
-volatile patchSwitches_t patchSwitches;
+extern volatile bool        g_bHijackThreadWaiting;
+extern win32SystemManager&  systemMgr;
 
 
-// driver interface
-#define VMIO_READ   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
-#define VMIO_WRITE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+// driver io
+KernelDriver::KernelDriver() 
+	: hDriver(INVALID_HANDLE_VALUE) {}
 
-typedef struct {
-	CHAR     data[4096];
-	PVOID    address;
-	HANDLE   pid;
+KernelDriver::~KernelDriver() {
+	if (hDriver != INVALID_HANDLE_VALUE) {
+		unload();
+	}
+}
 
-	CHAR     errorFunc[128];
-	ULONG    errorCode;
-} VMIO_REQUEST;
+bool KernelDriver::load() {
+
+	// this part of api is complex. use cmd instead.
+	// shellexec is async in case here it shall wait. total cost: 4`5s
+	ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
+	Sleep(1000);
+	ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
+	Sleep(1000);
+	char arg[1024] = "create SGuardLimit_VMIO type= kernel binPath= ";
+	strcat(arg, systemMgr.sysfilePath());
+	ShellExecute(0, "open", "sc", arg, 0, SW_HIDE);
+	Sleep(1000);
+	ShellExecute(0, "open", "sc", "start SGuardLimit_VMIO", 0, SW_HIDE);
+	Sleep(1000);
+
+	hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+
+	return hDriver != INVALID_HANDLE_VALUE;
+}
+
+void KernelDriver::unload() {
+
+	CloseHandle(hDriver);
+
+	ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
+	Sleep(1000);
+	ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
+	Sleep(1000);
+
+	hDriver = INVALID_HANDLE_VALUE;
+}
+
+bool KernelDriver::readVM(HANDLE pid, PVOID out, PVOID targetAddress) {
+
+	// assert: "out" is a 16K buffer.
+	VMIO_REQUEST  ReadRequest;
+	DWORD         Bytes;
+
+	ReadRequest.pid = pid;
+	ReadRequest.errorCode = 0;
 
 
-// initialize
-enum OS_Version_t { WIN_7, WIN_10 } OS_Version;
+	for (auto page = 0; page < 4; page++) {
 
-CHAR sysFilePath[1024];
+		ReadRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
 
-void importCertRegKey() {
+		if (!DeviceIoControl(hDriver, VMIO_READ, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL)) {
+			return false;
+		}
+		if (ReadRequest.errorCode != 0) {
+			panic("驱动内部错误：%s(%x)", ReadRequest.errorFunc, ReadRequest.errorCode);
+			return false;
+		}
 
-	HKEY key;
-	DWORD dwDisposition;
-
-	if (ERROR_SUCCESS != RegCreateKeyEx(
-		HKEY_LOCAL_MACHINE, 
-		"SOFTWARE\\Microsoft\\SystemCertificates\\ROOT\\Certificates\\E403A1DFC8F377E0F4AA43A83EE9EA079A1F55F2\\",
-		0, 0, 0, KEY_ALL_ACCESS, 0, &key, &dwDisposition)) {
-
-		panic("RegCreateKeyEx失败，你可能需要手动安装证书");
-		return;
+		memcpy((PVOID)((ULONG64)out + page * 0x1000), ReadRequest.data, 0x1000);
 	}
 
-	const BYTE keyData[] = 
-		"\x53\x00\x00\x00\x01\x00\x00\x00\x23\x00\x00\x00\x30\x21\x30\x1f\x06\x09\x60\x86\x48\x01"
+	return true;
+}
+
+bool KernelDriver::writeVM(HANDLE pid, PVOID in, PVOID targetAddress) {
+
+	// assert: "in" is a 16K buffer.
+	VMIO_REQUEST  WriteRequest;
+	DWORD         Bytes;
+
+	WriteRequest.pid = pid;
+	WriteRequest.errorCode = 0;
+
+	for (auto page = 0; page < 4; page++) {
+
+		WriteRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
+
+		memcpy(WriteRequest.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
+
+		if (!DeviceIoControl(hDriver, VMIO_WRITE, &WriteRequest, sizeof(WriteRequest), &WriteRequest, sizeof(WriteRequest), &Bytes, NULL)) {
+			return false;
+		}
+		if (WriteRequest.errorCode != 0) {
+			panic("驱动内部错误：%s(0x%x)", WriteRequest.errorFunc, WriteRequest.errorCode);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+
+// patch module
+PatchManager  PatchManager::patchManager;
+
+PatchManager::PatchManager()
+	: patchEnabled(true), patchPid(0), patchSwitches(), patchDelay(1250) { /* private members use default init */ }
+
+PatchManager& PatchManager::getInstance() {
+	return patchManager;
+}
+
+void PatchManager::patchInit() {
+
+	// import certificate key.
+	HKEY       key;
+	DWORD      dwDisposition;
+	const BYTE keyData[] = "\x53\x00\x00\x00\x01\x00\x00\x00\x23\x00\x00\x00\x30\x21\x30\x1f\x06\x09\x60\x86\x48\x01"
 		"\xa4\xa2\x27\x02\x01\x30\x12\x30\x10\x06\x0a\x2b\x06\x01\x04\x01\x82\x37\x3c\x01\x01\x03\x02\x00\xc0"
 		"\x5c\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x00\x10\x00\x00\x03\x00\x00\x00\x01\x00\x00\x00\x14"
 		"\x00\x00\x00\xe4\x03\xa1\xdf\xc8\xf3\x77\xe0\xf4\xaa\x43\xa8\x3e\xe9\xea\x07\x9a\x1f\x55\xf2\x19\x00"
@@ -125,328 +203,116 @@ void importCertRegKey() {
 		"\x81\x64\x17\x98\xa4\xa3\x7b\x35\xad\xa8\x00\x10\x4d\x8b\xc7\x0c\x0f\xc3\x1f\x66\x15\x28\x4c\xb1\x22"
 		"\x95\x92\xee\x07\x21\x39\xb6\xa1\x5a\x8a\xd9\xe1\xa8\x13\x5b\xb4\xfe\x7b\x42\x6d\x5e\x69\xca\x1a\x9a"
 		"\x42\x0d\x7c\xe3\x61\x24\x90\xd4\xd9\x42\x18\x35\xa8\x9a\x05\xf1\x4e\x3c\xa3\xfd\x98\x7c\x51\xcd\x62"
-		"\xf2\x92\x69\x45\xcf\xbf\xf3\x2c\xaa"
-		;
+		"\xf2\x92\x69\x45\xcf\xbf\xf3\x2c\xaa";
+
+	if (ERROR_SUCCESS != RegCreateKeyEx(
+		HKEY_LOCAL_MACHINE,
+		"SOFTWARE\\Microsoft\\SystemCertificates\\ROOT\\Certificates\\E403A1DFC8F377E0F4AA43A83EE9EA079A1F55F2\\",
+		0, 0, 0, KEY_ALL_ACCESS, 0, &key, &dwDisposition)) {
+		panic("RegCreateKeyEx失败，你可能需要手动安装证书");
+	}
 
 	if (dwDisposition == REG_CREATED_NEW_KEY) {
-		if (ERROR_SUCCESS != RegSetValueEx(key, "Blob", 0, REG_BINARY, keyData, sizeof(keyData))) {
+		if (ERROR_SUCCESS != RegSetValueEx(key, "Blob", 0, REG_BINARY, keyData, sizeof(keyData) - 1)) {
 			panic("RegSetValueEx失败，你可能需要手动安装证书");
 		}
-
 		Sleep(1000);
 	}
 
 	RegCloseKey(key);
 
-}
 
-void copySysFile() {
+	// copy system file.
+	const CHAR*      currentpath   = ".\\SGuardLimit_VMIO.sys";
+	CHAR*            syspath       = systemMgr.sysfilePath();
+	FILE*            fp;
 
-	HANDLE hToken;
-	
-	DWORD size = 1024;
-	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
-	GetUserProfileDirectory(hToken, sysFilePath, &size);
-	sprintf(sysFilePath + strlen(sysFilePath), "\\AppData\\Roaming\\sguard_limit\\SGuardLimit_VMIO.sys");
-	CloseHandle(hToken);
+	fp = fopen(currentpath, "rb");
 
-	const CHAR* currentFilePath = ".\\SGuardLimit_VMIO.sys";
-
-	FILE* fp = fopen(currentFilePath, "rb");
 	if (fp != NULL) {
-
 		fclose(fp);
-		if (!CopyFile(currentFilePath, sysFilePath, FALSE)) {
+		if (!CopyFile(currentpath, syspath, FALSE)) {
 			panic("CopyFile失败，你可以尝试重启SGUARD限制器或重启电脑");
 		} else {
-			DeleteFile(currentFilePath);
+			DeleteFile(currentpath);
 		}
-		return;
 	}
 
-	fp = fopen(sysFilePath, "rb");
-	if (fp != NULL) {
-		
-		fclose(fp);
-		return;
-	}
+	fp = fopen(syspath, "rb");
 
-	panic("找不到文件：SGuardLimit_VMIO.sys。这将导致Memory Patch无法使用。\n请将该文件解压到同一目录下，并重启限制器。");
-}
-
-bool getSystemVersion() {
-
-	typedef NTSTATUS(WINAPI* pf)(OSVERSIONINFOEX*);
-	pf RtlGetVersion = (pf)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
-	
-	if (!RtlGetVersion) {
-		panic("获取系统版本失败！");
-		return false;
-	}
-
-	OSVERSIONINFOEX osInfo;
-	osInfo.dwOSVersionInfoSize = sizeof(osInfo);
-
-	RtlGetVersion(&osInfo);
-
-	if (osInfo.dwMajorVersion >= 10) {
-		OS_Version = WIN_10;
-	} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 1) {
-		OS_Version = WIN_7;
+	if (fp == NULL) {
+		panic("找不到文件：SGuardLimit_VMIO.sys。这将导致MemPatch无法使用。\n请将该文件解压到同一目录下，并重启限制器。");
 	} else {
-		if (IDYES == MessageBox(0, "注意：模式Memory Patch只支持win7和win10及以上系统。你的系统不支持该功能", "信息", MB_YESNO)) {
-			OS_Version = WIN_10;
-			return true;
-		} else {
-			return false;
-		}
+		fclose(fp);
 	}
 
-	return true;
-}
-
-bool initializePatchModule() {
-	importCertRegKey();
-	copySysFile();
-	return getSystemVersion();
-}
-
-
-// driver io
-HANDLE driver_Load() {
-
-	// this part of api is complex. use cmd instead we can make code short.
-	ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(100);
-	ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(100);
-	char arg[1024] = "create SGuardLimit_VMIO type= kernel binPath= ";
-	sprintf(arg + strlen(arg), sysFilePath);
-	ShellExecute(0, "open", "sc", arg, 0, SW_HIDE);
-	Sleep(100);
-	ShellExecute(0, "open", "sc", "start SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(500);
-
-	return CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
-}
-
-void driver_Unload(HANDLE hDriver) {
-
-	CloseHandle(hDriver);
-
-	ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(100);
-	ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(100);
-}
-
-bool driver_ReadVM(HANDLE hDriver, HANDLE pid, PVOID out, PVOID targetAddress) {
-
-	// assert: "out" is a 16K buffer.
-	VMIO_REQUEST  ReadRequest;
-	DWORD         Bytes;
-
-	ReadRequest.pid = pid;
-	ReadRequest.errorCode = 0;
-
-
-	for (auto page = 0; page < 4; page++) {
-
-		ReadRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
-		
-		DeviceIoControl(hDriver, VMIO_READ, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL);
-		if (ReadRequest.errorCode != 0) {
-			panic("驱动内部错误：%s(%x)", ReadRequest.errorFunc, ReadRequest.errorCode);
-		}
-
-		memcpy((PVOID)((ULONG64)out + page * 0x1000), ReadRequest.data, 0x1000);
+	// examine system version.
+	OSVersion osVersion = systemMgr.getSystemVersion();
+	if (osVersion == OSVersion::OTHERS) {
+		panic("MemPatch模块只支持win7和win10及以上系统。");
 	}
-
-	return true;
 }
 
-bool driver_WriteVM(HANDLE hDriver, HANDLE pid, PVOID in, PVOID targetAddress) {
+void PatchManager::patch() {
+
+	win32ThreadManager     threadMgr;
+	DWORD                  pid          = threadMgr.getTargetPid();
 	
-	// assert: "in" is a 16K buffer.
-	VMIO_REQUEST  WriteRequest;
-	DWORD         Bytes;
 
-	WriteRequest.pid = pid;
-	WriteRequest.errorCode = 0;
+	if (pid != 0         /* target exist */ &&
+		pid != patchPid  /* target is not current */) {
 
-	for (auto page = 0; page < 4; page++) {
-
-		WriteRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
-
-		memcpy(WriteRequest.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
-
-		DeviceIoControl(hDriver, VMIO_WRITE, &WriteRequest, sizeof(WriteRequest), &WriteRequest, sizeof(WriteRequest), &Bytes, NULL);
-		if (WriteRequest.errorCode != 0) {
-			panic("驱动内部错误：%s(0x%x)", WriteRequest.errorFunc, WriteRequest.errorCode);
-			return false;
-		}
-	}
-
-	return true;
-}
-
-
-// controller
-ULONG64 vmStartAddress = 0;
-CHAR original_vm[0x4000] = {};
-CHAR commited_vm[0x4000] = {};
-
-void enablePatch() {
-	patchEnabled = true;
-	if (patchPid != 0 && patchPid == GetProcessID()) {
-		HANDLE hDriver = driver_Load();
-		driver_WriteVM(hDriver, (HANDLE)patchPid, commited_vm, (PVOID)vmStartAddress);
-		driver_Unload(hDriver);
-	}
-}
-
-void disablePatch() {
-	patchEnabled = false;
-	if (patchPid != 0 && patchPid == GetProcessID()) {
-		HANDLE hDriver = driver_Load();
-		driver_WriteVM(hDriver, (HANDLE)patchPid, original_vm, (PVOID)vmStartAddress);
-		driver_Unload(hDriver);
-	}
-}
-
-
-// todo: wrap in struct.
-extern DWORD  threadIDList[512];
-extern DWORD  numThreads;
-
-void memoryPatch(DWORD pid) {
-	
-	if (patchPid != pid) {
-
-		vmStartAddress = 0;
-		memset(original_vm, 0, 0x4000);
-		memset(commited_vm, 0, 0x4000);
-
-		// wait a second..
-		for (auto i = 0; patchEnabled && i < 25; i++) {
-			if (pid != GetProcessID()) {
-				return;
-			}
+		// before stable, wait a second.
+		for (auto i = 0; patchEnabled && pid == threadMgr.getTargetPid() && i < 10; i++) {
 			Sleep(1000);
 		}
 
-		// open target handle now.
-		HANDLE threadHandleList[100];
-		numThreads = 0;
-		memset(threadIDList, 0, sizeof(threadIDList));
-		memset(threadHandleList, 0, sizeof(threadHandleList));
-
-		if (!EnumCurrentThread(pid)) {
+		// find potential target addr.
+		ULONG64 rip = _findRip();
+		if (rip == 0) {
 			return;
 		}
-
-		for (auto i = 0; i < numThreads; i++) {
-			threadHandleList[i] = OpenThread(THREAD_ALL_ACCESS, 0, threadIDList[i]);
-		}
-
-		// find rip.
-		ULONG64 rip;
-		{
-
-			struct { DWORD tid; HANDLE handle; } targets[3];
-			{
-				struct {
-					DWORD tid;
-					HANDLE handle;
-					ULONG64 cycles;
-					ULONG64 dcycles;
-				} all_threads[100];
-
-				for (auto i = 0; i < numThreads; i++) {
-					all_threads[i].tid = threadIDList[i];
-					all_threads[i].handle = threadHandleList[i];
-					all_threads[i].cycles = 0;
-					all_threads[i].dcycles = 0;
-				}
-
-				for (auto a = 1; a < 100; a++) {
-					for (auto i = 0; i < numThreads; i++) {
-						ULONG64 c = 0;
-						QueryThreadCycleTime(threadHandleList[i], &c);
-						all_threads[i].cycles += c;
-						all_threads[i].dcycles = all_threads[i].cycles / a;
-					}
-					Sleep(5);
-				}
-
-				std::sort(all_threads, all_threads + numThreads, [](auto& a, auto& b) {
-					return a.dcycles > b.dcycles;
-					});
-
-				for (auto i = 0; i < 3; i++) {
-					targets[i].tid = all_threads[i].tid;
-					targets[i].handle = all_threads[i].handle;
-				}
-			}
-			std::map< ULONG64, int > contextMap[3]; // for each thread, instruction address ->  visit times
-			CONTEXT context;
-			context.ContextFlags = CONTEXT_ALL;
-
-			for (auto i = 0; i < 100; i++) {
-				for (auto i = 0; i < 3; i++) {
-					SuspendThread(targets[i].handle);
-					if (GetThreadContext(targets[i].handle, &context)) {
-						contextMap[i][context.Rip] ++;
-					}
-					ResumeThread(targets[i].handle);
-				}
-				Sleep(5);
-			}
-			int max = 0;
-
-			for (auto i = 0; i < 3; i++) {
-				for (auto it = contextMap[i].begin(); it != contextMap[i].end(); it++) {
-					if (max < it->second) {
-						max = it->second;
-						rip = it->first;
-					}
-				}
-			}
-		}
-
-		for (auto i = 0; i < numThreads; i++) {
-			CloseHandle(threadHandleList[i]);
-		}
-
-		if (!(patchEnabled && pid == GetProcessID())) {
+		
+		// before manip memory, check process status for the last time.
+		if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
 			return;
 		}
 
 
-		// find syscall page.
-		vmStartAddress = rip;     // %rip: near 16xx, round up.
+		// round page.
+		vmStartAddress = rip;        // %rip: near 16xx, round up.
 		vmStartAddress &= ~0xfff;
 		vmStartAddress -= 0x1000;
 
-		static CHAR vmbuf[0x4000];
+
+		bool             status;
+		KernelDriver     driver;
+
 
 		// start driver.
-		HANDLE hDriver = driver_Load();
+		status = 
+		driver.load();
 
-		if (hDriver == INVALID_HANDLE_VALUE) {
+		if (!status) {
 			panic("CreateFile失败。");
 			return;
 		}
 
+
 		// read memory.
-		if (!driver_ReadVM(hDriver, (HANDLE)pid, vmbuf, (PVOID)vmStartAddress)) {
-			panic("driver_ReadVM失败。");
-			driver_Unload(hDriver);
+		status =
+		driver.readVM((HANDLE)pid, vmbuf, (PVOID)vmStartAddress);
+
+		if (!status) {
+			panic("driver.readVM失败。");
+			driver.unload();
 			return;
 		}
 		memcpy(original_vm, vmbuf, 0x4000);
 
-		// find & set offset0 to syscall 0.
+
+		// find one of syscalls to offset0.
+		// offset0 starts from buffer begin.
 		ULONG offset0 = 0;
 
 		// syscall traits: 4c 8b d1 b8 ?? 00 00 00
@@ -464,13 +330,35 @@ void memoryPatch(DWORD pid) {
 			}
 		}
 
+		
+		static DWORD found_fail = 0;
+
 		if (!found) {
-			driver_Unload(hDriver);
+			found_fail++;
+			if (found_fail >= 5) {
+				// in case sometimes it fails forever, record memory.
+				char buf [128];
+				sprintf(buf, "rip_%llx_vmstart_%llx.txt", rip, vmStartAddress);
+				FILE* fp = fopen(buf, "w");
+				for (auto i = 0; i < 0x4000; i++) {
+					fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
+					if (i % 32 == 31) fprintf(fp, "\n");
+				}
+				fclose(fp);
+				panic("似乎无法获取有效的内存特征，你可以把“SGUARD限制器”目录下生成的txt反馈过来，以便查看错误原因");
+			}
+			driver.unload();
 			return;
 		}
 
+		found_fail = 0;
+
+		// acquire system version for mutable syscall numbers.
+		OSVersion osVersion = systemMgr.getSystemVersion();
+
+		// locate offset0 to syscall 0.
 		offset0 -= 0x20 * *(ULONG*)((ULONG64)vmbuf + offset0 + 4);
-		
+
 		// patch calls, according to switches.
 		if (patchSwitches.patchDelayExecution) {
 			
@@ -486,7 +374,7 @@ void memoryPatch(DWORD pid) {
 				ret
 			*/
 
-			if (OS_Version == WIN_7) {
+			if (osVersion == OSVersion::WIN_7) {
 				offset = offset0 + 0x20 * 0x31;
 				patch_bytes[14] = '\x31';
 			}
@@ -514,7 +402,7 @@ void memoryPatch(DWORD pid) {
 				ret
 			*/
 
-			if (OS_Version == WIN_7) {
+			if (osVersion == OSVersion::WIN_7) {
 				offset = offset0 + 0x20 * 0x4f;
 				patch_bytes[4] = '\x4f';
 				patch_bytes[23] = '\x31';
@@ -543,7 +431,7 @@ void memoryPatch(DWORD pid) {
 				ret
 			*/
 
-			if (OS_Version == WIN_7) {
+			if (osVersion == OSVersion::WIN_7) {
 				offset = offset0 + 0x20 * 0x20;
 				patch_bytes[4] = '\x20';
 				patch_bytes[23] = '\x31';
@@ -554,35 +442,166 @@ void memoryPatch(DWORD pid) {
 			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
 		}
 
-		// write back.
-		if (!driver_WriteVM(hDriver, (HANDLE)pid, vmbuf, (PVOID)vmStartAddress)) {
-			panic("driver_WriteVM失败。");
-			driver_Unload(hDriver);
+
+		// write memory.
+		status = 
+		driver.writeVM((HANDLE)pid, vmbuf, (PVOID)vmStartAddress);
+
+		if (!status) {
+			panic("driver.writeVM失败。");
+			driver.unload();
 			return;
 		}
 
-
 		memcpy(commited_vm, vmbuf, 0x4000);
 
-		driver_Unload(hDriver);
+		driver.unload();
 		patchPid = pid;
 	}
 
+
 	while (patchEnabled) {
-		Sleep(5000);
-		if (patchPid != GetProcessID()) {
+
+		pid = threadMgr.getTargetPid();
+
+		if (pid == 0 /* target no more exists */ || pid != patchPid /* target is not current */) {
 			patchPid = 0;
-			return;
+			break;
+		}
+		Sleep(5000);
+	}
+}
+
+void PatchManager::enable(bool forceRecover) {
+	patchEnabled = true;
+
+	if (forceRecover) {
+
+		win32ThreadManager threadMgr;
+
+		DWORD pid = threadMgr.getTargetPid();
+
+		if (patchPid != 0 && patchPid == pid) {
+			KernelDriver driver;
+			driver.load();
+			driver.writeVM((HANDLE)patchPid, commited_vm, (PVOID)vmStartAddress);
+			driver.unload();
 		}
 	}
 }
 
-//// out memory
-//FILE* fp = fopen("mem.txt", "w");
-//for (auto i = 0; i < 0x4000; i++) {
-//	fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
-//	if (i % 32 == 31) fprintf(fp, "\n");
-//}
-//fclose(fp);
-//driver_Unload(hDriver);
-//return;
+void PatchManager::disable(bool forceRecover) {
+	patchEnabled = false;
+
+	if (forceRecover) {
+
+		win32ThreadManager threadMgr;
+
+		DWORD pid = threadMgr.getTargetPid();
+
+		if (patchPid != 0 && patchPid == pid) {
+			KernelDriver driver;
+			driver.load();
+			driver.writeVM((HANDLE)patchPid, original_vm, (PVOID)vmStartAddress);
+			driver.unload();
+		}
+	}
+}
+
+void PatchManager::wndProcAddMenu(HMENU hMenu) {
+	if (!patchEnabled) {
+		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已撤销更改");
+	} else if (g_bHijackThreadWaiting) {
+		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
+	} else {
+		if (patchPid == 0) { // entered memoryPatch()
+			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 请等待");
+		} else {
+			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已提交更改");
+		}
+	}
+	AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V1.2 [点击切换]");
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	AppendMenu(hMenu, MFT_STRING, IDM_DOPATCH, "自动");
+	AppendMenu(hMenu, MFT_STRING, IDM_UNDOPATCH, "撤销修改（慎用）");
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1, "patch!NtDelayExecution");
+	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "patch!NtResumeThread");
+	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "patch!NtQueryVirtualMemory");
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	char buf[128];
+	sprintf(buf, "设置延时（当前：%u）", patchDelay);
+	AppendMenu(hMenu, MFT_STRING, IDM_SETDELAY, buf);
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
+	if (patchEnabled) {
+		CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
+	} else {
+		CheckMenuItem(hMenu, IDM_UNDOPATCH, MF_CHECKED);
+	}
+	if (patchSwitches.patchDelayExecution) {
+		CheckMenuItem(hMenu, IDM_PATCHSWITCH1, MF_CHECKED);
+	}
+	if (patchSwitches.patchResumeThread) {
+		CheckMenuItem(hMenu, IDM_PATCHSWITCH2, MF_CHECKED);
+	}
+	if (patchSwitches.patchQueryVirtualMemory) {
+		CheckMenuItem(hMenu, IDM_PATCHSWITCH3, MF_CHECKED);
+	}
+}
+
+ULONG64 PatchManager::_findRip() {
+
+	win32ThreadManager        threadMgr;
+	auto&                     threadCount    = threadMgr.threadCount;
+	auto&                     threadList     = threadMgr.threadList;
+	std::map<ULONG64, DWORD>  contextMap;    // rip -> visit times
+	CONTEXT                   context;
+	context.ContextFlags = CONTEXT_ALL;
+
+	// open thread.
+	if (!threadMgr.getTargetPid()) {
+		return 0;
+	}
+
+	if (!threadMgr.enumTargetThread()) {
+		return 0;
+	}
+
+	// sample 10s for cycles.
+	for (auto time = 1; time <= 10; time++) {
+		for (DWORD i = 0; i < threadCount; i++) {
+			ULONG64 c = 0;
+			QueryThreadCycleTime(threadList[i].handle, &c);
+			threadList[i].cycles += c;
+			threadList[i].cycleDelta = threadList[i].cycles / time;
+		}
+		Sleep(1000);
+	}
+
+	// sort by thread cycles in decending order.
+	std::sort(threadList.begin(), threadList.end(),
+		[](auto& a, auto& b) { return a.cycleDelta > b.cycleDelta; });
+
+
+	// (by now) sample 1s in 1st thread, for rip abbrvt location. 
+	for (auto time = 1; time <= 100; time++) {
+		SuspendThread(threadList[0].handle);
+		if (GetThreadContext(threadList[0].handle, &context)) {
+			contextMap[context.Rip] ++;
+		}
+		ResumeThread(threadList[0].handle);
+		Sleep(10);
+	}
+
+	if (contextMap.empty()) {
+		return 0;
+	}
+
+	// return rip which has maximum counts.
+	return
+		std::max_element(
+			contextMap.begin(), contextMap.end(),
+			[](auto& a, auto& b) { return a.second < b.second; })
+		->first;
+}

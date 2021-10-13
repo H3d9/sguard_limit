@@ -3,71 +3,32 @@
 #include <Windows.h>
 #include <tlhelp32.h>
 #include <process.h>
-#include <unordered_map>
-#include "limitcore.h"  // GetProcessID
+#include "win32utility.h"
+#include "wndproc.h"
 
 #include "tracecore.h"
 
-volatile bool               lockEnabled         = true;
-volatile DWORD              lockMode            = 0;
-volatile lockedThreads_t    lockedThreads[3]    = {};
-volatile DWORD              lockPid             = 0;
-volatile DWORD              lockRound           = 95;
+extern volatile bool  g_bHijackThreadWaiting;
 
 
-struct threadinfo {
-	HANDLE    handle        = NULL;
-	ULONG64   cycles        = 0;
-	ULONG64   cycleDelta    = 0;
-	int       dieCount      = 0;
-};
+// Trace module
+TraceManager  TraceManager::traceManager;
 
-using map = std::unordered_map<DWORD, threadinfo>;  // hashmap: tid -> {...}
-using mapIt = decltype(map().begin());
+TraceManager::TraceManager() 
+	: lockEnabled(true), lockMode(0), lockRound(95), lockPid(0) { /* lockedThreads use default init */ }
 
-
-static bool EnumThreadInfo(DWORD pid, map* m) {
-	
-	THREADENTRY32 te;
-	te.dwSize = sizeof(THREADENTRY32);
-
-	DWORD currentTids[512], tidCount = 0;
-	ZeroMemory(currentTids, sizeof(currentTids));
-
-	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-
-	// add new threads to map. On (n<=1e5)
-	for (BOOL next = Thread32First(hSnapshot, &te); next; next = Thread32Next(hSnapshot, &te)) {
-		if (te.th32OwnerProcessID == pid) {
-			DWORD tid = currentTids[tidCount++] = te.th32ThreadID;
-			if (m->count(tid) == 0) {
-				(*m) [tid] = threadinfo();
-			}
-		}
-	}
-
-	// remove expired threads. On^2 (n<=20)
-	for (auto it = m->begin(); it != m->end();) {
-		bool found = false;
-		for (DWORD i = 0; i < tidCount; i++) {
-			if (it->first == currentTids[i]) {
-				found = true;
-				break;
-			}
-		}
-		if (found) ++it;
-		else it = m->erase(it);
-	}
-
-	CloseHandle(hSnapshot);
-
-	return !m->empty();
+TraceManager& TraceManager::getInstance() {
+	return traceManager;
 }
 
+void TraceManager::chase() {   // trace maybe, but i like that word.
 
-void threadChase(DWORD pid) {   // Chase? trace maybe, but i like that word.
+	win32ThreadManager     threadMgr;
+	DWORD                  pid          = threadMgr.getTargetPid();
 
-	if (lockPid != pid) {
+
+	if (pid != 0        /* target exist */ &&
+		pid != lockPid  /* target is not current */ ) {
 
 		map threadMap;
 		mapIt m1, m2, m3;
@@ -80,13 +41,15 @@ void threadChase(DWORD pid) {   // Chase? trace maybe, but i like that word.
 		}
 
 		// wait for preliminary stablize.
-		Sleep(10000);
+		for (auto i = 0; lockEnabled && i < 10; i++) {
+			Sleep(1000);
+		}
 
-		// identify the biggest metal crusher by sampling 30 secs.
-		for (auto time = 0; lockEnabled && time < 30; time++) {
+		// identify the biggest metal crusher by sampling 20 secs.
+		for (auto time = 0; lockEnabled && time < 20; time++) {
 
 			// each loop we re-scan all threads in target.
-			if (!EnumThreadInfo(pid, &threadMap)) {
+			if (!_enumThreadInfo(pid, &threadMap)) {
 				break;
 			}
 
@@ -130,7 +93,7 @@ void threadChase(DWORD pid) {   // Chase? trace maybe, but i like that word.
 		}
 
 		// wait till system is stable.
-		for (auto i = 0; lockEnabled && !threadMap.empty() && i < 30; i++) {
+		for (auto i = 0; lockEnabled && i < 10; i++) {
 			Sleep(1000);
 		}
 
@@ -143,13 +106,18 @@ void threadChase(DWORD pid) {   // Chase? trace maybe, but i like that word.
 		// we use the same methods as above.
 		for (auto time = 0; lockEnabled && time < 15; time++) {
 
-			if (!EnumThreadInfo(pid, &threadMap)) {
+			if (!_enumThreadInfo(pid, &threadMap)) {
 				break;
 			}
 
 			// diff: remove thread which have been identified before.
 			if (lockedThreads[0].tid) {
 				threadMap.erase(const_cast<const DWORD&>(lockedThreads[0].tid));
+			}
+
+			// target have less than 3 thread, break out.
+			if (threadMap.size() <= 1) {
+				break;
 			}
 
 			for (auto it = threadMap.begin(); it != threadMap.end(); ++it) {
@@ -197,13 +165,15 @@ void threadChase(DWORD pid) {   // Chase? trace maybe, but i like that word.
 			Sleep(1000);
 		}
 
-		if (lockEnabled && !threadMap.empty() && m2->second.dieCount >= 7) {
-			lockedThreads[1].tid = m2->first;
-			lockedThreads[1].handle = m2->second.handle;
-		}
-		if (lockEnabled && !threadMap.empty() && m3->second.dieCount >= 7) {
-			lockedThreads[2].tid = m3->first;
-			lockedThreads[2].handle = m3->second.handle;
+		if (!(threadMap.size() <= 1)) {
+			if (lockEnabled && !threadMap.empty() && m2->second.dieCount >= 7) {
+				lockedThreads[1].tid = m2->first;
+				lockedThreads[1].handle = m2->second.handle;
+			}
+			if (lockEnabled && !threadMap.empty() && m3->second.dieCount >= 7) {
+				lockedThreads[2].tid = m3->first;
+				lockedThreads[2].handle = m3->second.handle;
+			}
 		}
 
 		// release useless handles.
@@ -228,8 +198,10 @@ void threadChase(DWORD pid) {   // Chase? trace maybe, but i like that word.
 	// userwait: exit if process is killed or user interactive.
 	while (lockEnabled) {
 
-		if (lockPid != GetProcessID()) {
-			lockPid = 0;
+		pid = threadMgr.getTargetPid();
+
+		if (pid == 0 /* target no more exists */ || pid != lockPid /* target is not current */) {
+			lockPid = 0;  
 			break;
 		}
 
@@ -312,4 +284,130 @@ void threadChase(DWORD pid) {   // Chase? trace maybe, but i like that word.
 			break;
 		}
 	}
+}
+
+void TraceManager::enable() {
+	lockEnabled = true;
+}
+
+void TraceManager::disable() {
+	lockEnabled = false;
+	for (auto i = 0; i < 3; i++) {
+		if (lockedThreads[i].locked) {
+			ResumeThread(lockedThreads[i].handle);
+			lockedThreads[i].locked = false;
+		}
+	}
+}
+
+void TraceManager::setMode(DWORD mode) {
+	if (mode >= 0 && mode <= 3) {
+		lockEnabled = true;
+		lockMode = mode;
+	}
+}
+
+void TraceManager::wndProcAddMenu(HMENU hMenu) {
+
+	if (!lockEnabled) {
+		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
+	} else if (g_bHijackThreadWaiting) {
+		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
+	} else { // entered func: threadLock()
+		if (lockPid == 0) {
+			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 正在分析");
+		} else {
+			char titleBuf[512] = "SGuard限制器 - ";
+			switch (lockMode) {
+			case 0:
+				for (auto i = 0; i < 3; i++) {
+					sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", lockedThreads[i].tid, lockedThreads[i].locked ? 'O' : 'X');
+				}
+				break;
+			case 1:
+				for (auto i = 0; i < 3; i++) {
+					sprintf(titleBuf + strlen(titleBuf), "%x[..] ", lockedThreads[i].tid);
+				}
+				break;
+			case 2:
+				sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", lockedThreads[0].tid, lockedThreads[0].locked ? 'O' : 'X');
+				break;
+			case 3:
+				sprintf(titleBuf + strlen(titleBuf), "%x[..] ", lockedThreads[0].tid);
+				break;
+			}
+			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, titleBuf);
+		}
+	}
+	AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：线程追踪 [点击切换]");
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	AppendMenu(hMenu, MFT_STRING, IDM_LOCK3, "锁定");
+	AppendMenu(hMenu, MFT_STRING, IDM_LOCK1, "弱锁定");
+	AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR, "锁定-rr");
+	AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR, "弱锁定-rr");
+	AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK, "解除锁定");
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	if (lockMode == 1 || lockMode == 3) {
+		char buf[128];
+		sprintf(buf, "设置时间切分（当前：%d）", lockRound);
+		AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
+		AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	}
+	AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
+	if (lockEnabled) {
+		switch (lockMode) {
+		case 0:
+			CheckMenuItem(hMenu, IDM_LOCK3, MF_CHECKED);
+			break;
+		case 1:
+			CheckMenuItem(hMenu, IDM_LOCK3RR, MF_CHECKED);
+			break;
+		case 2:
+			CheckMenuItem(hMenu, IDM_LOCK1, MF_CHECKED);
+			break;
+		case 3:
+			CheckMenuItem(hMenu, IDM_LOCK1RR, MF_CHECKED);
+			break;
+		}
+	} else {
+		CheckMenuItem(hMenu, IDM_UNLOCK, MF_CHECKED);
+	}
+}
+
+bool TraceManager::_enumThreadInfo(DWORD pid, map* m) {
+
+	THREADENTRY32 te;
+	te.dwSize = sizeof(THREADENTRY32);
+
+	DWORD currentTids[512], tidCount = 0;
+	ZeroMemory(currentTids, sizeof(currentTids));
+
+	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+
+	// add new threads to map. On (n<=1e5)
+	for (BOOL next = Thread32First(hSnapshot, &te); next; next = Thread32Next(hSnapshot, &te)) {
+		if (te.th32OwnerProcessID == pid) {
+			DWORD tid = currentTids[tidCount++] = te.th32ThreadID;
+			if (m->count(tid) == 0) {
+				(*m)[tid] = threadinfo();
+			}
+		}
+	}
+
+	// remove expired threads. On^2 (n<=20)
+	for (auto it = m->begin(); it != m->end();) {
+		bool found = false;
+		for (DWORD i = 0; i < tidCount; i++) {
+			if (it->first == currentTids[i]) {
+				found = true;
+				break;
+			}
+		}
+		if (found) ++it;
+		else it = m->erase(it);
+	}
+
+	CloseHandle(hSnapshot);
+
+	return !m->empty();
 }

@@ -1,31 +1,23 @@
+#include <Windows.h>
 #include <stdio.h>
-#include "tray.h"
-#include "config.h"
+#include "limitcore.h"
 #include "tracecore.h"
 #include "mempatch.h"
+#include "win32utility.h"
 #include "resource.h"
 
 #include "wndproc.h"
 
-extern HWND                     g_hWnd;
-extern HINSTANCE                g_hInstance;
 extern volatile bool            g_bHijackThreadWaiting;
 
 extern volatile DWORD           g_Mode;
 
-extern volatile bool            limitEnabled;
-extern volatile DWORD           limitPercent;
+extern win32SystemManager&      systemMgr;
 
-extern volatile bool            lockEnabled;
-extern volatile DWORD           lockMode;
-extern volatile lockedThreads_t lockedThreads[3];
-extern volatile DWORD           lockPid;
-extern volatile DWORD           lockRound;
+extern LimitManager&            limitMgr;
+extern TraceManager&            traceMgr;
+extern PatchManager&            patchMgr;
 
-extern volatile bool            patchEnabled;
-extern volatile DWORD           patchPid;
-extern volatile DWORD           patchDelay;
-extern volatile patchSwitches_t patchSwitches;
 
 // about func: show about dialog box.
 static void ShowAbout() {
@@ -39,30 +31,14 @@ static void ShowAbout() {
 		"2 线程追踪（21.7.17）：已知部分机器使用“锁定”选项时会出现“3009-0”，若出现该情况可以尝试【锁定-rr】。\n"
 		"如果你使用【锁定-rr】依旧出问题，可点击【设置时间切分】，并尝试较小的时间。例如尝试90，85，80...直到合适即可。\n"
 		"注：【时间切分】设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n\n"
-		"3 Memory Patch（21.10.6）：（测试功能）修改SGUARD64地址空间中0x34号系统调用引用的参数令其强制延时。\n"
-		"如果你觉得限制不够，可以适当调大延迟，但不要过大，以免出现未知问题。\n"
+		"3 Memory Patch（21.10.6）：默认设置后两个（只挂钩SGUARD扫内存的系统调用），理论上并不会出现游戏异常。"
+		"提示：建议你不要勾选NtDelayExecution（旧版功能），以免可能出现游戏异常或偶尔卡顿的问题。\n"
 		"【注意】方式3需要临时装载一次驱动（提交更改后会立即将之卸载）。若你使用时出现问题，可以去论坛原贴下载证书。\n\n\n"
 		"SGUARD讨论群：775176979\n\n"
 		"论坛链接：https://bbs.colg.cn/thread-8087898-1-1.html \n"
 		"项目地址：https://github.com/H3d9/sguard_limit （点ctrl+C复制到记事本）",
 		"SGuard限制器 " VERSION "  colg@H3d9",
 		MB_OK);
-}
-
-// disable func: undo functional control.
-void disableLimit() {
-	limitEnabled = false;
-	while (!g_bHijackThreadWaiting); // spin; wait till hijack release target thread.
-}
-
-void disableLock() {
-	lockEnabled = false;
-	for (auto i = 0; i < 3; i++) {
-		if (lockedThreads[i].locked) {
-			ResumeThread(lockedThreads[i].handle);
-			lockedThreads[i].locked = false;
-		}
-	}
 }
 
 
@@ -73,7 +49,7 @@ static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, L
 	case WM_INITDIALOG:
 	{
 		char buf[128];
-		sprintf(buf, "输入1~99的整数（当前值：%d）", lockRound);
+		sprintf(buf, "输入1~99的整数（当前值：%d）", traceMgr.lockRound);
 		SetDlgItemText(hDlg, IDC_SETTIMETEXT, buf);
 			return (INT_PTR)TRUE;
 	}
@@ -85,7 +61,7 @@ static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, L
 			if (!translated || res < 1 || res > 99) {
 				MessageBox(0, "输入1~99的整数", "错误", MB_OK);
 			} else {
-				lockRound = res;
+				traceMgr.lockRound = res;
 				EndDialog(hDlg, LOWORD(wParam));
 				return (INT_PTR)TRUE;
 			}
@@ -108,7 +84,7 @@ static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, 
 	case WM_INITDIALOG:
 	{
 		char buf[128];
-		sprintf(buf, "输入200~2000的整数（当前值：%u）", patchDelay);
+		sprintf(buf, "输入200~2000的整数（当前值：%u）", patchMgr.patchDelay);
 		SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
 		return (INT_PTR)TRUE;
 	}
@@ -120,7 +96,7 @@ static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, 
 			if (!translated || res < 200 || res > 2000) {
 				MessageBox(0, "输入200~2000的整数", "错误", MB_OK);
 			} else {
-				patchDelay = res;
+				patchMgr.patchDelay = res;
 				EndDialog(hDlg, LOWORD(wParam));
 				return (INT_PTR)TRUE;
 			}
@@ -136,159 +112,29 @@ static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, 
 }
 
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+
 	switch (msg) {
-	case WM_TRAYACTIVATE:
+	case win32SystemManager::WM_TRAYACTIVATE:     // fall in tray, pre-defined and set in sysMgr
 	{
 		if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
+			
 			HMENU hMenu = CreatePopupMenu();
-			POINT pt;
+			
 			if (g_Mode == 0) {
-				if (!limitEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
-				} else if (g_bHijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
-				} else {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 侦测到SGuard");
-				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：时间片轮转 [点击切换]");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT90, "限制资源：90%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT95, "限制资源：95%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT99, "限制资源：99%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT999, "限制资源：99.9%");
-				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT, "停止限制");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
-				if (limitEnabled) {
-					switch (limitPercent) {
-					case 90:
-						CheckMenuItem(hMenu, IDM_PERCENT90, MF_CHECKED);
-						break;
-					case 95:
-						CheckMenuItem(hMenu, IDM_PERCENT95, MF_CHECKED);
-						break;
-					case 99:
-						CheckMenuItem(hMenu, IDM_PERCENT99, MF_CHECKED);
-						break;
-					case 999:
-						CheckMenuItem(hMenu, IDM_PERCENT999, MF_CHECKED);
-						break;
-					}
-				} else {
-					CheckMenuItem(hMenu, IDM_STOPLIMIT, MF_CHECKED);
-				}
+				limitMgr.wndProcAddMenu(hMenu);
 			} else if (g_Mode == 1) {
-				if (!lockEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
-				} else if (g_bHijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
-				} else { // entered func: threadLock()
-					if (lockPid == 0) {
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 正在分析");
-					} else {
-						char titleBuf[512] = "SGuard限制器 - ";
-						switch (lockMode) {
-							case 0:
-								for (auto i = 0; i < 3; i++) {
-									sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", lockedThreads[i].tid, lockedThreads[i].locked ? 'O' : 'X');
-								}
-								break;
-							case 1:
-								for (auto i = 0; i < 3; i++) {
-									sprintf(titleBuf + strlen(titleBuf), "%x[..] ", lockedThreads[i].tid);
-								}
-								break;
-							case 2:
-								sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", lockedThreads[0].tid, lockedThreads[0].locked ? 'O' : 'X');
-								break;
-							case 3:
-								sprintf(titleBuf + strlen(titleBuf), "%x[..] ", lockedThreads[0].tid);
-								break;
-						}
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, titleBuf);
-					}
-				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：线程追踪 [点击切换]");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3, "锁定");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1, "弱锁定");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR, "锁定-rr");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR, "弱锁定-rr");
-				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK, "解除锁定");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				if (lockMode == 1 || lockMode == 3) {
-					char buf[128];
-					sprintf(buf, "设置时间切分（当前：%d）", lockRound);
-					AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
-					AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				}
-				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
-				if (lockEnabled) {
-					switch (lockMode) {
-						case 0:
-							CheckMenuItem(hMenu, IDM_LOCK3, MF_CHECKED);
-							break;
-						case 1:
-							CheckMenuItem(hMenu, IDM_LOCK3RR, MF_CHECKED);
-							break;
-						case 2:
-							CheckMenuItem(hMenu, IDM_LOCK1, MF_CHECKED);
-							break;
-						case 3:
-							CheckMenuItem(hMenu, IDM_LOCK1RR, MF_CHECKED);
-							break;
-					}
-				} else {
-					CheckMenuItem(hMenu, IDM_UNLOCK, MF_CHECKED);
-				}
-			} else { // if g_Mode == 2
-				if (!patchEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已撤销更改");
-				} else if (g_bHijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
-				} else {
-					if (patchPid == 0) { // entered memoryPatch()
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 请等待");
-					} else {
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已提交更改");
-					}
-				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V1.1 [点击切换]");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_COMMITPATCH, "自动");
-				AppendMenu(hMenu, MFT_STRING, IDM_UNDOPATCH, "撤销修改（慎用）");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				//patchSwitches
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1, "patch!NtDelayExecution");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "patch!NtResumeThread");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "patch!NtQueryVirtualMemory");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				char buf[128];
-				sprintf(buf, "设置延时（当前：%u）", patchDelay);
-				AppendMenu(hMenu, MFT_STRING, IDM_SETDELAY, buf);
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
-				if (patchEnabled) {
-					CheckMenuItem(hMenu, IDM_COMMITPATCH, MF_CHECKED);
-				} else {
-					CheckMenuItem(hMenu, IDM_UNDOPATCH, MF_CHECKED);
-				}
-				if (patchSwitches.patchDelayExecution) {
-					CheckMenuItem(hMenu, IDM_PATCHSWITCH1, MF_CHECKED);
-				}
-				if (patchSwitches.patchResumeThread) {
-					CheckMenuItem(hMenu, IDM_PATCHSWITCH2, MF_CHECKED);
-				}
-				if (patchSwitches.patchQueryVirtualMemory) {
-					CheckMenuItem(hMenu, IDM_PATCHSWITCH3, MF_CHECKED);
-				}
+				traceMgr.wndProcAddMenu(hMenu);
+			} else {
+				patchMgr.wndProcAddMenu(hMenu);
 			}
+			
+			POINT pt;
 			GetCursorPos(&pt);
-			SetForegroundWindow(g_hWnd);
-			TrackPopupMenu(hMenu, TPM_LEFTALIGN, pt.x, pt.y, 0, g_hWnd, NULL);
+			SetForegroundWindow(hWnd);
+			TrackPopupMenu(hMenu, TPM_LEFTALIGN, pt.x, pt.y, 0, hWnd, NULL);
 			DestroyMenu(hMenu);
+
 		} else if (lParam == WM_LBUTTONDBLCLK) {
 			ShowAbout();
 		}
@@ -298,139 +144,134 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	{
 		UINT id = LOWORD(wParam);
 		switch (id) {
-		case IDM_EXIT:
-		{
-			if (g_Mode == 0 && limitEnabled == true) {
-				disableLimit();
-			} else if (g_Mode == 1 && lockEnabled == true) {
-				disableLock();
-			} else if (g_Mode == 2 && patchEnabled == true) {
-				//disablePatch();
-			}
-			PostMessage(g_hWnd, WM_CLOSE, 0, 0);
-		}
-			break;
-		case IDM_TITLE:
-			ShowAbout();
-			break;
-		case IDM_SWITCHMODE:
-			if (g_Mode == 0) {
-				disableLimit();
-				lockEnabled = true;
-				g_Mode = 1;
-			} else if (g_Mode == 1) {
-				disableLock();
-				patchEnabled = true;
-				g_Mode = 2;
-			} else {
-				//disablePatch(); ↓
-				patchEnabled = false;
-				limitEnabled = true;
-				g_Mode = 0;
-			}
-			writeConfig();
-			break;
-
-		case IDM_PERCENT90:
-			limitEnabled = true;
-			limitPercent = 90;
-			writeConfig();
-			break;
-		case IDM_PERCENT95:
-			limitEnabled = true;
-			limitPercent = 95;
-			writeConfig();
-			break;
-		case IDM_PERCENT99:
-			limitEnabled = true;
-			limitPercent = 99;
-			writeConfig();
-			break;
-		case IDM_PERCENT999:
-			limitEnabled = true;
-			limitPercent = 999;
-			writeConfig();
-			break;
-		case IDM_STOPLIMIT:
-			disableLimit();
-			break;
-
-		case IDM_LOCK3:
-			lockEnabled = true;
-			lockMode = 0;
-			writeConfig();
-			break;
-		case IDM_LOCK3RR:
-			lockEnabled = true;
-			lockMode = 1;
-			writeConfig();
-			break;
-		case IDM_LOCK1:
-			lockEnabled = true;
-			lockMode = 2;
-			writeConfig();
-			break;
-		case IDM_LOCK1RR:
-			lockEnabled = true;
-			lockMode = 3;
-			writeConfig();
-			break;
-		case IDM_SETRRTIME:
-			DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_SETTIMEDIALOG), g_hWnd, SetTimeDlgProc);
-			writeConfig();
-			break;
-		case IDM_UNLOCK:
-			disableLock();
-			break;
-
-		case IDM_COMMITPATCH:
-			enablePatch();
-			break;
-		case IDM_UNDOPATCH:
-			if (MessageBox(0, "提交修改后最好让目标保持原样（即重启游戏时让他自动关闭）。\n不建议使用该功能，除非你知道自己在做什么，仍要继续么？", "注意", MB_YESNO) == IDYES) {
-				disablePatch();
-			}
-			break;
-		case IDM_SETDELAY:
-			DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), g_hWnd, SetDelayDlgProc);
-			writeConfig();
-			break;
-		case IDM_PATCHSWITCH1:
-			if (patchSwitches.patchDelayExecution) {
-				patchSwitches.patchDelayExecution = false;
-				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
-			} else {
-				if (IDYES == MessageBox(0, "如果你之前出现“3009”, “96”等问题，不要启用该选项。要继续么？", "注意", MB_YESNO)) {
-					patchSwitches.patchDelayExecution = true;
-					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+			// general command
+			case IDM_TITLE:
+				ShowAbout();
+				break;
+			case IDM_SWITCHMODE:
+				if (g_Mode == 0) {
+					limitMgr.disable();
+					traceMgr.enable();
+					g_Mode = 1;
+				} else if (g_Mode == 1) {
+					traceMgr.disable();
+					patchMgr.enable();
+					g_Mode = 2;
+				} else {
+					patchMgr.disable();
+					limitMgr.enable();
+					g_Mode = 0;
 				}
+				systemMgr.writeConfig();
+				break;
+			case IDM_EXIT:
+			{
+				if (g_Mode == 0 && limitMgr.limitEnabled) {
+					limitMgr.disable();
+				} else if (g_Mode == 1 && traceMgr.lockEnabled) {
+					traceMgr.disable();
+				} else if (g_Mode == 2 && patchMgr.patchEnabled) {
+					patchMgr.disable();
+				}
+				PostMessage(hWnd, WM_CLOSE, 0, 0);
 			}
-			writeConfig();
 			break;
-		case IDM_PATCHSWITCH2:
-			if (patchSwitches.patchResumeThread) {
-				patchSwitches.patchResumeThread = false;
-			} else {
-				patchSwitches.patchResumeThread = true;
-			}
-			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
-			writeConfig();
-			break;
-		case IDM_PATCHSWITCH3:
-			if (patchSwitches.patchQueryVirtualMemory) {
-				patchSwitches.patchQueryVirtualMemory = false;
-			} else {
-				patchSwitches.patchQueryVirtualMemory = true;
-			}
-			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
-			writeConfig();
-			break;
+
+			// limit command
+			case IDM_PERCENT90:
+				limitMgr.setPercent(90);
+				systemMgr.writeConfig();
+				break;
+			case IDM_PERCENT95:
+				limitMgr.setPercent(95);
+				systemMgr.writeConfig();
+				break;
+			case IDM_PERCENT99:
+				limitMgr.setPercent(99);
+				systemMgr.writeConfig();
+				break;
+			case IDM_PERCENT999:
+				limitMgr.setPercent(999);
+				systemMgr.writeConfig();
+				break;
+			case IDM_STOPLIMIT:
+				limitMgr.disable();
+				break;
+			
+			// lock command
+			case IDM_LOCK3:
+				traceMgr.setMode(0);
+				systemMgr.writeConfig();
+				break;
+			case IDM_LOCK3RR:
+				traceMgr.setMode(1);
+				systemMgr.writeConfig();
+				break;
+			case IDM_LOCK1:
+				traceMgr.setMode(2);
+				systemMgr.writeConfig();
+				break;
+			case IDM_LOCK1RR:
+				traceMgr.setMode(3);
+				systemMgr.writeConfig();
+				break;
+			case IDM_SETRRTIME:
+				DialogBox(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETTIMEDIALOG), hWnd, SetTimeDlgProc);
+				systemMgr.writeConfig();
+				break;
+			case IDM_UNLOCK:
+				traceMgr.disable();
+				break;
+				
+			// patch command
+			case IDM_DOPATCH:
+				patchMgr.enable(true);
+				break;
+			case IDM_UNDOPATCH:
+				if (MessageBox(0, "提交修改后最好让目标保持原样（即重启游戏时让他自动关闭）。\n不建议使用该功能，除非你知道自己在做什么，仍要继续么？", "注意", MB_YESNO) == IDYES) {
+					patchMgr.disable(true);
+				}
+				break;
+			case IDM_SETDELAY:
+				DialogBox(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc);
+				systemMgr.writeConfig();
+				break;
+			case IDM_PATCHSWITCH1:
+				if (patchMgr.patchSwitches.patchDelayExecution) {
+					patchMgr.patchSwitches.patchDelayExecution = false;
+					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				} else {
+					if (IDYES == MessageBox(0, "这是旧版功能，如果你之前出现“3009”，“96”，“偶尔卡顿”等问题，不要启用该选项。要继续么？", "注意", MB_YESNO)) {
+						patchMgr.patchSwitches.patchDelayExecution = true;
+						MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+					}
+				}
+				systemMgr.writeConfig();
+				break;
+			case IDM_PATCHSWITCH2:
+				if (patchMgr.patchSwitches.patchResumeThread) {
+					patchMgr.patchSwitches.patchResumeThread = false;
+				} else {
+					patchMgr.patchSwitches.patchResumeThread = true;
+				}
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				systemMgr.writeConfig();
+				break;
+			case IDM_PATCHSWITCH3:
+				if (patchMgr.patchSwitches.patchQueryVirtualMemory) {
+					patchMgr.patchSwitches.patchQueryVirtualMemory = false;
+				} else {
+					patchMgr.patchSwitches.patchQueryVirtualMemory = true;
+				}
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				systemMgr.writeConfig();
+				break;
 		}
 	}
 	break;
 	case WM_CLOSE:
 	{
-		DestroyWindow(g_hWnd);
+		DestroyWindow(hWnd);
 	}
 	break;
 	case WM_DESTROY:

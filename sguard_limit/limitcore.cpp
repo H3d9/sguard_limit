@@ -8,133 +8,46 @@
 #include <shlwapi.h>
 #include <shlobj.h>
 #include <process.h>
+#include "win32utility.h"
+#include "wndproc.h"
 #include "panic.h"
 
 #include "limitcore.h"
 
-volatile bool       limitEnabled    = true;
-volatile DWORD      limitPercent    = 90;
+extern volatile bool  g_bHijackThreadWaiting;
 
 
-DWORD GetProcessID() {  // ret == 0 if no proc.
-	
-	PROCESSENTRY32 ps = { 0 };
-	ps.dwSize = sizeof(PROCESSENTRY32);
+// Limit Manager
+LimitManager  LimitManager::limitManager;
 
-	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-	if (hSnapshot == INVALID_HANDLE_VALUE) {
-		return 0;
-	}
+LimitManager::LimitManager() 
+	: limitEnabled(true), limitPercent(90) {}
 
-	DWORD targetPID = 0;
-
-	for (BOOL next = Process32First(hSnapshot, &ps); next; next = Process32Next(hSnapshot, &ps)) {
-		if (lstrcmpi(ps.szExeFile, "SGuard64.exe") == 0) {
-			targetPID = ps.th32ProcessID;
-			break; // assert: only 1 pinstance.
-		}
-	}
-
-	CloseHandle(hSnapshot);
-
-	return targetPID;
+LimitManager& LimitManager::getInstance() {
+	return limitManager;
 }
 
-DWORD  threadIDList[512];
-DWORD  numThreads;
+void LimitManager::hijack() {
 
-bool EnumCurrentThread(DWORD pid) { // => threadIDList & numThreads
+	while (limitEnabled) { // note: 每10+秒重新枚举线程
 
-	THREADENTRY32 te;
-	te.dwSize = sizeof(THREADENTRY32);
+		win32ThreadManager threadMgr;
 
-	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-	if (hSnapshot == INVALID_HANDLE_VALUE) {
-		return false;
-	}
-
-	numThreads = 0;
-	bool found = false;
-	for (BOOL next = Thread32First(hSnapshot, &te); next; next = Thread32Next(hSnapshot, &te)) {
-		if (te.th32OwnerProcessID == pid) {
-			found = true;
-			threadIDList[numThreads++] = te.th32ThreadID;
-		}
-	}
-
-	CloseHandle(hSnapshot);
-	return found;
-}
-
-HANDLE threadHandleList[512];
-bool suspended = false;
-DWORD suspendRetry = 0;
-DWORD resumeRetry = 0;
-
-BOOL Hijack(DWORD pid) {
-
-	HANDLE
-		hProcess = OpenProcess(STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF, FALSE, pid);
-	if (!hProcess) {
-		hProcess = OpenProcess(STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFF, FALSE, pid);
-		if (!hProcess) {
-			hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_SET_INFORMATION, FALSE, pid);
-			if (!hProcess) {
-				hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-			} else {
-				return FALSE;
-			}
-		}
-	}
-
-	while (limitEnabled) {
-		EnumCurrentThread(pid); // note: 每10+秒重新枚举线程
-		if (numThreads == 0) {
-			return TRUE; // process is no more alive, exit.
+		if (threadMgr.getTargetPid() == 0) {
+			return; // process is no more alive, exit.
 		}
 
-		DWORD numOpenedThreads = 0;
-		DWORD openThreadRetry = 0;
-		ZeroMemory(threadHandleList, sizeof(threadHandleList));
-
-		// assert: process is alive.
-		while (1) {
-			DWORD ERROR_THREAD_OPEN = 0;
-			for (DWORD i = 0; i < numThreads; i++) {
-				if (!threadHandleList[i]) {
-					threadHandleList[i] = OpenThread(STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3FF, FALSE, threadIDList[i]);
-					if (!threadHandleList[i]) {
-						threadHandleList[i] = OpenThread(THREAD_SUSPEND_RESUME, FALSE, threadIDList[i]);
-						if (!threadHandleList[i]) {
-							ERROR_THREAD_OPEN = 1;
-						}
-					}
-					if (threadHandleList[i]) {
-						++numOpenedThreads;
-					}
+		if (!threadMgr.enumTargetThread()) {
+			if (!threadMgr.enumTargetThread(STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3FF)) {
+				if (!threadMgr.enumTargetThread(THREAD_SUSPEND_RESUME)) {
+					return;
 				}
 			}
-
-			if ((numOpenedThreads == numThreads)
-				||
-				(numOpenedThreads != 0 && openThreadRetry > 10)) {
-				break; // continue on.
-			}
-			if (ERROR_THREAD_OPEN) {
-				++openThreadRetry;
-			}
-			if (openThreadRetry > 10) {
-				// no thread is opened, exit.
-				return FALSE;
-			}
-
-			// open-thread retry interval.
-			Sleep(100);
 		}
 
 		Sleep(300); // forbid busy wait if user stopped limitation.
 
-		// assert: !threadHandleList.empty && threadHandleList[elem].valid
+		// assert: !threadList[elem].Handle.empty && threadList[elem].Handle.valid
 		// each loop we manipulate 10+s in target process.
 		for (DWORD msElapsed = 0; limitEnabled && msElapsed < 10000;) {
 
@@ -144,21 +57,15 @@ BOOL Hijack(DWORD pid) {
 				TimeGreen = 1; // 99.9: use 1 slice in 1000
 			}
 
+			static bool suspended = false; // false is initialize, not in control flow.
+
 			if (!suspended) {
-				DWORD ERROR_SUSPEND = 0;
-				for (DWORD i = 0; i < numThreads; i++) {
-					if (threadHandleList[i]) {
-						if (SuspendThread(threadHandleList[i]) != (DWORD)-1) {
+				for (DWORD i = 0; i < threadMgr.threadCount; i++) {
+					if (threadMgr.threadList[i].handle) {
+						if (SuspendThread(threadMgr.threadList[i].handle) != (DWORD)-1) {
 							suspended = true; // true if at least one of threads is suspended.
-						} else {
-							ERROR_SUSPEND = 1;
 						}
 					}
-				}
-				if (ERROR_SUSPEND) {
-					++suspendRetry;
-				} else {
-					suspendRetry = 0;
 				}
 			}
 
@@ -166,20 +73,12 @@ BOOL Hijack(DWORD pid) {
 			msElapsed += TimeRed;
 
 			if (suspended) {
-				DWORD ERROR_RESUME = 0;
-				for (DWORD i = 0; i < numThreads; i++) {
-					if (threadHandleList[i]) {
-						if (ResumeThread(threadHandleList[i]) != (DWORD)-1) {
+				for (DWORD i = 0; i < threadMgr.threadCount; i++) {
+					if (threadMgr.threadList[i].handle) {
+						if (ResumeThread(threadMgr.threadList[i].handle) != (DWORD)-1) {
 							suspended = false;
-						} else {
-							ERROR_RESUME = 1;
 						}
 					}
-				}
-				if (ERROR_RESUME) {
-					++resumeRetry;
-				} else {
-					resumeRetry = 0;
 				}
 			}
 
@@ -187,18 +86,60 @@ BOOL Hijack(DWORD pid) {
 			msElapsed += TimeGreen;
 		}
 
-		for (DWORD i = 0; i < numThreads; ++i) { // release handles; re-capture them in next loop.
-			if (threadHandleList[i]) {
-				CloseHandle(threadHandleList[i]);
-			}
-		}
-
-		if (suspendRetry > 100 || resumeRetry > 50) {
-			// always fail(more than 10 loop WITHOUT success), jump out.
-			return FALSE;
-		}
+		// release handles (by raii); re-capture them in next loop.
 	}
 
 	// user stopped limiting, exit to wait.
-	return TRUE;
+}
+
+void LimitManager::enable() {
+	limitEnabled = true;
+}
+
+void LimitManager::disable() {
+	limitEnabled = false;
+	while (!g_bHijackThreadWaiting); // spin; wait till hijack release target thread.
+}
+
+void LimitManager::setPercent(DWORD percent) {
+	limitEnabled = true;
+	limitPercent = percent;
+}
+
+void LimitManager::wndProcAddMenu(HMENU hMenu) {
+
+	if (!limitEnabled) {
+		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
+	} else if (g_bHijackThreadWaiting) {
+		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
+	} else {
+		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 侦测到SGuard");
+	}
+	AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：时间片轮转 [点击切换]");
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	AppendMenu(hMenu, MFT_STRING, IDM_PERCENT90, "限制资源：90%");
+	AppendMenu(hMenu, MFT_STRING, IDM_PERCENT95, "限制资源：95%");
+	AppendMenu(hMenu, MFT_STRING, IDM_PERCENT99, "限制资源：99%");
+	AppendMenu(hMenu, MFT_STRING, IDM_PERCENT999, "限制资源：99.9%");
+	AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT, "停止限制");
+	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+	AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
+	if (limitEnabled) {
+		switch (limitPercent) {
+		case 90:
+			CheckMenuItem(hMenu, IDM_PERCENT90, MF_CHECKED);
+			break;
+		case 95:
+			CheckMenuItem(hMenu, IDM_PERCENT95, MF_CHECKED);
+			break;
+		case 99:
+			CheckMenuItem(hMenu, IDM_PERCENT99, MF_CHECKED);
+			break;
+		case 999:
+			CheckMenuItem(hMenu, IDM_PERCENT999, MF_CHECKED);
+			break;
+		}
+	} else {
+		CheckMenuItem(hMenu, IDM_STOPLIMIT, MF_CHECKED);
+	}
 }

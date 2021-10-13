@@ -54,7 +54,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>false</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
@@ -84,23 +84,21 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="config.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="limitcore.cpp" />
     <ClCompile Include="mempatch.cpp" />
     <ClCompile Include="panic.cpp" />
     <ClCompile Include="tracecore.cpp" />
-    <ClCompile Include="tray.cpp" />
+    <ClCompile Include="win32utility.cpp" />
     <ClCompile Include="wndproc.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="config.h" />
     <ClInclude Include="limitcore.h" />
     <ClInclude Include="mempatch.h" />
     <ClInclude Include="panic.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="tracecore.h" />
-    <ClInclude Include="tray.h" />
+    <ClInclude Include="win32utility.h" />
     <ClInclude Include="wndproc.h" />
   </ItemGroup>
   <ItemGroup>
