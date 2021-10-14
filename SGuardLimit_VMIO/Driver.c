@@ -13,6 +13,7 @@ PDEVICE_OBJECT pDeviceObject;
 // I/O接口事件及缓冲区
 #define VMIO_READ   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_WRITE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define VMIO_ALLOC  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 
 typedef struct {
 	CHAR     data[4096];
@@ -89,79 +90,111 @@ NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp)
 NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 	ULONG          controlCode  = IoGetCurrentIrpStackLocation(Irp)->Parameters.DeviceIoControl.IoControlCode;
-	VMIO_REQUEST*  Input        = Irp->AssociatedIrp.SystemBuffer;
+	VMIO_REQUEST*  Input        = Irp->AssociatedIrp.SystemBuffer;  /* input buf init in user space */
 	NTSTATUS       Status       = STATUS_SUCCESS;
-	PEPROCESS      Process;
+	SIZE_T         rwSize       = 0x1000;      /* bytes io in an ioctl. same as sizeof(request->data) */
+	SIZE_T         allocSize    = 0x1000 * 4;  /* alloc 4 pages in an ioctl */
+	PEPROCESS      pEProcess;
+
 
 	switch (controlCode) {
 		
 		case VMIO_READ:
 		{
-			Status = PsLookupProcessByProcessId(Input->pid, &Process);
+			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
 			
 			if (!NT_SUCCESS(Status)) {
-				DbgPrintEx(0, 0, "read PsLookupProcessByProcessId %x \n", Status);
-				IOCTL_LOG_EXIT("PsLookupProcessByProcessId");
+				IOCTL_LOG_EXIT("VMIO_READ::PsLookupProcessByProcessId");
 			}
 
-			Status = KeReadVirtualMemory(Process, Input->address, &Input->data, 4096);
+			Status = KeReadVirtualMemory(pEProcess, Input->address, &Input->data, rwSize);
 			
 			if (!NT_SUCCESS(Status)) {
-				DbgPrintEx(0, 0, "KeReadVirtualMemory %x \n", Status);
-				IOCTL_LOG_EXIT("KeReadVirtualMemory");
+				IOCTL_LOG_EXIT("VMIO_READ::KeReadVirtualMemory");
 			}
 		}
 			break;
 		case VMIO_WRITE:
 		{
-			Status = PsLookupProcessByProcessId(Input->pid, &Process);
+			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
 
 			if (!NT_SUCCESS(Status)) {
-				DbgPrintEx(0, 0, "write PsLookupProcessByProcessId %x \n", Status);
-				IOCTL_LOG_EXIT("PsLookupProcessByProcessId");
+				IOCTL_LOG_EXIT("VMIO_WRITE::PsLookupProcessByProcessId");
 			}
 
-			HANDLE hProcess;
-			CLIENT_ID clientId;
+			HANDLE               hProcess;
+			OBJECT_ATTRIBUTES    objAttr    = {0};
+			CLIENT_ID            clientId;
 			clientId.UniqueProcess = Input->pid;
 			clientId.UniqueThread = 0;
-			OBJECT_ATTRIBUTES objAttr = { 0 };
-			SIZE_T size = 4096;
-			ULONG oldProtect;
 
 			Status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &clientId);
 
 			if (!NT_SUCCESS(Status)) {
-				DbgPrintEx(0, 0, "ZwOpenProcess %x \n", Status);
-				IOCTL_LOG_EXIT("ZwOpenProcess");
+				IOCTL_LOG_EXIT("VMIO_WRITE::ZwOpenProcess");
 			}
 
-			Status = ZwProtectVirtualMemory(hProcess, &Input->address, &(SIZE_T)size, PAGE_EXECUTE_READWRITE, &oldProtect);
+			ULONG oldProtect;
+
+			Status = ZwProtectVirtualMemory(hProcess, &Input->address, &rwSize, PAGE_EXECUTE_READWRITE, &oldProtect);
 			
 			if (!NT_SUCCESS(Status)) {
-				DbgPrintEx(0, 0, "ZwProtectVirtualMemory1 %x \n", Status);
-				IOCTL_LOG_EXIT("ZwProtectVirtualMemory1");
+				IOCTL_LOG_EXIT("VMIO_WRITE::ZwProtectVirtualMemory1");
 			}
 
 			// assert:  Input->Address is round down to 1 page.
-			Status = KeWriteVirtualMemory(Process, Input->data, Input->address, 4096);
+			Status = KeWriteVirtualMemory(pEProcess, Input->data, Input->address, rwSize);
+			
 			if (!NT_SUCCESS(Status)) {
-				DbgPrintEx(0, 0, "KeWriteVirtualMemory %x \n", Status);
-				IOCTL_LOG_EXIT("KeWriteVirtualMemory");
+				IOCTL_LOG_EXIT("VMIO_WRITE::KeWriteVirtualMemory");
 			}
 
-			Status = ZwProtectVirtualMemory(hProcess, &Input->address, &(SIZE_T)size, oldProtect, NULL);
+			Status = ZwProtectVirtualMemory(hProcess, &Input->address, &rwSize, oldProtect, NULL);
+			
 			if (!NT_SUCCESS(Status)) {
-				DbgPrintEx(0, 0, "ZwProtectVirtualMemory2 %x \n", Status);
-				IOCTL_LOG_EXIT("ZwProtectVirtualMemory2");
+				IOCTL_LOG_EXIT("VMIO_WRITE::ZwProtectVirtualMemory2");
 			}
+
+			ZwClose(hProcess);
+		}
+			break;
+		case VMIO_ALLOC:
+		{
+			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("VMIO_ALLOC::PsLookupProcessByProcessId");
+			}
+
+			HANDLE               hProcess;
+			OBJECT_ATTRIBUTES    objAttr = {0};
+			CLIENT_ID            clientId;
+			clientId.UniqueProcess = Input->pid;
+			clientId.UniqueThread = 0;
+
+			Status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &clientId);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("VMIO_ALLOC::ZwOpenProcess");
+			}
+
+			PVOID BaseAddress = NULL;
+
+			Status = ZwAllocateVirtualMemory(hProcess, &BaseAddress, 0, &allocSize, MEM_COMMIT, PAGE_EXECUTE);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("VMIO_ALLOC::ZwAllocateVirtualMemory");
+			}
+
+			Input->address = BaseAddress;
 
 			ZwClose(hProcess);
 		}
 			break;
 		default:
 		{
-			IOCTL_LOG_EXIT("bad io code");
+			Status = STATUS_UNSUCCESSFUL;
+			IOCTL_LOG_EXIT("IOCTL: Bad IO code");
 		}
 			break;
 	}
