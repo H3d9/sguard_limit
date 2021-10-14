@@ -6,16 +6,15 @@
 #include <UserEnv.h>
 #include <stdio.h>
 #include <algorithm>
-#include <vector>
 #include <map>
-#include "wndproc.h"
 #include "win32utility.h"
+#include "wndproc.h"
 #include "panic.h"
 
 #include "mempatch.h"
 
-extern volatile bool        g_bHijackThreadWaiting;
-extern win32SystemManager&  systemMgr;
+extern volatile bool           g_bHijackThreadWaiting;
+extern win32SystemManager&     systemMgr;
 
 
 // driver io
@@ -60,13 +59,13 @@ void KernelDriver::unload() {
 	hDriver = INVALID_HANDLE_VALUE;
 }
 
-bool KernelDriver::readVM(HANDLE pid, PVOID out, PVOID targetAddress) {
+bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 
 	// assert: "out" is a 16K buffer.
 	VMIO_REQUEST  ReadRequest;
 	DWORD         Bytes;
 
-	ReadRequest.pid = pid;
+	ReadRequest.pid = (HANDLE)pid;
 	ReadRequest.errorCode = 0;
 
 
@@ -75,9 +74,11 @@ bool KernelDriver::readVM(HANDLE pid, PVOID out, PVOID targetAddress) {
 		ReadRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
 
 		if (!DeviceIoControl(hDriver, VMIO_READ, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL)) {
+			systemMgr.log("driver::readVM(): DeviceIoControl failed(0x%x), quit.", GetLastError());
 			return false;
 		}
 		if (ReadRequest.errorCode != 0) {
+			systemMgr.log("driver::readVM(): buffer returned not valid: %s(%u)", ReadRequest.errorFunc, ReadRequest.errorCode);
 			panic("驱动内部错误：%s(%x)", ReadRequest.errorFunc, ReadRequest.errorCode);
 			return false;
 		}
@@ -88,14 +89,15 @@ bool KernelDriver::readVM(HANDLE pid, PVOID out, PVOID targetAddress) {
 	return true;
 }
 
-bool KernelDriver::writeVM(HANDLE pid, PVOID in, PVOID targetAddress) {
+bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 
 	// assert: "in" is a 16K buffer.
 	VMIO_REQUEST  WriteRequest;
 	DWORD         Bytes;
 
-	WriteRequest.pid = pid;
+	WriteRequest.pid = (HANDLE)pid;
 	WriteRequest.errorCode = 0;
+
 
 	for (auto page = 0; page < 4; page++) {
 
@@ -104,13 +106,40 @@ bool KernelDriver::writeVM(HANDLE pid, PVOID in, PVOID targetAddress) {
 		memcpy(WriteRequest.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
 
 		if (!DeviceIoControl(hDriver, VMIO_WRITE, &WriteRequest, sizeof(WriteRequest), &WriteRequest, sizeof(WriteRequest), &Bytes, NULL)) {
+			systemMgr.log("driver::writeVM(): DeviceIoControl failed(0x%x), quit.", GetLastError());
 			return false;
 		}
 		if (WriteRequest.errorCode != 0) {
+			systemMgr.log("driver::writeVM(): buffer returned not valid: %s(%u)", WriteRequest.errorFunc, WriteRequest.errorCode);
 			panic("驱动内部错误：%s(0x%x)", WriteRequest.errorFunc, WriteRequest.errorCode);
 			return false;
 		}
 	}
+
+	return true;
+}
+
+bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
+
+	VMIO_REQUEST  AllocRequest;
+	DWORD         Bytes;
+
+	AllocRequest.pid = (HANDLE)pid;
+	AllocRequest.address = NULL;
+	AllocRequest.errorCode = 0;
+
+
+	if (!DeviceIoControl(hDriver, VMIO_ALLOC, &AllocRequest, sizeof(AllocRequest), &AllocRequest, sizeof(AllocRequest), &Bytes, NULL)) {
+		systemMgr.log("driver::allocVM(): DeviceIoControl failed(0x%x), quit.", GetLastError());
+		return false;
+	}
+	if (AllocRequest.errorCode != 0) {
+		systemMgr.log("driver::allocVM(): buffer returned not valid: %s(%u)", AllocRequest.errorFunc, AllocRequest.errorCode);
+		panic("驱动内部错误：%s(0x%x)", AllocRequest.errorFunc, AllocRequest.errorCode);
+		return false;
+	}
+
+	*pAllocatedAddress = AllocRequest.address;
 
 	return true;
 }
@@ -120,7 +149,7 @@ bool KernelDriver::writeVM(HANDLE pid, PVOID in, PVOID targetAddress) {
 PatchManager  PatchManager::patchManager;
 
 PatchManager::PatchManager()
-	: patchEnabled(true), patchPid(0), patchSwitches(), patchDelay(1250) { /* private members use default init */ }
+	: patchEnabled(true), patchPid(0), patchSwitches(), patchDelay() { /* private members use default init */ }
 
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
@@ -258,26 +287,44 @@ void PatchManager::patch() {
 	win32ThreadManager     threadMgr;
 	DWORD                  pid          = threadMgr.getTargetPid();
 	
+	systemMgr.log("patch(): checking pid.");
 
 	if (pid != 0         /* target exist */ &&
 		pid != patchPid  /* target is not current */) {
 
+		systemMgr.log("patch(): pid not match, entering if block.");
+		systemMgr.log("patch(): primary waiting.");
+
 		// before stable, wait a second.
-		for (auto i = 0; patchEnabled && pid == threadMgr.getTargetPid() && i < 10; i++) {
+		for (auto time = 0; time < 15; time++) {
+
+			if (!patchEnabled || pid != threadMgr.getTargetPid()) {
+				systemMgr.log("patch(): pid not match or patch disabled, quit.");
+				return;
+			}
+
 			Sleep(1000);
 		}
 
+		systemMgr.log("patch(): finding rip.");
+
 		// find potential target addr.
 		ULONG64 rip = _findRip();
+
 		if (rip == 0) {
+			systemMgr.log("patch(): rip not found, quit.");
 			return;
 		}
 		
+		systemMgr.log("patch(): checking proc status before modify memory.");
+
 		// before manip memory, check process status for the last time.
 		if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
+			systemMgr.log("patch(): process status check failure, quit.");
 			return;
 		}
 
+		systemMgr.log("patch(): preparing driver.");
 
 		// round page.
 		vmStartAddress = rip;        // %rip: near 16xx, round up.
@@ -288,22 +335,26 @@ void PatchManager::patch() {
 		bool             status;
 		KernelDriver     driver;
 
+		systemMgr.log("patch(): starting driver.");
 
 		// start driver.
 		status = 
 		driver.load();
 
 		if (!status) {
+			systemMgr.log("patch(): create file failed(0x%x), quit.", GetLastError());
 			panic("CreateFile失败。");
 			return;
 		}
 
+		systemMgr.log("patch(): reading memory.");
 
 		// read memory.
 		status =
-		driver.readVM((HANDLE)pid, vmbuf, (PVOID)vmStartAddress);
+		driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 
 		if (!status) {
+			systemMgr.log("patch(): read vm failed, quit.");
 			panic("driver.readVM失败。");
 			driver.unload();
 			return;
@@ -311,9 +362,11 @@ void PatchManager::patch() {
 		memcpy(original_vm, vmbuf, 0x4000);
 
 
+		systemMgr.log("patch(): finding trait.");
+
 		// find one of syscalls to offset0.
 		// offset0 starts from buffer begin.
-		ULONG offset0 = 0;
+		LONG offset0 = 0;
 
 		// syscall traits: 4c 8b d1 b8 ?? 00 00 00
 		bool found = false;
@@ -322,6 +375,7 @@ void PatchManager::patch() {
 				vmbuf[offset0 + 1] == '\x8b' &&
 				vmbuf[offset0 + 2] == '\xd1' &&
 				vmbuf[offset0 + 3] == '\xb8' &&
+				/* vmbuf[offset0 + 4] == ?? && */
 				vmbuf[offset0 + 5] == '\x00' &&
 				vmbuf[offset0 + 6] == '\x00' &&
 				vmbuf[offset0 + 7] == '\x00') {
@@ -334,17 +388,11 @@ void PatchManager::patch() {
 		static DWORD found_fail = 0;
 
 		if (!found) {
+			systemMgr.log("patch(): trait not found. leaving.");
 			found_fail++;
 			if (found_fail >= 5) {
 				// in case sometimes it fails forever, record memory.
-				char buf [128];
-				sprintf(buf, "rip_%llx_vmstart_%llx.txt", rip, vmStartAddress);
-				FILE* fp = fopen(buf, "w");
-				for (auto i = 0; i < 0x4000; i++) {
-					fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
-					if (i % 32 == 31) fprintf(fp, "\n");
-				}
-				fclose(fp);
+				_outMemory(rip);
 				panic("似乎无法获取有效的内存特征，你可以把“SGUARD限制器”目录下生成的txt反馈过来，以便查看错误原因");
 			}
 			driver.unload();
@@ -353,17 +401,275 @@ void PatchManager::patch() {
 
 		found_fail = 0;
 
+		systemMgr.log("patch(): trait found.");
+
+
 		// acquire system version for mutable syscall numbers.
 		OSVersion osVersion = systemMgr.getSystemVersion();
 
 		// locate offset0 to syscall 0.
 		offset0 -= 0x20 * *(ULONG*)((ULONG64)vmbuf + offset0 + 4);
 
+		// offset0 must >= 0. otherwise quit.
+		if (offset0 < 0) {
+			systemMgr.log("patch(): error: offset0 <= 0, quit.");
+			driver.unload();
+			return;
+		}
+
 		// patch calls, according to switches.
-		if (patchSwitches.patchDelayExecution) {
+		if (patchSwitches.NtQueryVirtualMemory) { // 0x23 (win10), 0x20 (win7)
 			
-			LONG offset = offset0 + 0x20 * 0x34;
-			CHAR patch_bytes[] = 
+			CHAR patch_bytes[] = "\x49\x89\xCA\xB8\x23\x00\x00\x00\x0F\x05\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3";
+			/*
+				0:  49 89 ca                mov    r10,rcx
+				3:  b8 23 00 00 00          mov    eax,0x23
+				8:  0f 05                   syscall
+				a:  50                      push   rax
+				b:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
+				12: 00 00 00
+				15: ff e0                   jmp    rax
+				17: 58                      pop    rax
+				18: c3                      ret
+			*/
+			if (osVersion == OSVersion::WIN_7) {
+				patch_bytes[0x4] = '\x20';
+			}
+
+			CHAR working_bytes[] =
+				"\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
+				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
+				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
+				"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+			/*
+				0:  53                      push   rbx
+				1:  51                      push   rcx
+				2:  52                      push   rdx
+				3:  56                      push   rsi
+				4:  57                      push   rdi
+				5:  55                      push   rbp
+				6:  41 50                   push   r8
+				8:  41 51                   push   r9
+				a:  41 52                   push   r10
+				c:  41 53                   push   r11
+				e:  41 54                   push   r12
+				10: 41 55                   push   r13
+				12: 41 56                   push   r14
+				14: 41 57                   push   r15
+				16: 9c                      pushf
+				17: 49 c7 c2 e0 43 41 ff    mov    r10,0xFFFFFFFFFF4143E0
+				1e: 41 52                   push   r10
+				20: 48 89 e2                mov    rdx,rsp
+				23: b8 34 00 00 00          mov    eax,0x34
+				28: 0f 05                   syscall
+				2a: 41 5a                   pop    r10
+				2c: 9d                      popf
+				2d: 41 5f                   pop    r15
+				2f: 41 5e                   pop    r14
+				31: 41 5d                   pop    r13
+				33: 41 5c                   pop    r12
+				35: 41 5b                   pop    r11
+				37: 41 5a                   pop    r10
+				39: 41 59                   pop    r9
+				3b: 41 58                   pop    r8
+				3d: 5d                      pop    rbp
+				3e: 5f                      pop    rdi
+				3f: 5e                      pop    rsi
+				40: 5a                      pop    rdx
+				41: 59                      pop    rcx
+				42: 5b                      pop    rbx
+				43: 48 b8 00 00 00 00 00    mov    rax, <returnAddress>
+				4a: 00 00 00
+				4d: ff e0                   jmp    rax
+			*/
+			if (osVersion == OSVersion::WIN_7) {
+				working_bytes[0x24] = '\x31';
+			}
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[0];
+			memcpy(working_bytes + 0x1a, &delay_param, 4);
+
+			// allocate vm.
+			PVOID allocVMStart = NULL;
+			status = driver.allocVM(pid, &allocVMStart);
+			if (!status) {
+				systemMgr.log("patch(): allocVM failed, quit.");
+				panic("driver.allocVM失败。");
+				driver.unload();
+				return;
+			}
+
+			// put allocated address to syscall jmp operand.
+			memcpy(patch_bytes + 0xd, &allocVMStart, 8);
+
+			// patch syscall to vmbuf.
+			LONG offset;
+			if (osVersion == OSVersion::WIN_10) {
+				offset = offset0 + 0x20 * 0x23;
+				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+			} else {
+				offset = offset0 + 0x20 * 0x20;
+				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+			}
+			
+			// get address after 'jmp rax', put it to working_bytes jmp's operand.
+			ULONG64	returnAddress = vmStartAddress + offset + 0x17;
+			memcpy(working_bytes + 0x45, &returnAddress, 8);
+
+			// update allocated vm.
+			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+			status = driver.writeVM(pid, vmalloc, allocVMStart);
+			if (!status) {
+				systemMgr.log("patch(): write vm failed, quit.");
+				panic("driver.writeVM失败。");
+				driver.unload();
+				return;
+			}
+
+			// 旧版使用以下这段shellcode，这偶尔会引发SGUARD崩溃（空指针异常），
+			// 推测原因为sleep系统调用修改了调用者某个被优化到寄存器的局部变量，
+			// 而该寄存器在原系统调用中被优化编译器认为不会修改，或被ntdll封装的native api认为不会修改，
+			// 或并非由调用者保存的寄存器（在windows x64的语义下）。
+			// 
+			//  mov r10, rcx
+			//	mov eax, 0x23
+			//	syscall
+			//	mov r10, 0xFFFFFFFFFF4143E0
+			//	push r10
+			//	mov rdx, rsp
+			//	mov eax, 0x34
+			//	syscall
+			//	pop r10
+			//	ret
+		}
+
+		if (patchSwitches.NtWaitForSingleObject) { // 0x4 (win10), 0x1 (win7)
+
+			CHAR patch_bytes[] = "\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\xC3";
+			/*
+			; syscall is in allocated space; it's too short to put't here.
+			; well; let's assert there's no jinx rip between +0~+14 ;)
+			; treat them as they're waiting at +0x14.
+
+				0:  50                      push   rax
+				1:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
+				8:  00 00 00
+				b:  ff e0                   jmp    rax
+				d:  58                      pop    rax
+				e:  c3                      ret
+				f:  90                      nop
+				10: 90                      nop
+				11: 90                      nop
+				12: 90                      nop
+				13: 90                      nop
+				14: c3                      ret        ; previous syscall rip expected returning here.
+			*/
+
+			CHAR working_bytes[] =
+				"\x58\x49\x89\xCA\xB8\x04\x00\x00\x00\x0F\x05\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
+				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
+				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
+				"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+			/*
+				0:  58                      pop    rax
+				1:  49 89 ca                mov    r10,rcx
+				4:  b8 04 00 00 00          mov    eax,0x4
+				9:  0f 05                   syscall
+				b:  50                      push   rax
+				c:  53                      push   rbx
+				d:  51                      push   rcx
+				e:  52                      push   rdx
+				f:  56                      push   rsi
+				10: 57                      push   rdi
+				11: 55                      push   rbp
+				12: 41 50                   push   r8
+				14: 41 51                   push   r9
+				16: 41 52                   push   r10
+				18: 41 53                   push   r11
+				1a: 41 54                   push   r12
+				1c: 41 55                   push   r13
+				1e: 41 56                   push   r14
+				20: 41 57                   push   r15
+				22: 9c                      pushf
+				23: 49 c7 c2 e0 43 41 ff    mov    r10,0xFFFFFFFFFF4143E0
+				2a: 41 52                   push   r10
+				2c: 48 89 e2                mov    rdx,rsp
+				2f: b8 34 00 00 00          mov    eax,0x34
+				34: 0f 05                   syscall
+				36: 41 5a                   pop    r10
+				38: 9d                      popf
+				39: 41 5f                   pop    r15
+				3b: 41 5e                   pop    r14
+				3d: 41 5d                   pop    r13
+				3f: 41 5c                   pop    r12
+				41: 41 5b                   pop    r11
+				43: 41 5a                   pop    r10
+				45: 41 59                   pop    r9
+				47: 41 58                   pop    r8
+				49: 5d                      pop    rbp
+				4a: 5f                      pop    rdi
+				4b: 5e                      pop    rsi
+				4c: 5a                      pop    rdx
+				4d: 59                      pop    rcx
+				4e: 5b                      pop    rbx
+				4f: 48 b8 00 00 00 00 00    movabs rax, <returnAddress>
+				56: 00 00 00
+				59: ff e0                   jmp    rax
+			*/
+
+			if (osVersion == OSVersion::WIN_7) {
+				working_bytes[0x5] = '\x01';
+				working_bytes[0x30] = '\x31';
+			}
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+			memcpy(working_bytes + 0x26, &delay_param, 4);
+
+			// allocate vm.
+			PVOID allocVMStart = NULL;
+			status = driver.allocVM(pid, &allocVMStart);
+			if (!status) {
+				systemMgr.log("patch(): allocVM failed, quit.");
+				panic("driver.allocVM失败。");
+				driver.unload();
+				return;
+			}
+
+			// put allocated address to syscall jmp operand.
+			memcpy(patch_bytes + 0x3, &allocVMStart, 8);
+
+			// patch syscall to vmbuf.
+			LONG offset;
+			if (osVersion == OSVersion::WIN_10) {
+				offset = offset0 + 0x20 * 0x4;
+				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+			} else {
+				offset = offset0 + 0x20 * 0x1;
+				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+			}
+
+
+			// get address after 'jmp rax'.
+			ULONG64	returnAddress = vmStartAddress + offset + 0xd;
+
+			// put return address to working_bytes jmp's operand.
+			memcpy(working_bytes + 0x51, &returnAddress, 8);
+
+			// move working_bytes to buffer for update.
+			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+
+			// update allocated vm.
+			status = driver.writeVM(pid, vmalloc, allocVMStart);
+			if (!status) {
+				systemMgr.log("patch(): write vm failed, quit.");
+				panic("driver.writeVM失败。");
+				driver.unload();
+				return;
+			}
+
+		}
+
+		if (patchSwitches.NtDelayExecution) { // 0x34 (win10), 0x31 (win7)
+
+			CHAR patch_bytes[] =
 				"\x49\xC7\xC2\xE0\x43\x41\xFF\x4C\x89\x12\x49\x89\xCA\xB8\x34\x00\x00\x00\x0F\x05\xC3";
 			/*
 				mov r10, 0xFFFFFFFFFF4143E0 ; 1250
@@ -374,80 +680,26 @@ void PatchManager::patch() {
 				ret
 			*/
 
+			LONG offset = offset0 + 0x20 * 0x34;   // syscall entry, from rva base: vmstartaddress
+
 			if (osVersion == OSVersion::WIN_7) {
 				offset = offset0 + 0x20 * 0x31;
 				patch_bytes[14] = '\x31';
 			}
 
-			LONG64 delay_param = (LONG64)-10000 * patchDelay;
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
 			memcpy(patch_bytes + 3, &delay_param, 4);
 			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
 		}
 
-		if (patchSwitches.patchResumeThread) {
-
-			LONG offset = offset0 + 0x20 * 0x52;
-			CHAR patch_bytes[] =
-				"\x49\x89\xCA\xB8\x52\x00\x00\x00\x0F\x05\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A\xC3";
-			/*
-				mov r10, rcx
-				mov eax, 0x52
-				syscall
-				mov r10, 0xFFFFFFFFFF4143E0
-				push r10
-				mov rdx, rsp
-				mov eax, 0x34
-				syscall
-				pop r10
-				ret
-			*/
-
-			if (osVersion == OSVersion::WIN_7) {
-				offset = offset0 + 0x20 * 0x4f;
-				patch_bytes[4] = '\x4f';
-				patch_bytes[23] = '\x31';
-			}
-
-			LONG64 delay_param = (LONG64)-10000 * patchDelay;
-			memcpy(patch_bytes + 13, &delay_param, 4);
-			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
-		}
-
-		if (patchSwitches.patchQueryVirtualMemory) {
-
-			LONG offset = offset0 + 0x20 * 0x23;
-			CHAR patch_bytes[] =
-				"\x49\x89\xCA\xB8\x23\x00\x00\x00\x0F\x05\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A\xC3";
-			/*
-				mov r10, rcx
-				mov eax, 0x23
-				syscall
-				mov r10, 0xFFFFFFFFFF4143E0
-				push r10
-				mov rdx, rsp
-				mov eax, 0x34
-				syscall
-				pop r10
-				ret
-			*/
-
-			if (osVersion == OSVersion::WIN_7) {
-				offset = offset0 + 0x20 * 0x20;
-				patch_bytes[4] = '\x20';
-				patch_bytes[23] = '\x31';
-			}
-
-			LONG64 delay_param = (LONG64)-10000 * patchDelay;
-			memcpy(patch_bytes + 13, &delay_param, 4);
-			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
-		}
-
+		systemMgr.log("patch(): writing memory.");
 
 		// write memory.
 		status = 
-		driver.writeVM((HANDLE)pid, vmbuf, (PVOID)vmStartAddress);
+		driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 
 		if (!status) {
+			systemMgr.log("patch(): write vm failed, quit.");
 			panic("driver.writeVM失败。");
 			driver.unload();
 			return;
@@ -455,21 +707,32 @@ void PatchManager::patch() {
 
 		memcpy(commited_vm, vmbuf, 0x4000);
 
+		systemMgr.log("patch(): unloading driver.");
+
 		driver.unload();
 		patchPid = pid;
 	}
 
+	systemMgr.log("patch(): fall in loop.");
 
 	while (patchEnabled) {
+
+		systemMgr.log("patch(): acquiring pid.");
 
 		pid = threadMgr.getTargetPid();
 
 		if (pid == 0 /* target no more exists */ || pid != patchPid /* target is not current */) {
+			systemMgr.log("patch(): pid not match. quit.");
 			patchPid = 0;
-			break;
+			return;
 		}
+
+		systemMgr.log("patch(): pid match. continue sleep.");
+
 		Sleep(5000);
 	}
+
+	systemMgr.log("patch(): patch is disabled, quit.");
 }
 
 void PatchManager::enable(bool forceRecover) {
@@ -484,7 +747,7 @@ void PatchManager::enable(bool forceRecover) {
 		if (patchPid != 0 && patchPid == pid) {
 			KernelDriver driver;
 			driver.load();
-			driver.writeVM((HANDLE)patchPid, commited_vm, (PVOID)vmStartAddress);
+			driver.writeVM(patchPid, commited_vm, (PVOID)vmStartAddress);
 			driver.unload();
 		}
 	}
@@ -502,7 +765,7 @@ void PatchManager::disable(bool forceRecover) {
 		if (patchPid != 0 && patchPid == pid) {
 			KernelDriver driver;
 			driver.load();
-			driver.writeVM((HANDLE)patchPid, original_vm, (PVOID)vmStartAddress);
+			driver.writeVM(patchPid, original_vm, (PVOID)vmStartAddress);
 			driver.unload();
 		}
 	}
@@ -520,17 +783,17 @@ void PatchManager::wndProcAddMenu(HMENU hMenu) {
 			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已提交更改");
 		}
 	}
-	AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V1.2 [点击切换]");
+	AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V2 [点击切换]");
 	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 	AppendMenu(hMenu, MFT_STRING, IDM_DOPATCH, "自动");
 	AppendMenu(hMenu, MFT_STRING, IDM_UNDOPATCH, "撤销修改（慎用）");
 	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1, "patch!NtDelayExecution");
-	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "patch!NtResumeThread");
-	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "patch!NtQueryVirtualMemory");
+	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1, "inline Ntdll!NtQueryVirtualMemory");
+	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "inline Ntdll!NtWaitForSingleObject");
+	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "re-write Ntdll!NtDelayExecution");
 	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 	char buf[128];
-	sprintf(buf, "设置延时（当前：%u）", patchDelay);
+	sprintf(buf, "设置延时（当前：%u/%u/%u）", patchDelay[0], patchDelay[1], patchDelay[2]);
 	AppendMenu(hMenu, MFT_STRING, IDM_SETDELAY, buf);
 	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 	AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
@@ -539,13 +802,13 @@ void PatchManager::wndProcAddMenu(HMENU hMenu) {
 	} else {
 		CheckMenuItem(hMenu, IDM_UNDOPATCH, MF_CHECKED);
 	}
-	if (patchSwitches.patchDelayExecution) {
+	if (patchSwitches.NtQueryVirtualMemory) {
 		CheckMenuItem(hMenu, IDM_PATCHSWITCH1, MF_CHECKED);
 	}
-	if (patchSwitches.patchResumeThread) {
+	if (patchSwitches.NtWaitForSingleObject) {
 		CheckMenuItem(hMenu, IDM_PATCHSWITCH2, MF_CHECKED);
 	}
-	if (patchSwitches.patchQueryVirtualMemory) {
+	if (patchSwitches.NtDelayExecution) {
 		CheckMenuItem(hMenu, IDM_PATCHSWITCH3, MF_CHECKED);
 	}
 }
@@ -559,14 +822,24 @@ ULONG64 PatchManager::_findRip() {
 	CONTEXT                   context;
 	context.ContextFlags = CONTEXT_ALL;
 
+
+	systemMgr.log("patch::_findRip(): get pid.");
+
 	// open thread.
 	if (!threadMgr.getTargetPid()) {
+		systemMgr.log("patch::_findRip(): pid not found, quit.");
 		return 0;
 	}
 
+	systemMgr.log("patch::_findRip(): open all threads handle.");
+
 	if (!threadMgr.enumTargetThread()) {
+		systemMgr.log("patch::_findRip(): open thread failed, quit.");
 		return 0;
 	}
+
+
+	systemMgr.log("patch::_findRip(): sampling cycles.");
 
 	// sample 10s for cycles.
 	for (auto time = 1; time <= 10; time++) {
@@ -579,10 +852,14 @@ ULONG64 PatchManager::_findRip() {
 		Sleep(1000);
 	}
 
+	systemMgr.log("patch::_findRip(): sorting.");
+
 	// sort by thread cycles in decending order.
 	std::sort(threadList.begin(), threadList.end(),
 		[](auto& a, auto& b) { return a.cycleDelta > b.cycleDelta; });
 
+
+	systemMgr.log("patch::_findRip(): sampling rip.");
 
 	// (by now) sample 1s in 1st thread, for rip abbrvt location. 
 	for (auto time = 1; time <= 100; time++) {
@@ -595,6 +872,7 @@ ULONG64 PatchManager::_findRip() {
 	}
 
 	if (contextMap.empty()) {
+		systemMgr.log("patch::_findRip(): contextMap.empty, quit.");
 		return 0;
 	}
 
@@ -604,4 +882,15 @@ ULONG64 PatchManager::_findRip() {
 			contextMap.begin(), contextMap.end(),
 			[](auto& a, auto& b) { return a.second < b.second; })
 		->first;
+}
+
+void PatchManager::_outMemory(ULONG64 rip) {
+	char buf[128];
+	sprintf(buf, "rip_%llx_vmstart_%llx.txt", rip, vmStartAddress);
+	FILE* fp = fopen(buf, "w");
+	for (auto i = 0; i < 0x4000; i++) {
+		fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
+		if (i % 32 == 31) fprintf(fp, "\n");
+	}
+	fclose(fp);
 }

@@ -1,9 +1,9 @@
 #include <Windows.h>
 #include <stdio.h>
+#include "win32utility.h"
 #include "limitcore.h"
 #include "tracecore.h"
 #include "mempatch.h"
-#include "win32utility.h"
 #include "resource.h"
 
 #include "wndproc.h"
@@ -24,16 +24,19 @@ static void ShowAbout() {
 	MessageBox(0,
 		"本工具启动后自动优化后台ACE-Guard Client EXE的资源占用。\n"
 		"该工具仅供研究交流游戏优化使用，将来可能失效，不保证稳定性。\n"
-		"若您发现该工具已无法正常使用，请更换模式或选项；若还不行请停止使用，并将遇到的错误反馈至下方链接。\n\n"
+		"如果你发现无法正常使用，请更换模式或选项；若还不行请停止使用，并将遇到的错误反馈至下方链接。\n\n"
 		"工作模式说明：\n"
 		"1 时间片轮转（21.2.6）：已知可能导致“96-0”，若出现该情况可切换至【线程跟踪】。\n"
 		"  (当然，即使没有出现错误你也可以使用其他模式，不会有任何影响)\n\n"
 		"2 线程追踪（21.7.17）：已知部分机器使用“锁定”选项时会出现“3009-0”，若出现该情况可以尝试【锁定-rr】。\n"
 		"如果你使用【锁定-rr】依旧出问题，可点击【设置时间切分】，并尝试较小的时间。例如尝试90，85，80...直到合适即可。\n"
 		"注：【时间切分】设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n\n"
-		"3 Memory Patch（21.10.6）：默认设置后两个（只挂钩SGUARD扫内存的系统调用），理论上并不会出现游戏异常。"
-		"提示：建议你不要勾选NtDelayExecution（旧版功能），以免可能出现游戏异常或偶尔卡顿的问题。\n"
-		"【注意】方式3需要临时装载一次驱动（提交更改后会立即将之卸载）。若你使用时出现问题，可以去论坛原贴下载证书。\n\n\n"
+		"3 Memory Patch（21.10.6）：\n"
+		"NtQueryVirtualMemory: 只挂钩SGUARD扫内存的系统调用，理论上并不会出现游戏异常。\n"
+		"NtWaitForSingleObject: 增强模式，若调较大的数值配合上面可以让SGUARD占用接近0，但不清楚是否会出游戏异常。\n"
+		"【注意】如果出现游戏异常，建议先关闭这一项。\n"
+		"NtDelayExecution（旧版功能）：不建议开启，以免可能出现游戏异常或偶尔卡顿的问题。\n"
+		"【注意】模式3需要临时装载一次驱动（提交更改后会立即将之卸载）。若你使用时出现问题，可以去论坛链接下载证书。\n\n\n"
 		"SGUARD讨论群：775176979\n\n"
 		"论坛链接：https://bbs.colg.cn/thread-8087898-1-1.html \n"
 		"项目地址：https://github.com/H3d9/sguard_limit （点ctrl+C复制到记事本）",
@@ -80,32 +83,71 @@ static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, L
 // dialog: set syscall delay.
 static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
+	static int mode = 0;
+
 	switch (message) {
 	case WM_INITDIALOG:
 	{
 		char buf[128];
-		sprintf(buf, "输入200~2000的整数（当前值：%u）", patchMgr.patchDelay);
-		SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
+		if (lParam == 0) {
+			mode = 0;
+			sprintf(buf, "输入200~2000的整数（当前值：%u）", patchMgr.patchDelay[0]);
+			SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
+			SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtQueryVirtualMemory");
+		} else if (lParam == 1) {
+			mode = 1;
+			sprintf(buf, "输入500~5000的整数（当前值：%u）", patchMgr.patchDelay[1]);
+			SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
+			SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtWaitForSingleObject");
+		} else { // if lParam == 2
+			mode = 2;
+			sprintf(buf, "输入200~2000的整数（当前值：%u）", patchMgr.patchDelay[2]);
+			SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
+			SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtDelayExecution");
+		}
 		return (INT_PTR)TRUE;
 	}
 
 	case WM_COMMAND:
+	{
 		if (LOWORD(wParam) == IDC_SETDELAYOK) {
 			BOOL translated;
 			UINT res = GetDlgItemInt(hDlg, IDC_SETDELAYEDIT, &translated, FALSE);
-			if (!translated || res < 200 || res > 2000) {
-				MessageBox(0, "输入200~2000的整数", "错误", MB_OK);
-			} else {
-				patchMgr.patchDelay = res;
-				EndDialog(hDlg, LOWORD(wParam));
-				return (INT_PTR)TRUE;
+
+			if (mode == 0) {
+				if (!translated || res < 200 || res > 2500) {
+					MessageBox(0, "输入200~2500的整数", "错误", MB_OK);
+				} else {
+					patchMgr.patchDelay[0] = res;
+					EndDialog(hDlg, LOWORD(wParam));
+					return (INT_PTR)TRUE;
+				}
+			} else if (mode == 1) {
+				if (!translated || res < 500 || res > 5000) {
+					MessageBox(0, "输入500~5000的整数", "错误", MB_OK);
+				} else {
+					patchMgr.patchDelay[1] = res;
+					EndDialog(hDlg, LOWORD(wParam));
+					return (INT_PTR)TRUE;
+				}
+			} else { // if mode == 2
+				if (!translated || res < 200 || res > 2000) {
+					MessageBox(0, "输入200~2000的整数", "错误", MB_OK);
+				} else {
+					patchMgr.patchDelay[2] = res;
+					EndDialog(hDlg, LOWORD(wParam));
+					return (INT_PTR)TRUE;
+				}
 			}
 		}
+	}
 		break;
 
 	case WM_CLOSE:
+	{
 		EndDialog(hDlg, LOWORD(wParam));
 		return (INT_PTR)TRUE;
+	}
 	}
 
 	return (INT_PTR)FALSE;
@@ -233,37 +275,42 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				break;
 			case IDM_SETDELAY:
-				DialogBox(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc);
-				systemMgr.writeConfig();
+				if (IDYES == MessageBox(0, "请依次设置以下函数的强制延时。\n\nNtQueryVirtualMemory\nNtWaitForSingleObject\nNtDelayExecution\n", "信息", MB_YESNO)) {
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 0);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 1);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 2);
+					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+					systemMgr.writeConfig();
+				}
 				break;
 			case IDM_PATCHSWITCH1:
-				if (patchMgr.patchSwitches.patchDelayExecution) {
-					patchMgr.patchSwitches.patchDelayExecution = false;
-					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
+					patchMgr.patchSwitches.NtQueryVirtualMemory = false;
 				} else {
-					if (IDYES == MessageBox(0, "这是旧版功能，如果你之前出现“3009”，“96”，“偶尔卡顿”等问题，不要启用该选项。要继续么？", "注意", MB_YESNO)) {
-						patchMgr.patchSwitches.patchDelayExecution = true;
-						MessageBox(0, "重启游戏后生效", "注意", MB_OK);
-					}
+					patchMgr.patchSwitches.NtQueryVirtualMemory = true;
 				}
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				systemMgr.writeConfig();
 				break;
 			case IDM_PATCHSWITCH2:
-				if (patchMgr.patchSwitches.patchResumeThread) {
-					patchMgr.patchSwitches.patchResumeThread = false;
+				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
+					patchMgr.patchSwitches.NtWaitForSingleObject = false;
 				} else {
-					patchMgr.patchSwitches.patchResumeThread = true;
+					patchMgr.patchSwitches.NtWaitForSingleObject = true;
 				}
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				systemMgr.writeConfig();
 				break;
 			case IDM_PATCHSWITCH3:
-				if (patchMgr.patchSwitches.patchQueryVirtualMemory) {
-					patchMgr.patchSwitches.patchQueryVirtualMemory = false;
+				if (patchMgr.patchSwitches.NtDelayExecution) {
+					patchMgr.patchSwitches.NtDelayExecution = false;
+					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				} else {
-					patchMgr.patchSwitches.patchQueryVirtualMemory = true;
+					if (IDYES == MessageBox(0, "这是旧版功能，如果你之前出现“3009”，“96”，“偶尔卡顿”等问题，不要启用该选项。要继续么？", "注意", MB_YESNO)) {
+						patchMgr.patchSwitches.NtDelayExecution = true;
+						MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+					}
 				}
-				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				systemMgr.writeConfig();
 				break;
 		}

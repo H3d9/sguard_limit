@@ -68,7 +68,7 @@ private:
 
 private:
 	win32SystemManager();
-	~win32SystemManager()                                       = default;
+	~win32SystemManager();
 	win32SystemManager(const win32SystemManager&)               = delete;
 	win32SystemManager(win32SystemManager&&)                    = delete;
 	win32SystemManager& operator= (const win32SystemManager&)   = delete;
@@ -96,18 +96,22 @@ public:
 			    
 	bool        loadConfig();
 	void        writeConfig();
+
+	void        log(const char* format, ...);
 			    
 public:
 	CHAR*       sysfilePath();
-	OSVersion  getSystemVersion();
+	OSVersion   getSystemVersion();
 
 private:
 	ATOM        _registerMyClass(WNDPROC WndProc);
 
 private:
 	OSVersion                    osVersion;
+	FILE*                        logfp;
 	NOTIFYICONDATA               icon;
 	CHAR                         profileDir[1024];
 	CHAR                         profile[1024];
 	CHAR                         sysfile[1024];
+	CHAR                         logfile[1024];
 };

@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <tlhelp32.h>
 #include <UserEnv.h>
+#include <time.h>
 #include "wndproc.h"
 #include "limitcore.h"
 #include "tracecore.h"
@@ -140,8 +141,14 @@ win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL), 
-	  osVersion(OSVersion::OTHERS), 
-	  icon({}), profileDir(), profile(), sysfile() {}
+	  osVersion(OSVersion::OTHERS), logfp(NULL),
+	  icon({}), profileDir(), profile(), sysfile(), logfile() {}
+
+win32SystemManager::~win32SystemManager() {
+	if (logfp) {
+		fclose(logfp);
+	}
+}
 
 win32SystemManager& win32SystemManager::getInstance() {
 	return systemManager;
@@ -169,25 +176,6 @@ void win32SystemManager::setupProcessDpi() {
 
 		FreeLibrary(hUser32);
 	}
-
-	/*// 以下代码的执行流不正确（可能为msvc的bug），故采用上述显示载入动态库的方法。
-	typedef NTSTATUS (WINAPI* fnp)(OSVERSIONINFOEX*);
-	fnp RtlGetVersion = (fnp)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
-
-	if (RtlGetVersion) {
-
-	OSVERSIONINFOEX osInfo;
-	osInfo.dwOSVersionInfoSize = sizeof(osInfo);
-
-	RtlGetVersion(&osInfo);
-
-	if ((osInfo.dwMajorVersion == 10 && osInfo.dwMinorVersion == 0 && osInfo.dwBuildNumber >= 17763)
-	|| osInfo.dwMajorVersion >= 10) {
-	SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
-	} else {
-	SetProcessDPIAware();
-	}
-	}*/
 }
 
 void win32SystemManager::systemInit(HINSTANCE hInst) {
@@ -207,8 +195,30 @@ void win32SystemManager::systemInit(HINSTANCE hInst) {
 
 	strcpy(profile, profileDir);
 	strcpy(sysfile, profileDir);
+	strcpy(logfile, profileDir);
 	strcat(profile, "\\config.ini");
 	strcat(sysfile, "\\SGuardLimit_VMIO.sys");
+	strcat(logfile, "\\log.txt");
+
+
+	// initialize log system.
+	// if old log is larger than 1MiB, delete it.
+	DWORD filesize = GetCompressedFileSize(logfile, NULL);
+
+	if (filesize > (1 << 20)) {
+		DeleteFile(logfile);
+	}
+
+	// append new session sign to log.
+	logfp = fopen(logfile, "a+");
+	setbuf(logfp, NULL);
+
+	time_t t = time(0);
+	tm* local = localtime(&t);
+	fprintf(logfp, "============ session start: [%d-%02d-%02d %02d:%02d:%02d] =============",
+		1900 + local->tm_year, local->tm_mon, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
+	fprintf(logfp, "\n");
+
 
 	// acquire system version.
 	typedef NTSTATUS(WINAPI* pf)(OSVERSIONINFOEX*);
@@ -384,36 +394,52 @@ bool win32SystemManager::loadConfig() {  // executes only when program is inital
 	}
 
 	// patch module
-	res = GetPrivateProfileInt("Patch", "Delay", -1, profile);
+	res = GetPrivateProfileInt("Patch", "Delay0", -1, profile);
 	if (res == (UINT)-1 || (res < 200 || res > 2000)) {
-		WritePrivateProfileString("Patch", "Delay", "1250", profile);
-		patchMgr.patchDelay = 1250;
+		WritePrivateProfileString("Patch", "Delay0", "1250", profile);
+		patchMgr.patchDelay[0] = 1250;
 	} else {
-		patchMgr.patchDelay = res;
+		patchMgr.patchDelay[0] = res;
 	}
 
-	res = GetPrivateProfileInt("Patch", "NtDelayExecution", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1)) {
-		WritePrivateProfileString("Patch", "NtDelayExecution", "0", profile);
-		patchMgr.patchSwitches.patchDelayExecution = false;
+	res = GetPrivateProfileInt("Patch", "Delay1", -1, profile);
+	if (res == (UINT)-1 || (res < 200 || res > 5000)) {
+		WritePrivateProfileString("Patch", "Delay1", "2000", profile);
+		patchMgr.patchDelay[1] = 2000;
 	} else {
-		patchMgr.patchSwitches.patchDelayExecution = res ? true : false;
+		patchMgr.patchDelay[1] = res;
 	}
 
-	res = GetPrivateProfileInt("Patch", "NtResumeThread", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1)) {
-		WritePrivateProfileString("Patch", "NtResumeThread", "1", profile);
-		patchMgr.patchSwitches.patchResumeThread = true;
+	res = GetPrivateProfileInt("Patch", "Delay2", -1, profile);
+	if (res == (UINT)-1 || (res < 200 || res > 2000)) {
+		WritePrivateProfileString("Patch", "Delay2", "1250", profile);
+		patchMgr.patchDelay[2] = 1250;
 	} else {
-		patchMgr.patchSwitches.patchResumeThread = res ? true : false;
+		patchMgr.patchDelay[2] = res;
 	}
 
 	res = GetPrivateProfileInt("Patch", "NtQueryVirtualMemory", -1, profile);
 	if (res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("Patch", "NtQueryVirtualMemory", "1", profile);
-		patchMgr.patchSwitches.patchQueryVirtualMemory = true;
+		patchMgr.patchSwitches.NtQueryVirtualMemory = true;
 	} else {
-		patchMgr.patchSwitches.patchQueryVirtualMemory = res ? true : false;
+		patchMgr.patchSwitches.NtQueryVirtualMemory = res ? true : false;
+	}
+
+	res = GetPrivateProfileInt("Patch", "NtWaitForSingleObject", -1, profile);
+	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Patch", "NtWaitForSingleObject", "0", profile);
+		patchMgr.patchSwitches.NtWaitForSingleObject = false;
+	} else {
+		patchMgr.patchSwitches.NtWaitForSingleObject = res ? true : false;
+	}
+
+	res = GetPrivateProfileInt("Patch", "NtDelayExecution", -1, profile);
+	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Patch", "NtDelayExecution", "0", profile);
+		patchMgr.patchSwitches.NtDelayExecution = false;
+	} else {
+		patchMgr.patchSwitches.NtDelayExecution = res ? true : false;
 	}
 
 	// if it's first time user updates to this version, force to mode 2.
@@ -440,17 +466,38 @@ void win32SystemManager::writeConfig() {
 	sprintf(buf, "%u", traceMgr.lockRound);
 	WritePrivateProfileString("Lock", "Round", buf, profile);
 
-	sprintf(buf, "%u", patchMgr.patchDelay);
-	WritePrivateProfileString("Patch", "Delay", buf, profile);
+	sprintf(buf, "%u", patchMgr.patchDelay[0]);
+	WritePrivateProfileString("Patch", "Delay0", buf, profile);
 
-	sprintf(buf, patchMgr.patchSwitches.patchDelayExecution ? "1" : "0");
+	sprintf(buf, "%u", patchMgr.patchDelay[1]);
+	WritePrivateProfileString("Patch", "Delay1", buf, profile);
+
+	sprintf(buf, "%u", patchMgr.patchDelay[2]);
+	WritePrivateProfileString("Patch", "Delay2", buf, profile);
+
+	sprintf(buf, patchMgr.patchSwitches.NtQueryVirtualMemory ? "1" : "0");
+	WritePrivateProfileString("Patch", "NtQueryVirtualMemory", buf, profile);
+
+	sprintf(buf, patchMgr.patchSwitches.NtWaitForSingleObject ? "1" : "0");
+	WritePrivateProfileString("Patch", "NtWaitForSingleObject", buf, profile);
+
+	sprintf(buf, patchMgr.patchSwitches.NtDelayExecution ? "1" : "0");
 	WritePrivateProfileString("Patch", "NtDelayExecution", buf, profile);
+}
 
-	sprintf(buf, patchMgr.patchSwitches.patchResumeThread ? "1" : "0");
-	WritePrivateProfileString("Patch", "NtResumeThread", buf, profile);
+void win32SystemManager::log(const char* format, ...) {
 
-	sprintf(buf, patchMgr.patchSwitches.patchQueryVirtualMemory ? "1" : "0");
-	WritePrivateProfileString("Patch", "NtReadVirtualMemory", buf, profile);
+	time_t t = time(0);
+	tm* local = localtime(&t);
+	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] ", 1900 + local->tm_year, local->tm_mon, local->tm_mday,
+		local->tm_hour, local->tm_min, local->tm_sec);
+
+	va_list arg;
+	va_start(arg, format);
+	vfprintf(logfp, format, arg);
+	va_end(arg);
+
+	fprintf(logfp, "\n");
 }
 
 CHAR* win32SystemManager::sysfilePath() {

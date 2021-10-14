@@ -24,8 +24,9 @@ public:
 public:
 	bool     load();
 	void     unload();
-	bool     readVM(HANDLE pid, PVOID out, PVOID targetAddress);
-	bool     writeVM(HANDLE pid, PVOID in, PVOID targetAddress);
+	bool     readVM(DWORD pid, PVOID out, PVOID targetAddress);
+	bool     writeVM(DWORD pid, PVOID in, PVOID targetAddress);
+	bool     allocVM(DWORD pid, PVOID* pAllocatedAddress);
 
 private:
 	typedef struct {
@@ -39,12 +40,13 @@ private:
 
 	static constexpr DWORD   VMIO_READ    = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD   VMIO_WRITE   = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD   VMIO_ALLOC   = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
 	HANDLE  hDriver;
 };
 
 
-// patch module
+// patch module (sington)
 class PatchManager {
 
 private:
@@ -63,15 +65,15 @@ public:
 
 public:
 	struct patchSwitches_t {
-		bool patchDelayExecution        = false;
-		bool patchResumeThread          = true;
-		bool patchQueryVirtualMemory    = true;
+		bool NtQueryVirtualMemory    = true;
+		bool NtWaitForSingleObject   = true;
+		bool NtDelayExecution        = false;
 	};
 
 	volatile bool              patchEnabled;
 	volatile DWORD             patchPid;
 	volatile patchSwitches_t   patchSwitches;
-	volatile DWORD             patchDelay;
+	volatile DWORD             patchDelay[3];
 
 public:
 	void      patchInit();
@@ -82,10 +84,12 @@ public:
 
 private:
 	ULONG64   _findRip();
+	void      _outMemory(ULONG64 rip);
 
 private:
 	ULONG64                    vmStartAddress             = 0;
 	CHAR                       original_vm     [0x4000]   = {};
 	CHAR                       commited_vm     [0x4000]   = {};
 	CHAR                       vmbuf           [0x4000]   = {};
+	CHAR                       vmalloc         [0x4000]   = {};
 };

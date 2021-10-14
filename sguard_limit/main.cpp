@@ -1,13 +1,12 @@
-// SGuard64限制器，适用于各种tx游戏
+// x64 SGUARD限制器，适用于各种腾讯游戏
 // H3d9, 写于2021.2.5晚。
 #include <Windows.h>
 #include "win32utility.h"
 #include "wndproc.h"
+#include "panic.h"
 #include "limitcore.h"
 #include "tracecore.h"
 #include "mempatch.h"
-#include "panic.h"
-
 
 win32SystemManager&     systemMgr               = win32SystemManager::getInstance();
 LimitManager&           limitMgr                = LimitManager::getInstance();
@@ -25,9 +24,13 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 	
 	while (1) {
+
+		systemMgr.log("hijack thread: check pid.");
+
 		// scan per 5 seconds when idle; if process is found, trap into hijack()。
-		DWORD pid = threadMgr.getTargetPid();
-		if (pid) {
+		if (threadMgr.getTargetPid()) {
+
+			systemMgr.log("hijack thread: pid found.");
 			if (g_Mode == 0 && limitMgr.limitEnabled) {
 				g_bHijackThreadWaiting = false;   // sync is done as we call schedule
 				limitMgr.hijack();                // start hijack.
@@ -40,10 +43,14 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 			}
 			if (g_Mode == 2 && patchMgr.patchEnabled) {
 				g_bHijackThreadWaiting = false;
+				systemMgr.log("hijack thread: entering patchMgr::patch().");
 				patchMgr.patch();
+				systemMgr.log("hijack thread: leaving patchMgr::patch().");
 				g_bHijackThreadWaiting = true;
 			}
 		}
+
+		systemMgr.log("hijack thread: waiting.");
 		Sleep(5000); // call sys schedule | no target found, wait.
 	}
 }
@@ -86,20 +93,14 @@ INT WINAPI WinMain(
 
 	if (!status) {
 		MessageBox(0,
-			"注意：这是SGUARD限制器的【测试版本】。你应该把使用中遇到的问题提交至论坛。\n\n"
-			"即使使用正常也建议将使用情况发送过来，以便统计。\n\n"
-			"交流群：775176979\n\n",
-			VERSION " colg@H3d9", MB_OK);
-		ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);
-		MessageBox(0,
-			"首次使用说明：\n"
-			"更新模式：MemPatch V1.2\n"
-			"1 修复”0x2”设备不存在的问题，如果还出问题可以把附带的sys手动拷贝到\n"
-			"%appdata%\\sguard_limit文件夹。\n"
-			"2 使用C++11风格对项目重构。\n"
+			"首次使用说明：\n\n"
+			"更新模式：MemPatch V2\n\n"
+			"增加稳定性，修复旧版导致SG卡掉的问题。\n"
+			"增加控制选项，以适应不同机器。\n"
 			"\n\n"
 			"【提示】双击右下角托盘图标，可以查看新版详细说明。",
 			VERSION " colg@H3d9", MB_OK);
+		ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);
 	}
 
 	patchMgr.patchInit();
