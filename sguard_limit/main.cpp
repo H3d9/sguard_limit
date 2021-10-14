@@ -23,9 +23,9 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 	
-	while (1) {
+	systemMgr.log("hijack thread: created.");
 
-		systemMgr.log("hijack thread: check pid.");
+	while (1) {
 
 		// scan per 5 seconds when idle; if process is found, trap into hijack()¡£
 		if (threadMgr.getTargetPid()) {
@@ -43,14 +43,11 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 			}
 			if (g_Mode == 2 && patchMgr.patchEnabled) {
 				g_bHijackThreadWaiting = false;
-				systemMgr.log("hijack thread: entering patchMgr::patch().");
 				patchMgr.patch();
-				systemMgr.log("hijack thread: leaving patchMgr::patch().");
 				g_bHijackThreadWaiting = true;
 			}
 		}
 
-		systemMgr.log("hijack thread: waiting.");
 		Sleep(5000); // call sys schedule | no target found, wait.
 	}
 }

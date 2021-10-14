@@ -35,7 +35,7 @@ static void ShowAbout() {
 		"NtQueryVirtualMemory: 只挂钩SGUARD扫内存的系统调用，理论上并不会出现游戏异常。\n"
 		"NtWaitForSingleObject: 增强模式，若调较大的数值配合上面可以让SGUARD占用接近0，但不清楚是否会出游戏异常。\n"
 		"【注意】如果出现游戏异常，建议先关闭这一项。\n"
-		"NtDelayExecution（旧版功能）：不建议开启，以免可能出现游戏异常或偶尔卡顿的问题。\n"
+		"NtDelayExecution:（旧版功能）不建议开启，以免可能出现游戏异常或偶尔卡顿的问题。如果你想用这个，建议取消勾选其余两项。\n"
 		"【注意】模式3需要临时装载一次驱动（提交更改后会立即将之卸载）。若你使用时出现问题，可以去论坛链接下载证书。\n\n\n"
 		"SGUARD讨论群：775176979\n\n"
 		"论坛链接：https://bbs.colg.cn/thread-8087898-1-1.html \n"
@@ -126,6 +126,9 @@ static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, 
 				if (!translated || res < 500 || res > 5000) {
 					MessageBox(0, "输入500~5000的整数", "错误", MB_OK);
 				} else {
+					if (res >= 3500) {
+						MessageBox(0, "如果较大的数值导致问题，请适当调小。", "提示", MB_OK);
+					}
 					patchMgr.patchDelay[1] = res;
 					EndDialog(hDlg, LOWORD(wParam));
 					return (INT_PTR)TRUE;
@@ -275,7 +278,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				break;
 			case IDM_SETDELAY:
-				if (IDYES == MessageBox(0, "请依次设置以下函数的强制延时。\n\nNtQueryVirtualMemory\nNtWaitForSingleObject\nNtDelayExecution\n", "信息", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "请依次设置以下函数的强制延时。\n如果不想设置某个选项，可以直接关掉对应的窗口。\n\nNtQueryVirtualMemory\nNtWaitForSingleObject\nNtDelayExecution\n", "信息", MB_YESNO)) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 0);
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 1);
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 2);

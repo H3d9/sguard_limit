@@ -717,8 +717,6 @@ void PatchManager::patch() {
 
 	while (patchEnabled) {
 
-		systemMgr.log("patch(): acquiring pid.");
-
 		pid = threadMgr.getTargetPid();
 
 		if (pid == 0 /* target no more exists */ || pid != patchPid /* target is not current */) {
@@ -726,8 +724,6 @@ void PatchManager::patch() {
 			patchPid = 0;
 			return;
 		}
-
-		systemMgr.log("patch(): pid match. continue sleep.");
 
 		Sleep(5000);
 	}

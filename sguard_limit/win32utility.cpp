@@ -201,18 +201,26 @@ void win32SystemManager::systemInit(HINSTANCE hInst) {
 	strcat(logfile, "\\log.txt");
 
 
+	// initialize profile directory.
+	DWORD pathAttr = GetFileAttributes(profileDir);
+	if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
+		CreateDirectory(profileDir, NULL);
+	}
+
+
 	// initialize log system.
+	
 	// if old log is larger than 1MiB, delete it.
 	DWORD filesize = GetCompressedFileSize(logfile, NULL);
-
-	if (filesize > (1 << 20)) {
+	if (filesize != INVALID_FILE_SIZE && filesize > (1 << 20)) {
 		DeleteFile(logfile);
 	}
 
-	// append new session sign to log.
+	// open log handle.
 	logfp = fopen(logfile, "a+");
 	setbuf(logfp, NULL);
 
+	// append new session sign to log.
 	time_t t = time(0);
 	tm* local = localtime(&t);
 	fprintf(logfp, "============ session start: [%d-%02d-%02d %02d:%02d:%02d] =============",
@@ -344,13 +352,6 @@ bool win32SystemManager::loadConfig() {  // executes only when program is inital
 	char          version[128];
 	bool          result = true;
 
-	// if path does not exist, create a new one.
-	DWORD pathAttr = GetFileAttributes(profileDir);
-	if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
-		CreateDirectory(profileDir, NULL);
-		result = false;
-	}
-
 	// check version.
 	GetPrivateProfileString("Global", "Version", NULL, version, 128, profile);
 	if (strcmp(version, VERSION) != 0) {
@@ -428,8 +429,8 @@ bool win32SystemManager::loadConfig() {  // executes only when program is inital
 
 	res = GetPrivateProfileInt("Patch", "NtWaitForSingleObject", -1, profile);
 	if (res == (UINT)-1 || (res != 0 && res != 1)) {
-		WritePrivateProfileString("Patch", "NtWaitForSingleObject", "0", profile);
-		patchMgr.patchSwitches.NtWaitForSingleObject = false;
+		WritePrivateProfileString("Patch", "NtWaitForSingleObject", "1", profile);
+		patchMgr.patchSwitches.NtWaitForSingleObject = true;
 	} else {
 		patchMgr.patchSwitches.NtWaitForSingleObject = res ? true : false;
 	}
