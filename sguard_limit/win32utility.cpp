@@ -6,6 +6,7 @@
 #include "limitcore.h"
 #include "tracecore.h"
 #include "mempatch.h"
+#include "panic.h"
 #include "resource.h"
 
 #include "win32utility.h"
@@ -20,7 +21,7 @@ extern PatchManager&            patchMgr;
 // win32Thread
 
 win32Thread::win32Thread(DWORD tid, DWORD desiredAccess)
-	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), dieCount(0), _refCount(new DWORD(1)) {
+	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), rip{0}, _refCount(new DWORD(1)) {
 	if (tid != 0) {
 		handle = OpenThread(desiredAccess, FALSE, tid);
 	}
@@ -28,7 +29,7 @@ win32Thread::win32Thread(DWORD tid, DWORD desiredAccess)
 
 win32Thread::~win32Thread() {
 	// if dtor is called, _refCount is guaranteed to be valid.
-	if (-- * _refCount == 0) {
+	if (-- *_refCount == 0) {
 		delete _refCount;
 		if (handle) {
 			CloseHandle(handle);
@@ -37,8 +38,8 @@ win32Thread::~win32Thread() {
 }
 
 win32Thread::win32Thread(const win32Thread& t)
-	: tid(t.tid), handle(t.handle), cycles(t.cycles), cycleDelta(t.cycleDelta), dieCount(t.dieCount), _refCount(t._refCount) {
-	++* _refCount;
+	: tid(t.tid), handle(t.handle), cycles(t.cycles), cycleDelta(t.cycleDelta), rip(t.rip), _refCount(t._refCount) {
+	++ *_refCount;
 }
 
 win32Thread::win32Thread(win32Thread&& t) noexcept : win32Thread() {
@@ -61,7 +62,7 @@ void win32Thread::_mySwap(win32Thread& t1, win32Thread& t2) {
 	std::swap(t1.handle, t2.handle);
 	std::swap(t1.cycles, t2.cycles);
 	std::swap(t1.cycleDelta, t2.cycleDelta);
-	std::swap(t1.dieCount, t2.dieCount);
+	std::swap(t1.rip, t2.rip);
 	std::swap(t1._refCount, t2._refCount);
 }
 
@@ -141,12 +142,17 @@ win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL), 
-	  osVersion(OSVersion::OTHERS), logfp(NULL),
+	  hProgram(NULL), osVersion(OSVersion::OTHERS), logfp(NULL),
 	  icon({}), profileDir(), profile(), sysfile(), logfile() {}
 
 win32SystemManager::~win32SystemManager() {
+
 	if (logfp) {
 		fclose(logfp);
+	}
+
+	if (hProgram) {
+		CloseHandle(hProgram);
 	}
 }
 
@@ -178,10 +184,17 @@ void win32SystemManager::setupProcessDpi() {
 	}
 }
 
-void win32SystemManager::systemInit(HINSTANCE hInst) {
+bool win32SystemManager::systemInit(HINSTANCE hInst) {
 	
 	// initialize application vars.
 	hInstance = hInst;
+
+	// decide whether it's single instance.
+	HANDLE hProgram = CreateMutex(NULL, FALSE, "sguard_limit");
+	if (!hProgram || GetLastError() == ERROR_ALREADY_EXISTS) {
+		MessageBox(0, "同时只能运行一个SGUARD限制器。", "错误", MB_OK);
+		return false;
+	}
 
 
 	// initialize path vars.
@@ -204,7 +217,10 @@ void win32SystemManager::systemInit(HINSTANCE hInst) {
 	// initialize profile directory.
 	DWORD pathAttr = GetFileAttributes(profileDir);
 	if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
-		CreateDirectory(profileDir, NULL);
+		if (!CreateDirectory(profileDir, NULL)) {
+			panic("%s目录创建失败。", profileDir);
+			return false;
+		}
 	}
 
 
@@ -244,8 +260,11 @@ void win32SystemManager::systemInit(HINSTANCE hInst) {
 			osVersion = OSVersion::WIN_7;
 		} else {
 			osVersion = OSVersion::OTHERS;
+			panic("注意：你的系统不支持MemPatch。");
 		}
 	}
+
+	return true;
 }
 
 void win32SystemManager::enableDebugPrivilege() {
@@ -287,6 +306,10 @@ bool win32SystemManager::checkDebugPrivilege() {
 
 	CloseHandle(hToken);
 
+	if (!bResult) {
+		panic("提升权限失败，请右键管理员运行。");
+	}
+
 	return (bool)bResult;
 }
 
@@ -301,6 +324,7 @@ bool win32SystemManager::checkDebugPrivilege() {
 bool win32SystemManager::createWin32Window(WNDPROC WndProc) {
 	
 	if (!_registerMyClass(WndProc)) {
+		panic("创建窗口类失败。");
 		return false;
 	}
 
@@ -310,6 +334,7 @@ bool win32SystemManager::createWin32Window(WNDPROC WndProc) {
 		WS_EX_TOPMOST, CW_USEDEFAULT, CW_USEDEFAULT, 1, 1, 0, 0, hInstance, 0);
 
 	if (!hWnd) {
+		panic("创建窗口失败。");
 		return false;
 	}
 
@@ -428,9 +453,9 @@ bool win32SystemManager::loadConfig() {  // executes only when program is inital
 	}
 
 	res = GetPrivateProfileInt("Patch", "NtWaitForSingleObject", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1)) {
-		WritePrivateProfileString("Patch", "NtWaitForSingleObject", "1", profile);
-		patchMgr.patchSwitches.NtWaitForSingleObject = true;
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Patch", "NtWaitForSingleObject", "0", profile);
+		patchMgr.patchSwitches.NtWaitForSingleObject = false;
 	} else {
 		patchMgr.patchSwitches.NtWaitForSingleObject = res ? true : false;
 	}

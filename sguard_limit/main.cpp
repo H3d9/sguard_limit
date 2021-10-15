@@ -63,13 +63,17 @@ INT WINAPI WinMain(
 
 	systemMgr.setupProcessDpi();
 
+	status = 
 	systemMgr.systemInit(hInstance);
+
+	if (!status) {
+		return -1;
+	}
 
 	status = 
 	systemMgr.createWin32Window(WndProc);
 	
 	if (!status) {
-		panic("创建窗口失败。");
 		return -1;
 	}
 
@@ -79,7 +83,6 @@ INT WINAPI WinMain(
 	systemMgr.checkDebugPrivilege();
 	
 	if (!status) {
-		panic("提升权限失败，请右键管理员运行。");
 		return -1;
 	}
 
@@ -93,8 +96,8 @@ INT WINAPI WinMain(
 			"首次使用说明：\n\n"
 			"更新模式：MemPatch V2\n\n"
 			"增加稳定性，修复旧版导致SG卡掉的问题。\n"
-			"增加控制选项，以适应不同机器。\n"
-			"\n\n"
+			"增加控制选项，以适应不同机器。\n\n"
+			"【注意】默认关闭增强模式（NtWaitForSingleObject）。出异常的【不要】开这个。\n\n"
 			"【提示】双击右下角托盘图标，可以查看新版详细说明。",
 			VERSION " colg@H3d9", MB_OK);
 		ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);

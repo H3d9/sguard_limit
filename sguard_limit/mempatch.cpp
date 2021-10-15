@@ -5,8 +5,9 @@
 #include <tlhelp32.h>
 #include <UserEnv.h>
 #include <stdio.h>
-#include <algorithm>
+#include <vector>
 #include <map>
+#include <algorithm>
 #include "win32utility.h"
 #include "wndproc.h"
 #include "panic.h"
@@ -16,47 +17,60 @@
 extern volatile bool           g_bHijackThreadWaiting;
 extern win32SystemManager&     systemMgr;
 
+KernelDriver&                  driver = KernelDriver::getInstance();
+
 
 // driver io
+KernelDriver  KernelDriver::kernelDriver;
+
 KernelDriver::KernelDriver() 
 	: hDriver(INVALID_HANDLE_VALUE) {}
 
 KernelDriver::~KernelDriver() {
-	if (hDriver != INVALID_HANDLE_VALUE) {
-		unload();
-	}
+	unload();
+}
+
+KernelDriver& KernelDriver::getInstance() {
+	return kernelDriver;
 }
 
 bool KernelDriver::load() {
 
-	// this part of api is complex. use cmd instead.
-	// shellexec is async in case here it shall wait. total cost: 4`5s
-	ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(1000);
-	ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(1000);
-	char arg[1024] = "create SGuardLimit_VMIO type= kernel binPath= ";
-	strcat(arg, systemMgr.sysfilePath());
-	ShellExecute(0, "open", "sc", arg, 0, SW_HIDE);
-	Sleep(1000);
-	ShellExecute(0, "open", "sc", "start SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(1000);
+	if (hDriver == INVALID_HANDLE_VALUE) {
 
-	hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+		// this part of api is complex. use cmd instead.
+		// shellexec is async in case here it shall wait. total cost: 4`5s
+		ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
+		Sleep(1000);
+		ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
+		Sleep(1000);
+		char arg[1024] = "create SGuardLimit_VMIO type= kernel binPath= ";
+		strcat(arg, systemMgr.sysfilePath());
+		ShellExecute(0, "open", "sc", arg, 0, SW_HIDE);
+		Sleep(1000);
+		ShellExecute(0, "open", "sc", "start SGuardLimit_VMIO", 0, SW_HIDE);
+		Sleep(1000);
 
-	return hDriver != INVALID_HANDLE_VALUE;
+		hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+		return hDriver != INVALID_HANDLE_VALUE;
+	
+	} else {
+		return true;
+	}
 }
 
 void KernelDriver::unload() {
 
-	CloseHandle(hDriver);
+	if (hDriver != INVALID_HANDLE_VALUE) {
 
-	ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(1000);
-	ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
-	Sleep(1000);
+		CloseHandle(hDriver);
+		hDriver = INVALID_HANDLE_VALUE;
 
-	hDriver = INVALID_HANDLE_VALUE;
+		ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
+		Sleep(1000);
+		ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
+		Sleep(1000);
+	}
 }
 
 bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
@@ -286,13 +300,20 @@ void PatchManager::patch() {
 
 	win32ThreadManager     threadMgr;
 	DWORD                  pid          = threadMgr.getTargetPid();
+	bool                   status;
 	
 	systemMgr.log("patch(): checking pid.");
 
 	if (pid != 0         /* target exist */ &&
 		pid != patchPid  /* target is not current */) {
 
+
 		systemMgr.log("patch(): pid not match, entering if block.");
+
+		// acquire system version for mutable syscall numbers.
+		OSVersion osVersion = systemMgr.getSystemVersion();
+
+
 		systemMgr.log("patch(): primary waiting.");
 
 		// before stable, wait a second.
@@ -306,17 +327,19 @@ void PatchManager::patch() {
 			Sleep(1000);
 		}
 
+
 		systemMgr.log("patch(): finding rip.");
 
-		// find potential target addr.
-		ULONG64 rip = _findRip();
+		// get potential rip in top 3 threads.
+		auto rips = _findRip();
 
-		if (rip == 0) {
-			systemMgr.log("patch(): rip not found, quit.");
+		if (rips.empty()) {
+			systemMgr.log("patch(): top 3's rip all not found, quit.");
 			return;
 		}
 		
-		systemMgr.log("patch(): checking proc status before modify memory.");
+
+		systemMgr.log("patch(): checking proc status before memory action.");
 
 		// before manip memory, check process status for the last time.
 		if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
@@ -324,16 +347,6 @@ void PatchManager::patch() {
 			return;
 		}
 
-		systemMgr.log("patch(): preparing driver.");
-
-		// round page.
-		vmStartAddress = rip;        // %rip: near 16xx, round up.
-		vmStartAddress &= ~0xfff;
-		vmStartAddress -= 0x1000;
-
-
-		bool             status;
-		KernelDriver     driver;
 
 		systemMgr.log("patch(): starting driver.");
 
@@ -347,76 +360,84 @@ void PatchManager::patch() {
 			return;
 		}
 
-		systemMgr.log("patch(): reading memory.");
 
-		// read memory.
-		status =
-		driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
+		// offset0: syscall 0 location, rva from vmbuf:0.
+		LONG offset0 = -1;
 
-		if (!status) {
-			systemMgr.log("patch(): read vm failed, quit.");
-			panic("driver.readVM失败。");
-			driver.unload();
-			return;
-		}
-		memcpy(original_vm, vmbuf, 0x4000);
+		// when loop complete, vmbuf contains syscall pages, and offset0 is rva in it.
+		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
+			
+			// round page.
+			vmStartAddress = *rip;        // %rip: near 16xx, round up.
+			vmStartAddress &= ~0xfff;
+			vmStartAddress -= 0x1000;
 
 
-		systemMgr.log("patch(): finding trait.");
+			systemMgr.log("patch(): reading memory.");
 
-		// find one of syscalls to offset0.
-		// offset0 starts from buffer begin.
-		LONG offset0 = 0;
+			// read memory.
+			status =
+			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 
-		// syscall traits: 4c 8b d1 b8 ?? 00 00 00
-		bool found = false;
-		for (; offset0 < 0x4000 - 0x20 /* buf sz - bytes to write */; offset0++) {
-			if (vmbuf[offset0] == '\x4c' &&
-				vmbuf[offset0 + 1] == '\x8b' &&
-				vmbuf[offset0 + 2] == '\xd1' &&
-				vmbuf[offset0 + 3] == '\xb8' &&
-				/* vmbuf[offset0 + 4] == ?? && */
-				vmbuf[offset0 + 5] == '\x00' &&
-				vmbuf[offset0 + 6] == '\x00' &&
-				vmbuf[offset0 + 7] == '\x00') {
-				found = true;
+			if (!status) {
+				systemMgr.log("patch(): read vm failed, quit.");
+				panic("driver.readVM失败。");
+				driver.unload();
+				return;
+			}
+			memcpy(original_vm, vmbuf, 0x4000);
+
+
+			systemMgr.log("patch(): finding trait.");
+
+			// syscall traits: 4c 8b d1 b8 ?? 00 00 00
+			for (LONG offset = 0; offset < 0x4000 - 0x20 /* buf sz - bytes to write */; offset++) {
+				if (vmbuf[offset] == '\x4c' &&
+					vmbuf[offset + 1] == '\x8b' &&
+					vmbuf[offset + 2] == '\xd1' &&
+					vmbuf[offset + 3] == '\xb8' &&
+					/* vmbuf[offset + 4] == ?? && */
+					vmbuf[offset + 5] == '\x00' &&
+					vmbuf[offset + 6] == '\x00' &&
+					vmbuf[offset + 7] == '\x00') {
+
+					// locate offset0 to syscall 0.
+					offset0 = offset - 0x20 * *(ULONG*)((ULONG64)vmbuf + offset + 4);
+
+					break;
+				}
+			}
+
+			if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
+				systemMgr.log("patch(): trait not found, trying next rip.");
+				continue;
+			} else {
 				break;
 			}
 		}
 
-		
-		static DWORD found_fail = 0;
 
-		if (!found) {
-			systemMgr.log("patch(): trait not found. leaving.");
+		// decide whether trait found success.
+		static DWORD found_fail = 0;
+		if (offset0 < 0 /* offset0 not found at all rip given. */) {
+			systemMgr.log("patch(): all given rip trait not found. leaving.");
 			found_fail++;
 			if (found_fail >= 5) {
-				// in case sometimes it fails forever, record memory.
-				_outMemory(rip);
-				panic("似乎无法获取有效的内存特征，你可以把“SGUARD限制器”目录下生成的txt反馈过来，以便查看错误原因");
+				if (IDYES == MessageBox(0, "似乎无法获取有效的内存特征，要保存失败记录以供反馈么？", "注意", MB_YESNO)) {
+					_outMemory(rips);
+					MessageBox(0, "错误记录已保存至SGUARD限制器所在的路径", "注意", MB_OK);
+				}
+				MessageBox(0, "为避免错误，你可以尝试重启电脑", "注意", MB_OK);
 			}
 			driver.unload();
 			return;
 		}
-
 		found_fail = 0;
 
-		systemMgr.log("patch(): trait found.");
 
+		systemMgr.log("patch(): modifying memory buffer.");
 
-		// acquire system version for mutable syscall numbers.
-		OSVersion osVersion = systemMgr.getSystemVersion();
-
-		// locate offset0 to syscall 0.
-		offset0 -= 0x20 * *(ULONG*)((ULONG64)vmbuf + offset0 + 4);
-
-		// offset0 must >= 0. otherwise quit.
-		if (offset0 < 0) {
-			systemMgr.log("patch(): error: offset0 <= 0, quit.");
-			driver.unload();
-			return;
-		}
-
+		// assert: vmbuf is syscall pages && offset0 >= 0.
 		// patch calls, according to switches.
 		if (patchSwitches.NtQueryVirtualMemory) { // 0x23 (win10), 0x20 (win7)
 			
@@ -741,7 +762,6 @@ void PatchManager::enable(bool forceRecover) {
 		DWORD pid = threadMgr.getTargetPid();
 
 		if (patchPid != 0 && patchPid == pid) {
-			KernelDriver driver;
 			driver.load();
 			driver.writeVM(patchPid, commited_vm, (PVOID)vmStartAddress);
 			driver.unload();
@@ -759,7 +779,6 @@ void PatchManager::disable(bool forceRecover) {
 		DWORD pid = threadMgr.getTargetPid();
 
 		if (patchPid != 0 && patchPid == pid) {
-			KernelDriver driver;
 			driver.load();
 			driver.writeVM(patchPid, original_vm, (PVOID)vmStartAddress);
 			driver.unload();
@@ -809,13 +828,15 @@ void PatchManager::wndProcAddMenu(HMENU hMenu) {
 	}
 }
 
-ULONG64 PatchManager::_findRip() {
+std::vector<ULONG64>
+PatchManager::_findRip() {
 
 	win32ThreadManager        threadMgr;
 	auto&                     threadCount    = threadMgr.threadCount;
 	auto&                     threadList     = threadMgr.threadList;
 	std::map<ULONG64, DWORD>  contextMap;    // rip -> visit times
 	CONTEXT                   context;
+	std::vector<ULONG64>      result         = {};
 	context.ContextFlags = CONTEXT_ALL;
 
 
@@ -824,14 +845,14 @@ ULONG64 PatchManager::_findRip() {
 	// open thread.
 	if (!threadMgr.getTargetPid()) {
 		systemMgr.log("patch::_findRip(): pid not found, quit.");
-		return 0;
+		return {};
 	}
 
 	systemMgr.log("patch::_findRip(): open all threads handle.");
 
 	if (!threadMgr.enumTargetThread()) {
 		systemMgr.log("patch::_findRip(): open thread failed, quit.");
-		return 0;
+		return {};
 	}
 
 
@@ -857,36 +878,54 @@ ULONG64 PatchManager::_findRip() {
 
 	systemMgr.log("patch::_findRip(): sampling rip.");
 
-	// (by now) sample 1s in 1st thread, for rip abbrvt location. 
-	for (auto time = 1; time <= 100; time++) {
-		SuspendThread(threadList[0].handle);
-		if (GetThreadContext(threadList[0].handle, &context)) {
-			contextMap[context.Rip] ++;
+	// sample 1s in 1st~3rd thread, for rip abbrvt location. 
+	for (auto i = 0; i < 3; i++) { // i: thread No.
+
+		contextMap.clear();
+		for (auto time = 1; time <= 100; time++) {
+			SuspendThread(threadList[i].handle);
+			if (GetThreadContext(threadList[i].handle, &context)) {
+				contextMap[context.Rip] ++;
+			}
+			ResumeThread(threadList[i].handle);
+			Sleep(10);
 		}
-		ResumeThread(threadList[0].handle);
-		Sleep(10);
+
+		// if sample complete successfully, record 3 top visited rip in each thread.
+		if (!contextMap.empty()) {
+			for (auto ripcount = 0; !contextMap.empty() && ripcount < 3; ripcount++) {
+				threadList[i].rip =
+					std::max_element(
+						contextMap.begin(), contextMap.end(),
+						[](auto& a, auto& b) { return a.second < b.second; })
+					->first;
+				contextMap.erase(threadList[i].rip);
+				result.push_back(threadList[i].rip);
+			}
+		} else {
+			systemMgr.log("patch::_findRip(): warning: contextMap[%d].empty.", i);
+		}
 	}
 
-	if (contextMap.empty()) {
-		systemMgr.log("patch::_findRip(): contextMap.empty, quit.");
-		return 0;
-	}
-
-	// return rip which has maximum counts.
-	return
-		std::max_element(
-			contextMap.begin(), contextMap.end(),
-			[](auto& a, auto& b) { return a.second < b.second; })
-		->first;
+	return result;
 }
 
-void PatchManager::_outMemory(ULONG64 rip) {
-	char buf[128];
-	sprintf(buf, "rip_%llx_vmstart_%llx.txt", rip, vmStartAddress);
-	FILE* fp = fopen(buf, "w");
-	for (auto i = 0; i < 0x4000; i++) {
-		fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
-		if (i % 32 == 31) fprintf(fp, "\n");
+void PatchManager::_outMemory(std::vector<ULONG64>& rips) {
+
+	for (int id = 0; id < rips.size(); id++) {
+
+		ULONG64 rip = rips[id];
+		ULONG64 vmstart = (rip & ~0xfff) - 0x1000;
+
+		driver.readVM(win32ThreadManager().getTargetPid(), vmbuf, (PVOID)vmstart);
+
+		char buf[128];
+		sprintf(buf, "(%d)rip_%llx_vmstart_%llx.txt", id, rip, vmstart);
+		FILE* fp = fopen(buf, "w");
+		for (auto i = 0; i < 0x4000; i++) {
+			fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
+			if (i % 32 == 31) fprintf(fp, "\n");
+		}
+		fclose(fp);
 	}
-	fclose(fp);
 }

@@ -126,9 +126,6 @@ static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, 
 				if (!translated || res < 500 || res > 5000) {
 					MessageBox(0, "输入500~5000的整数", "错误", MB_OK);
 				} else {
-					if (res >= 3500) {
-						MessageBox(0, "如果较大的数值导致问题，请适当调小。", "提示", MB_OK);
-					}
 					patchMgr.patchDelay[1] = res;
 					EndDialog(hDlg, LOWORD(wParam));
 					return (INT_PTR)TRUE;
@@ -299,9 +296,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 					patchMgr.patchSwitches.NtWaitForSingleObject = false;
 				} else {
-					patchMgr.patchSwitches.NtWaitForSingleObject = true;
+					if (IDYES == MessageBox(0, "这是增强模式，如果你出现“3009”，“96”问题，请立即关闭该选项。要继续么？", "注意", MB_YESNO)) {
+						patchMgr.patchSwitches.NtWaitForSingleObject = true;
+						MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+					}
 				}
-				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				systemMgr.writeConfig();
 				break;
 			case IDM_PATCHSWITCH3:

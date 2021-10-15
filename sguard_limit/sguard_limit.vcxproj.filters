@@ -3,25 +3,48 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="wndproc.cpp" />
-    <ClCompile Include="limitcore.cpp" />
     <ClCompile Include="panic.cpp" />
-    <ClCompile Include="tracecore.cpp" />
-    <ClCompile Include="mempatch.cpp" />
     <ClCompile Include="win32utility.cpp" />
+    <ClCompile Include="limitcore.cpp">
+      <Filter>limit</Filter>
+    </ClCompile>
+    <ClCompile Include="tracecore.cpp">
+      <Filter>trace</Filter>
+    </ClCompile>
+    <ClCompile Include="mempatch.cpp">
+      <Filter>mempatch</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
     <ClInclude Include="wndproc.h" />
-    <ClInclude Include="limitcore.h" />
     <ClInclude Include="panic.h" />
-    <ClInclude Include="tracecore.h" />
-    <ClInclude Include="mempatch.h" />
     <ClInclude Include="win32utility.h" />
+    <ClInclude Include="limitcore.h">
+      <Filter>limit</Filter>
+    </ClInclude>
+    <ClInclude Include="tracecore.h">
+      <Filter>trace</Filter>
+    </ClInclude>
+    <ClInclude Include="mempatch.h">
+      <Filter>mempatch</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sguard_limit.rc" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="logo.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="limit">
+      <UniqueIdentifier>{8d553c25-60e0-4690-a9df-8be9c4d43324}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="trace">
+      <UniqueIdentifier>{5159b81c-cc1f-4208-a23a-5f45508cee01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="mempatch">
+      <UniqueIdentifier>{2e573457-381f-4c18-993e-933c86a85d7c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 </Project>

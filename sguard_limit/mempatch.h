@@ -10,16 +10,22 @@
 #define IDM_PATCHSWITCH3    219
 
 
-// driver io module
+// driver io module (sington)
 class KernelDriver {
 
-public:
+private:
+	static KernelDriver  kernelDriver;
+
+private:
 	KernelDriver();
 	~KernelDriver();
 	KernelDriver(const KernelDriver&)                = delete;
 	KernelDriver(KernelDriver&&)                     = delete;
 	KernelDriver& operator= (const KernelDriver&)    = delete;
 	KernelDriver& operator= (KernelDriver&&)         = delete;
+
+public:
+	static KernelDriver&     getInstance();
 
 public:
 	bool     load();
@@ -83,8 +89,8 @@ public:
 	void      wndProcAddMenu(HMENU hMenu);
 
 private:
-	ULONG64   _findRip();
-	void      _outMemory(ULONG64 rip);
+	std::vector<ULONG64>       _findRip();
+	void                       _outMemory(std::vector<ULONG64>& rips);
 
 private:
 	ULONG64                    vmStartAddress             = 0;

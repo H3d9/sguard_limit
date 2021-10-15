@@ -20,7 +20,7 @@ struct win32Thread {
 	// module properties
 	ULONG64     cycles;
 	ULONG64     cycleDelta;
-	int         dieCount;
+	ULONG64     rip; 
 
 	// ctors
 	win32Thread(DWORD tid = 0, DWORD desiredAccess = THREAD_ALL_ACCESS);
@@ -85,7 +85,7 @@ public:
 	HINSTANCE                    hInstance;
 
 public:
-	void        systemInit(HINSTANCE hInst);
+	bool        systemInit(HINSTANCE hInst);
 	void        setupProcessDpi();
 	void        enableDebugPrivilege();
 	bool        checkDebugPrivilege();
@@ -107,6 +107,7 @@ private:
 	ATOM        _registerMyClass(WNDPROC WndProc);
 
 private:
+	HANDLE                       hProgram;
 	OSVersion                    osVersion;
 	FILE*                        logfp;
 	NOTIFYICONDATA               icon;
