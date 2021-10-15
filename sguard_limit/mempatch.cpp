@@ -3,8 +3,8 @@
 // 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
 #include <Windows.h>
 #include <tlhelp32.h>
-#include <UserEnv.h>
 #include <stdio.h>
+#include <time.h>
 #include <vector>
 #include <map>
 #include <algorithm>
@@ -275,7 +275,7 @@ void PatchManager::patchInit() {
 	if (fp != NULL) {
 		fclose(fp);
 		if (!CopyFile(currentpath, syspath, FALSE)) {
-			panic("CopyFile失败，你可以尝试重启SGUARD限制器或重启电脑");
+			panic("拷贝sys文件失败，你可以尝试重启SGUARD限制器或重启电脑");
 		} else {
 			DeleteFile(currentpath);
 		}
@@ -284,7 +284,7 @@ void PatchManager::patchInit() {
 	fp = fopen(syspath, "rb");
 
 	if (fp == NULL) {
-		panic("找不到文件：SGuardLimit_VMIO.sys。这将导致MemPatch无法使用。\n请将该文件解压到同一目录下，并重启限制器。");
+		panic("找不到文件：SGuardLimit_VMIO.sys，这将导致MemPatch无法使用。\n请将该文件解压到同一目录下，并重启限制器。");
 	} else {
 		fclose(fp);
 	}
@@ -409,9 +409,10 @@ void PatchManager::patch() {
 			}
 
 			if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
-				systemMgr.log("patch(): trait not found, trying next rip.");
+				systemMgr.log("patch(): %%rip = %llx: trait not found, trying next rip.", *rip);
 				continue;
 			} else {
+				systemMgr.log("patch(): trait found here: %%rip = %llx", *rip);
 				break;
 			}
 		}
@@ -423,11 +424,7 @@ void PatchManager::patch() {
 			systemMgr.log("patch(): all given rip trait not found. leaving.");
 			found_fail++;
 			if (found_fail >= 5) {
-				if (IDYES == MessageBox(0, "似乎无法获取有效的内存特征，要保存失败记录以供反馈么？", "注意", MB_YESNO)) {
-					_outMemory(rips);
-					MessageBox(0, "错误记录已保存至SGUARD限制器所在的路径", "注意", MB_OK);
-				}
-				MessageBox(0, "为避免错误，你可以尝试重启电脑", "注意", MB_OK);
+				MessageBox(0, "似乎无法获取有效的内存特征，建议你重启电脑后再尝试", "注意", MB_OK);
 			}
 			driver.unload();
 			return;
@@ -435,282 +432,484 @@ void PatchManager::patch() {
 		found_fail = 0;
 
 
-		systemMgr.log("patch(): modifying memory buffer.");
+		systemMgr.log("patch(): modifying memory buffer. offset0 = 0x%x", offset0);
 
 		// assert: vmbuf is syscall pages && offset0 >= 0.
-		// patch calls, according to switches.
-		if (patchSwitches.NtQueryVirtualMemory) { // 0x23 (win10), 0x20 (win7)
+		// patch according to switches.
+		if (osVersion == OSVersion::WIN_10) {
+
+			// for win10 there're 0x20 bytes to place shellcode.
+
+			if (patchSwitches.NtQueryVirtualMemory) { // 0x23
+
+				CHAR patch_bytes[] = "\x49\x89\xCA\xB8\x23\x00\x00\x00\x0F\x05\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3";
+				/*
+					0:  49 89 ca                mov    r10, rcx
+					3:  b8 23 00 00 00          mov    eax, 0x23
+					8:  0f 05                   syscall
+					a:  50                      push   rax
+					b:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
+					12: 00 00 00
+					15: ff e0                   jmp    rax
+					17: 58                      pop    rax
+					18: c3                      ret
+				*/
+
+				CHAR working_bytes[] =
+					"\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
+					"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
+					"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
+					"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+				/*
+					0:  53                      push   rbx
+					1:  51                      push   rcx
+					2:  52                      push   rdx
+					3:  56                      push   rsi
+					4:  57                      push   rdi
+					5:  55                      push   rbp
+					6:  41 50                   push   r8
+					8:  41 51                   push   r9
+					a:  41 52                   push   r10
+					c:  41 53                   push   r11
+					e:  41 54                   push   r12
+					10: 41 55                   push   r13
+					12: 41 56                   push   r14
+					14: 41 57                   push   r15
+					16: 9c                      pushf
+					17: 49 c7 c2 e0 43 41 ff    mov    r10, 0xFFFFFFFFFF4143E0
+					1e: 41 52                   push   r10  
+					20: 48 89 e2                mov    rdx, rsp
+					23: b8 34 00 00 00          mov    eax, 0x34
+					28: 0f 05                   syscall
+					2a: 41 5a                   pop    r10
+					2c: 9d                      popf
+					2d: 41 5f                   pop    r15
+					2f: 41 5e                   pop    r14
+					31: 41 5d                   pop    r13
+					33: 41 5c                   pop    r12
+					35: 41 5b                   pop    r11
+					37: 41 5a                   pop    r10
+					39: 41 59                   pop    r9
+					3b: 41 58                   pop    r8
+					3d: 5d                      pop    rbp
+					3e: 5f                      pop    rdi
+					3f: 5e                      pop    rsi
+					40: 5a                      pop    rdx
+					41: 59                      pop    rcx
+					42: 5b                      pop    rbx
+					43: 48 b8 00 00 00 00 00    mov    rax, <returnAddress>
+					4a: 00 00 00
+					4d: ff e0                   jmp    rax
+				*/
+
+				// syscall rva => offset.
+				LONG offset = offset0 + 0x20 /* win10 syscall align */ * 0x23;
+
+				// allocate vm.
+				PVOID allocAddress = NULL;
+				status = driver.allocVM(pid, &allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): allocVM failed, quit.");
+					panic("driver.allocVM失败。");
+					driver.unload();
+					return;
+				}
+
+				// allocAddress => patch_bytes.
+				memcpy(patch_bytes + 0xd, &allocAddress, 8);
+
+				// delay => working_bytes.
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[0];
+				memcpy(working_bytes + 0x1a, &delay_param, 4);
+
+				// returnAddress => working_bytes.
+				ULONG64	returnAddress = vmStartAddress + offset + 0x17;
+				memcpy(working_bytes + 0x45, &returnAddress, 8);
+
+				// patch_bytes => vmbuf.
+				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+
+				// working_bytes => allocated vm.
+				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+				status = driver.writeVM(pid, vmalloc, allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): write vm failed, quit.");
+					panic("driver.writeVM失败。");
+					driver.unload();
+					return;
+				}
+
+				// 旧版使用以下这段shellcode，这偶尔会引发SGUARD崩溃（空指针异常），
+				// 推测原因为sleep系统调用修改了调用者某个被优化到寄存器的局部变量，
+				// 而该寄存器在原系统调用中被优化编译器认为不会修改，或被ntdll封装的native api认为不会修改，
+				// 或并非由调用者保存的寄存器（在windows x64的语义下）。
+				//  mov r10, rcx
+				//	mov eax, 0x23
+				//	syscall
+				//	mov r10, 0xFFFFFFFFFF4143E0
+				//	push r10
+				//	mov rdx, rsp
+				//	mov eax, 0x34
+				//	syscall
+				//	pop r10
+				//	ret
+			}
+
+			if (patchSwitches.NtWaitForSingleObject) { // 0x4
+
+				// note: shellcode here is a bit different from before so we cannot combine them.
+
+				CHAR patch_bytes[] = "\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\xC3";
+				/*
+					; syscall is in allocated space; it's too short to put't here.
+					; well; let's assert there's no jinx thread between +0~+14 ;)
+					; treat them as they're waiting at +0x14.
+
+					0:  50                      push   rax
+					1:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
+					8:  00 00 00
+					b:  ff e0                   jmp    rax
+					d:  58                      pop    rax
+					e:  c3                      ret
+					f:  90                      nop
+					10: 90                      nop
+					11: 90                      nop
+					12: 90                      nop
+					13: 90                      nop
+					14: c3                      ret        ; previous syscall rip expected returning here.
+				*/
+
+				CHAR working_bytes[] =
+					"\x58\x49\x89\xCA\xB8\x04\x00\x00\x00\x0F\x05\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
+					"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
+					"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
+					"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+				/*
+					0:  58                      pop    rax
+					1:  49 89 ca                mov    r10, rcx
+					4:  b8 04 00 00 00          mov    eax, 0x4
+					9:  0f 05                   syscall	    
+					b:  50                      push   rax  
+					c:  53                      push   rbx  
+					d:  51                      push   rcx  
+					e:  52                      push   rdx  
+					f:  56                      push   rsi  
+					10: 57                      push   rdi  
+					11: 55                      push   rbp  
+					12: 41 50                   push   r8   
+					14: 41 51                   push   r9   
+					16: 41 52                   push   r10  
+					18: 41 53                   push   r11  
+					1a: 41 54                   push   r12  
+					1c: 41 55                   push   r13  
+					1e: 41 56                   push   r14  
+					20: 41 57                   push   r15  
+					22: 9c                      pushf	    
+					23: 49 c7 c2 e0 43 41 ff    mov    r10, 0xFFFFFFFFFF4143E0
+					2a: 41 52                   push   r10  
+					2c: 48 89 e2                mov    rdx, rsp
+					2f: b8 34 00 00 00          mov    eax, 0x34
+					34: 0f 05                   syscall
+					36: 41 5a                   pop    r10
+					38: 9d                      popf
+					39: 41 5f                   pop    r15
+					3b: 41 5e                   pop    r14
+					3d: 41 5d                   pop    r13
+					3f: 41 5c                   pop    r12
+					41: 41 5b                   pop    r11
+					43: 41 5a                   pop    r10
+					45: 41 59                   pop    r9
+					47: 41 58                   pop    r8
+					49: 5d                      pop    rbp
+					4a: 5f                      pop    rdi
+					4b: 5e                      pop    rsi
+					4c: 5a                      pop    rdx
+					4d: 59                      pop    rcx
+					4e: 5b                      pop    rbx
+					4f: 48 b8 00 00 00 00 00    movabs rax, <returnAddress>
+					56: 00 00 00
+					59: ff e0                   jmp    rax
+				*/
+
+				// syscall rva => offset.
+				LONG offset = offset0 + 0x20 /* win10 syscall align */ * 0x4;
+
+				// allocate vm.
+				PVOID allocAddress = NULL;
+				status = driver.allocVM(pid, &allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): allocVM failed, quit.");
+					panic("driver.allocVM失败。");
+					driver.unload();
+					return;
+				}
+
+				// allocAddress => patch_bytes.
+				memcpy(patch_bytes + 0x3, &allocAddress, 8);
+
+				// delay => working_bytes.
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+				memcpy(working_bytes + 0x26, &delay_param, 4);
+
+				// returnAddress => working_bytes.
+				ULONG64	returnAddress = vmStartAddress + offset + 0xd;
+				memcpy(working_bytes + 0x51, &returnAddress, 8);
+
+				// patch_bytes => vmbuf.
+				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+
+				// working_bytes => allocated vm.
+				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+				status = driver.writeVM(pid, vmalloc, allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): write vm failed, quit.");
+					panic("driver.writeVM失败。");
+					driver.unload();
+					return;
+				}
+			}
+
+			if (patchSwitches.NtDelayExecution) { // 0x34
+
+				CHAR patch_bytes[] =
+					"\x49\xC7\xC2\xE0\x43\x41\xFF\x4C\x89\x12\x49\x89\xCA\xB8\x34\x00\x00\x00\x0F\x05\xC3";
+				/*
+					mov r10, 0xFFFFFFFFFF4143E0 ; 1250
+					mov qword ptr [rdx], r10
+					mov r10, rcx
+					mov eax, 0x34
+					syscall
+					ret
+				*/
+
+				// modify delay.
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
+				memcpy(patch_bytes + 3, &delay_param, 4);
+
+				// syscall rva => offset.
+				LONG offset = offset0 + 0x20 * 0x34;
+
+				// patch_bytes => vmbuf.
+				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+			}
+
+		} else { // if WIN_7
+
+			// win7 ntdll maps 0x10 bytes for each syscall.
+			// that's really short to place shellcode, must construct it carefully.
+			// 0: use mov eax instead of rax. (rax's high 32-bit is 0 due to x86_64 isa convention)
+			//    NO NEED to store rax, for it's syscall number.
+			// a: make sure original ret won't change, for some threads to return correctly from system call.
 			
-			CHAR patch_bytes[] = "\x49\x89\xCA\xB8\x23\x00\x00\x00\x0F\x05\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3";
+			CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
 			/*
-				0:  49 89 ca                mov    r10,rcx
-				3:  b8 23 00 00 00          mov    eax,0x23
+				0:  b8 00 00 00 00          mov    eax, <AllocAddress>
+				5:  ff e0                   jmp    rax
+				7:  58                      pop    rax
+				8:  90                      nop
+				9:  90                      nop
+				a:  c3                      ret        ; previous syscall rip expected returning here.
+			*/
+
+			CHAR working_bytes[] =
+				"\x49\x89\xCA\xB8\xAB\x00\x00\x00\x0F\x05"
+				"\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
+				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x31\x00\x00\x00\x0F\x05\x41\x5A"
+				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
+				"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+			/*
+				0:  49 89 ca                mov    r10, rcx
+				3:  b8 00 00 00 00          mov    eax, <syscall number>
 				8:  0f 05                   syscall
 				a:  50                      push   rax
-				b:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
-				12: 00 00 00
-				15: ff e0                   jmp    rax
-				17: 58                      pop    rax
-				18: c3                      ret
+				b:  53                      push   rbx
+				c:  51                      push   rcx
+				d:  52                      push   rdx
+				e:  56                      push   rsi
+				f:  57                      push   rdi
+				10: 55                      push   rbp
+				11: 41 50                   push   r8
+				13: 41 51                   push   r9
+				15: 41 52                   push   r10
+				17: 41 53                   push   r11
+				19: 41 54                   push   r12
+				1b: 41 55                   push   r13
+				1d: 41 56                   push   r14
+				1f: 41 57                   push   r15
+				21: 9c                      pushf
+				22: 49 c7 c2 e0 43 41 ff    mov    r10, 0xFFFFFFFFFF4143E0
+				29: 41 52                   push   r10
+				2b: 48 89 e2                mov    rdx, rsp
+				2e: b8 31 00 00 00          mov    eax, 0x31
+				33: 0f 05                   syscall
+				35: 41 5a                   pop    r10
+				37: 9d                      popf
+				38: 41 5f                   pop    r15
+				3a: 41 5e                   pop    r14
+				3c: 41 5d                   pop    r13
+				3e: 41 5c                   pop    r12
+				40: 41 5b                   pop    r11
+				42: 41 5a                   pop    r10
+				44: 41 59                   pop    r9
+				46: 41 58                   pop    r8
+				48: 5d                      pop    rbp
+				49: 5f                      pop    rdi
+				4a: 5e                      pop    rsi
+				4b: 5a                      pop    rdx
+				4c: 59                      pop    rcx
+				4d: 5b                      pop    rbx
+				4e: 48 b8 00 00 00 00 00    movabs rax, <returnAddress>
+				55: 00 00 00
+				58: ff e0                   jmp    rax
 			*/
-			if (osVersion == OSVersion::WIN_7) {
-				patch_bytes[0x4] = '\x20';
-			}
 
-			CHAR working_bytes[] =
-				"\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
-				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
-				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
-				"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
-			/*
-				0:  53                      push   rbx
-				1:  51                      push   rcx
-				2:  52                      push   rdx
-				3:  56                      push   rsi
-				4:  57                      push   rdi
-				5:  55                      push   rbp
-				6:  41 50                   push   r8
-				8:  41 51                   push   r9
-				a:  41 52                   push   r10
-				c:  41 53                   push   r11
-				e:  41 54                   push   r12
-				10: 41 55                   push   r13
-				12: 41 56                   push   r14
-				14: 41 57                   push   r15
-				16: 9c                      pushf
-				17: 49 c7 c2 e0 43 41 ff    mov    r10,0xFFFFFFFFFF4143E0
-				1e: 41 52                   push   r10
-				20: 48 89 e2                mov    rdx,rsp
-				23: b8 34 00 00 00          mov    eax,0x34
-				28: 0f 05                   syscall
-				2a: 41 5a                   pop    r10
-				2c: 9d                      popf
-				2d: 41 5f                   pop    r15
-				2f: 41 5e                   pop    r14
-				31: 41 5d                   pop    r13
-				33: 41 5c                   pop    r12
-				35: 41 5b                   pop    r11
-				37: 41 5a                   pop    r10
-				39: 41 59                   pop    r9
-				3b: 41 58                   pop    r8
-				3d: 5d                      pop    rbp
-				3e: 5f                      pop    rdi
-				3f: 5e                      pop    rsi
-				40: 5a                      pop    rdx
-				41: 59                      pop    rcx
-				42: 5b                      pop    rbx
-				43: 48 b8 00 00 00 00 00    mov    rax, <returnAddress>
-				4a: 00 00 00
-				4d: ff e0                   jmp    rax
-			*/
-			if (osVersion == OSVersion::WIN_7) {
-				working_bytes[0x24] = '\x31';
-			}
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[0];
-			memcpy(working_bytes + 0x1a, &delay_param, 4);
+			if (patchSwitches.NtQueryVirtualMemory) { // 0x20
 
-			// allocate vm.
-			PVOID allocVMStart = NULL;
-			status = driver.allocVM(pid, &allocVMStart);
-			if (!status) {
-				systemMgr.log("patch(): allocVM failed, quit.");
-				panic("driver.allocVM失败。");
-				driver.unload();
-				return;
-			}
+				// syscall rva => offset.
+				LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x20;
 
-			// put allocated address to syscall jmp operand.
-			memcpy(patch_bytes + 0xd, &allocVMStart, 8);
+				// allocate vm.
+				// allocAddress must < 32 bit. (which satisfied in all test cases)
+				PVOID allocAddress = NULL;
+				status = driver.allocVM(pid, &allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): allocVM failed, quit.");
+					panic("driver.allocVM失败。");
+					driver.unload();
+					return;
+				}
+				if ((ULONG64)allocAddress >= 0x100000000) {
+					systemMgr.log("patch(): win7 warning: allocAddress is large(%p).", allocAddress);
+					panic("分配的内存地址过大（%p），无法使用。", allocAddress);
+					driver.unload();
+					return;
+				}
 
-			// patch syscall to vmbuf.
-			LONG offset;
-			if (osVersion == OSVersion::WIN_10) {
-				offset = offset0 + 0x20 * 0x23;
+				// allocAddress => patch_bytes.
+				memcpy(patch_bytes + 0x1, &allocAddress, 4);
+
+				// syscallNum => working_bytes.
+				working_bytes[0x4] = 0x20;
+
+				// delay => working_bytes.
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[0];
+				memcpy(working_bytes + 0x25, &delay_param, 4);
+
+				// returnAddress => working_bytes.
+				ULONG64	returnAddress = vmStartAddress + offset + 0x7;
+				memcpy(working_bytes + 0x50, &returnAddress, 8);
+
+				// patch_bytes => vmbuf.
 				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
-			} else {
-				offset = offset0 + 0x20 * 0x20;
+
+				// working_bytes => allocated vm.
+				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+				status = driver.writeVM(pid, vmalloc, allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): write vm failed, quit.");
+					panic("driver.writeVM失败。");
+					driver.unload();
+					return;
+				}
+			}
+
+			if (patchSwitches.NtWaitForSingleObject) { // 0x1
+
+				// syscall rva => offset.
+				LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x1;
+
+				// allocate vm.
+				PVOID allocAddress = NULL;
+				status = driver.allocVM(pid, &allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): allocVM failed, quit.");
+					panic("driver.allocVM失败。");
+					driver.unload();
+					return;
+				}
+				if ((ULONG64)allocAddress >= 0x100000000) {
+					systemMgr.log("patch(): win7 warning: allocAddress is large(%p).", allocAddress);
+					panic("分配的内存地址过大（%p），无法使用。", allocAddress);
+					driver.unload();
+					return;
+				}
+
+				// allocAddress => patch_bytes.
+				memcpy(patch_bytes + 0x1, &allocAddress, 4);
+
+				// syscallNum => working_bytes.
+				working_bytes[0x4] = 0x1;
+
+				// delay => working_bytes.
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+				memcpy(working_bytes + 0x25, &delay_param, 4);
+
+				// returnAddress => working_bytes.
+				ULONG64	returnAddress = vmStartAddress + offset + 0x7;
+				memcpy(working_bytes + 0x50, &returnAddress, 8);
+
+				// patch_bytes => vmbuf.
 				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
-			}
-			
-			// get address after 'jmp rax', put it to working_bytes jmp's operand.
-			ULONG64	returnAddress = vmStartAddress + offset + 0x17;
-			memcpy(working_bytes + 0x45, &returnAddress, 8);
 
-			// update allocated vm.
-			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
-			status = driver.writeVM(pid, vmalloc, allocVMStart);
-			if (!status) {
-				systemMgr.log("patch(): write vm failed, quit.");
-				panic("driver.writeVM失败。");
-				driver.unload();
-				return;
+				// working_bytes => allocated vm.
+				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+				status = driver.writeVM(pid, vmalloc, allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): write vm failed, quit.");
+					panic("driver.writeVM失败。");
+					driver.unload();
+					return;
+				}
 			}
 
-			// 旧版使用以下这段shellcode，这偶尔会引发SGUARD崩溃（空指针异常），
-			// 推测原因为sleep系统调用修改了调用者某个被优化到寄存器的局部变量，
-			// 而该寄存器在原系统调用中被优化编译器认为不会修改，或被ntdll封装的native api认为不会修改，
-			// 或并非由调用者保存的寄存器（在windows x64的语义下）。
-			// 
-			//  mov r10, rcx
-			//	mov eax, 0x23
-			//	syscall
-			//	mov r10, 0xFFFFFFFFFF4143E0
-			//	push r10
-			//	mov rdx, rsp
-			//	mov eax, 0x34
-			//	syscall
-			//	pop r10
-			//	ret
-		}
+			if (patchSwitches.NtDelayExecution) { // 0x31
 
-		if (patchSwitches.NtWaitForSingleObject) { // 0x4 (win10), 0x1 (win7)
+				// syscall rva => offset.
+				LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x31;
 
-			CHAR patch_bytes[] = "\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\xC3";
-			/*
-			; syscall is in allocated space; it's too short to put't here.
-			; well; let's assert there's no jinx rip between +0~+14 ;)
-			; treat them as they're waiting at +0x14.
+				// allocate vm.
+				PVOID allocAddress = NULL;
+				status = driver.allocVM(pid, &allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): allocVM failed, quit.");
+					panic("driver.allocVM失败。");
+					driver.unload();
+					return;
+				}
+				if ((ULONG64)allocAddress >= 0x100000000) {
+					systemMgr.log("patch(): win7 warning: allocAddress is large(%p).", allocAddress);
+					panic("分配的内存地址过大（%p），无法使用。", allocAddress);
+					driver.unload();
+					return;
+				}
 
-				0:  50                      push   rax
-				1:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
-				8:  00 00 00
-				b:  ff e0                   jmp    rax
-				d:  58                      pop    rax
-				e:  c3                      ret
-				f:  90                      nop
-				10: 90                      nop
-				11: 90                      nop
-				12: 90                      nop
-				13: 90                      nop
-				14: c3                      ret        ; previous syscall rip expected returning here.
-			*/
+				// allocAddress => patch_bytes.
+				memcpy(patch_bytes + 0x1, &allocAddress, 4);
 
-			CHAR working_bytes[] =
-				"\x58\x49\x89\xCA\xB8\x04\x00\x00\x00\x0F\x05\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
-				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
-				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
-				"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
-			/*
-				0:  58                      pop    rax
-				1:  49 89 ca                mov    r10,rcx
-				4:  b8 04 00 00 00          mov    eax,0x4
-				9:  0f 05                   syscall
-				b:  50                      push   rax
-				c:  53                      push   rbx
-				d:  51                      push   rcx
-				e:  52                      push   rdx
-				f:  56                      push   rsi
-				10: 57                      push   rdi
-				11: 55                      push   rbp
-				12: 41 50                   push   r8
-				14: 41 51                   push   r9
-				16: 41 52                   push   r10
-				18: 41 53                   push   r11
-				1a: 41 54                   push   r12
-				1c: 41 55                   push   r13
-				1e: 41 56                   push   r14
-				20: 41 57                   push   r15
-				22: 9c                      pushf
-				23: 49 c7 c2 e0 43 41 ff    mov    r10,0xFFFFFFFFFF4143E0
-				2a: 41 52                   push   r10
-				2c: 48 89 e2                mov    rdx,rsp
-				2f: b8 34 00 00 00          mov    eax,0x34
-				34: 0f 05                   syscall
-				36: 41 5a                   pop    r10
-				38: 9d                      popf
-				39: 41 5f                   pop    r15
-				3b: 41 5e                   pop    r14
-				3d: 41 5d                   pop    r13
-				3f: 41 5c                   pop    r12
-				41: 41 5b                   pop    r11
-				43: 41 5a                   pop    r10
-				45: 41 59                   pop    r9
-				47: 41 58                   pop    r8
-				49: 5d                      pop    rbp
-				4a: 5f                      pop    rdi
-				4b: 5e                      pop    rsi
-				4c: 5a                      pop    rdx
-				4d: 59                      pop    rcx
-				4e: 5b                      pop    rbx
-				4f: 48 b8 00 00 00 00 00    movabs rax, <returnAddress>
-				56: 00 00 00
-				59: ff e0                   jmp    rax
-			*/
+				// syscallNum => working_bytes.
+				working_bytes[0x4] = 0x31;
 
-			if (osVersion == OSVersion::WIN_7) {
-				working_bytes[0x5] = '\x01';
-				working_bytes[0x30] = '\x31';
-			}
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
-			memcpy(working_bytes + 0x26, &delay_param, 4);
+				// delay => working_bytes.
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
+				memcpy(working_bytes + 0x25, &delay_param, 4);
 
-			// allocate vm.
-			PVOID allocVMStart = NULL;
-			status = driver.allocVM(pid, &allocVMStart);
-			if (!status) {
-				systemMgr.log("patch(): allocVM failed, quit.");
-				panic("driver.allocVM失败。");
-				driver.unload();
-				return;
-			}
+				// returnAddress => working_bytes.
+				ULONG64	returnAddress = vmStartAddress + offset + 0x7;
+				memcpy(working_bytes + 0x50, &returnAddress, 8);
 
-			// put allocated address to syscall jmp operand.
-			memcpy(patch_bytes + 0x3, &allocVMStart, 8);
-
-			// patch syscall to vmbuf.
-			LONG offset;
-			if (osVersion == OSVersion::WIN_10) {
-				offset = offset0 + 0x20 * 0x4;
+				// patch_bytes => vmbuf.
 				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
-			} else {
-				offset = offset0 + 0x20 * 0x1;
-				memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+
+				// working_bytes => allocated vm.
+				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+				status = driver.writeVM(pid, vmalloc, allocAddress);
+				if (!status) {
+					systemMgr.log("patch(): write vm failed, quit.");
+					panic("driver.writeVM失败。");
+					driver.unload();
+					return;
+				}
 			}
-
-
-			// get address after 'jmp rax'.
-			ULONG64	returnAddress = vmStartAddress + offset + 0xd;
-
-			// put return address to working_bytes jmp's operand.
-			memcpy(working_bytes + 0x51, &returnAddress, 8);
-
-			// move working_bytes to buffer for update.
-			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
-
-			// update allocated vm.
-			status = driver.writeVM(pid, vmalloc, allocVMStart);
-			if (!status) {
-				systemMgr.log("patch(): write vm failed, quit.");
-				panic("driver.writeVM失败。");
-				driver.unload();
-				return;
-			}
-
-		}
-
-		if (patchSwitches.NtDelayExecution) { // 0x34 (win10), 0x31 (win7)
-
-			CHAR patch_bytes[] =
-				"\x49\xC7\xC2\xE0\x43\x41\xFF\x4C\x89\x12\x49\x89\xCA\xB8\x34\x00\x00\x00\x0F\x05\xC3";
-			/*
-				mov r10, 0xFFFFFFFFFF4143E0 ; 1250
-				mov qword ptr [rdx], r10
-				mov r10, rcx
-				mov eax, 0x34
-				syscall
-				ret
-			*/
-
-			LONG offset = offset0 + 0x20 * 0x34;   // syscall entry, from rva base: vmstartaddress
-
-			if (osVersion == OSVersion::WIN_7) {
-				offset = offset0 + 0x20 * 0x31;
-				patch_bytes[14] = '\x31';
-			}
-
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
-			memcpy(patch_bytes + 3, &delay_param, 4);
-			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
 		}
 
 		systemMgr.log("patch(): writing memory.");
@@ -734,14 +933,14 @@ void PatchManager::patch() {
 		patchPid = pid;
 	}
 
-	systemMgr.log("patch(): fall in loop.");
+	systemMgr.log("patch(): fall in wait loop.");
 
 	while (patchEnabled) {
 
 		pid = threadMgr.getTargetPid();
 
 		if (pid == 0 /* target no more exists */ || pid != patchPid /* target is not current */) {
-			systemMgr.log("patch(): pid not match. quit.");
+			systemMgr.log("patch(): pid not match. quit loop.");
 			patchPid = 0;
 			return;
 		}
@@ -749,7 +948,7 @@ void PatchManager::patch() {
 		Sleep(5000);
 	}
 
-	systemMgr.log("patch(): patch is disabled, quit.");
+	systemMgr.log("patch(): patch is disabled, quit loop.");
 }
 
 void PatchManager::enable(bool forceRecover) {
@@ -910,22 +1109,19 @@ PatchManager::_findRip() {
 	return result;
 }
 
-void PatchManager::_outMemory(std::vector<ULONG64>& rips) {
+void PatchManager::_outVmbuf() {  // unused
 
-	for (int id = 0; id < rips.size(); id++) {
+	char title[512];
+	time_t t = time(0);
+	tm* local = localtime(&t);
+	sprintf(title, "[%d-%02d-%02d %02d.%02d.%02d] ",
+		1900 + local->tm_year, local->tm_mon, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
+	sprintf(title + strlen(title), "vmstart_%llx.txt", vmStartAddress);
 
-		ULONG64 rip = rips[id];
-		ULONG64 vmstart = (rip & ~0xfff) - 0x1000;
-
-		driver.readVM(win32ThreadManager().getTargetPid(), vmbuf, (PVOID)vmstart);
-
-		char buf[128];
-		sprintf(buf, "(%d)rip_%llx_vmstart_%llx.txt", id, rip, vmstart);
-		FILE* fp = fopen(buf, "w");
-		for (auto i = 0; i < 0x4000; i++) {
-			fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
-			if (i % 32 == 31) fprintf(fp, "\n");
-		}
-		fclose(fp);
+	FILE* fp = fopen(title, "w");
+	for (auto i = 0; i < 0x4000; i++) {
+		fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
+		if (i % 32 == 31) fprintf(fp, "\n");
 	}
+	fclose(fp);
 }

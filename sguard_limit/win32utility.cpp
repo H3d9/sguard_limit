@@ -234,6 +234,12 @@ bool win32SystemManager::systemInit(HINSTANCE hInst) {
 
 	// open log handle.
 	logfp = fopen(logfile, "a+");
+
+	if (!logfp) {
+		panic("打开log文件%s失败。", logfile);
+		return false;
+	}
+
 	setbuf(logfp, NULL);
 
 	// append new session sign to log.

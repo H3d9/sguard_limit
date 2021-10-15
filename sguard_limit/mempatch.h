@@ -90,7 +90,7 @@ public:
 
 private:
 	std::vector<ULONG64>       _findRip();
-	void                       _outMemory(std::vector<ULONG64>& rips);
+	void                       _outVmbuf();
 
 private:
 	ULONG64                    vmStartAddress             = 0;

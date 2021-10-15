@@ -2,7 +2,7 @@
 
 #include <Windows.h>
 
-#define VERSION             "21.10.15-3"
+#define VERSION             "21.10.16"
 
 #define IDM_TITLE           200
 #define IDM_EXIT            201

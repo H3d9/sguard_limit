@@ -33,7 +33,7 @@ static void ShowAbout() {
 		"注：【时间切分】设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n\n"
 		"3 Memory Patch（21.10.6）：\n"
 		"NtQueryVirtualMemory: 只挂钩SGUARD扫内存的系统调用，理论上并不会出现游戏异常。\n"
-		"NtWaitForSingleObject: 增强模式，若调较大的数值配合上面可以让SGUARD占用接近0，但不清楚是否会出游戏异常。\n"
+		"NtWaitForSingleObject: 增强模式，若调较大的数值配合上面可以让SGUARD占用接近0。\n"
 		"【注意】如果出现游戏异常，建议先关闭这一项。\n"
 		"NtDelayExecution:（旧版功能）不建议开启，以免可能出现游戏异常或偶尔卡顿的问题。如果你想用这个，建议取消勾选其余两项。\n"
 		"【注意】模式3需要临时装载一次驱动（提交更改后会立即将之卸载）。若你使用时出现问题，可以去论坛链接下载证书。\n\n\n"
