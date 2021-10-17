@@ -80,7 +80,8 @@ NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp)
 	return STATUS_SUCCESS;
 }
 
-#define IOCTL_LOG_EXIT(errorName)  Input->errorCode = Status; \
+#define IOCTL_LOG_EXIT(errorName)  if (pEProcess) ObDereferenceObject(pEProcess); \
+                                   Input->errorCode = Status; \
                                    memcpy(Input->errorFunc, errorName, sizeof(errorName)); \
                                    Irp->IoStatus.Information = sizeof(VMIO_REQUEST); \
                                    Irp->IoStatus.Status = STATUS_SUCCESS; \
@@ -94,7 +95,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	NTSTATUS       Status       = STATUS_SUCCESS;
 	SIZE_T         rwSize       = 0x1000;      /* bytes io in an ioctl. same as sizeof(request->data) */
 	SIZE_T         allocSize    = 0x1000 * 4;  /* alloc 4 pages in an ioctl */
-	PEPROCESS      pEProcess;
+	PEPROCESS      pEProcess    = NULL;
 
 
 	switch (controlCode) {
@@ -197,6 +198,10 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			IOCTL_LOG_EXIT("IOCTL: Bad IO code");
 		}
 			break;
+	}
+
+	if (pEProcess) {
+		ObDereferenceObject(pEProcess); 
 	}
 
 	Irp->IoStatus.Information = sizeof(VMIO_REQUEST);
