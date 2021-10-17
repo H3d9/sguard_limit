@@ -391,7 +391,8 @@ void PatchManager::patch() {
 			systemMgr.log("patch(): finding trait.");
 
 			// syscall traits: 4c 8b d1 b8 ?? 00 00 00
-			for (LONG offset = 0; offset < 0x4000 - 0x20 /* buf sz - bytes to write */; offset++) {
+			for (LONG offset = (0x1000 + *rip % 0x1000) - 0x14; /* rva from current syscall begin */
+				offset < 0x4000 - 0x20 /* buf sz - bytes to write */; offset++) {
 				if (vmbuf[offset] == '\x4c' &&
 					vmbuf[offset + 1] == '\x8b' &&
 					vmbuf[offset + 2] == '\xd1' &&
@@ -402,8 +403,8 @@ void PatchManager::patch() {
 					vmbuf[offset + 7] == '\x00') {
 
 					// locate offset0 to syscall 0.
-					offset0 = offset - 0x20 * *(ULONG*)((ULONG64)vmbuf + offset + 4);
-
+					LONG syscall_num = *(ULONG*)((ULONG64)vmbuf + offset + 4);
+					offset0 = offset - 0x20 * syscall_num;
 					break;
 				}
 			}
@@ -433,10 +434,10 @@ void PatchManager::patch() {
 
 
 		systemMgr.log("patch(): modifying memory buffer. offset0 = 0x%x", offset0);
-
+		
 		// assert: vmbuf is syscall pages && offset0 >= 0.
 		// patch according to switches.
-		if (osVersion == OSVersion::WIN_10) {
+		if (osVersion == OSVersion::WIN_10 /* and WIN_11 */) {
 
 			// for win10 there're 0x20 bytes to place shellcode.
 
@@ -911,6 +912,7 @@ void PatchManager::patch() {
 				}
 			}
 		}
+
 
 		systemMgr.log("patch(): writing memory.");
 

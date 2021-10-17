@@ -95,9 +95,9 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"首次使用说明：\n\n"
 			"更新模式：MemPatch V2\n\n"
-			"1 修复旧版（21.10.15）在【win7】下卡掉SG导致游戏异常的问题。\n"
-			"2 增加单实例检测。\n\n"
-			"【注意】默认关闭增强模式（NtWaitForSingleObject）。出异常的【不要】开这个。\n\n"
+			"1 修复旧版（21.10.16）在【win11】下无效的问题。\n\n"
+			"  (特别感谢@白嫖怪 提供的远程win11系统)\n\n"
+			"【注意】默认关闭增强模式（NtWaitForSingleObject）。出异常的【不要】开这个。\n\n\n"
 			"【提示】双击右下角托盘图标，可以查看新版详细说明。",
 			VERSION " colg@H3d9", MB_OK);
 		ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);
