@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <vector>
 
+
 // system version (used in patch module)
 enum class OSVersion { 
 	WIN_7   = 1, 
@@ -23,7 +24,7 @@ struct win32Thread {
 	ULONG64     rip; 
 
 	// ctors
-	win32Thread(DWORD tid = 0, DWORD desiredAccess = THREAD_ALL_ACCESS);
+	win32Thread(DWORD tid, DWORD desiredAccess = THREAD_ALL_ACCESS);
 	~win32Thread();
 	win32Thread(const win32Thread& t);
 	win32Thread(win32Thread&& t) noexcept;
@@ -79,13 +80,11 @@ public:
 
 
 public:
-	static constexpr DWORD       WM_TRAYACTIVATE = WM_APP + 10U;
-
 	HWND                         hWnd;
 	HINSTANCE                    hInstance;
 
 public:
-	bool        systemInit(HINSTANCE hInst);
+	bool        init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg);
 	void        setupProcessDpi();
 	void        enableDebugPrivilege();
 	bool        checkDebugPrivilege();
@@ -93,14 +92,15 @@ public:
 	void        createTray();
 	void        removeTray();
 	WPARAM      messageLoop();
-			    
-	bool        loadConfig();
-	void        writeConfig();
-
-	void        log(const char* format, ...);
-			    
+	
 public:
-	CHAR*       sysfilePath();
+	void        log(const char* format, ...);
+	void        panic(const char* format, ...);
+	void        panic(DWORD errorCode, const char* format, ...);
+
+public:
+	const CHAR* profilePath();  // used by config manager
+	const CHAR* sysfilePath();  // used by memory patch
 	OSVersion   getSystemVersion();
 
 private:
@@ -110,6 +110,8 @@ private:
 	HANDLE                       hProgram;
 	OSVersion                    osVersion;
 	FILE*                        logfp;
+	DWORD                        iconRcNum;
+	UINT                         trayActiveMsg;
 	NOTIFYICONDATA               icon;
 	CHAR                         profileDir[1024];
 	CHAR                         profile[1024];

@@ -2,26 +2,12 @@
 #include <tlhelp32.h>
 #include <UserEnv.h>
 #include <time.h>
-#include "wndproc.h"
-#include "limitcore.h"
-#include "tracecore.h"
-#include "mempatch.h"
-#include "panic.h"
-#include "resource.h"
-
 #include "win32utility.h"
-
-// extern globals used by config functions.
-extern volatile DWORD           g_Mode;
-extern LimitManager&            limitMgr;
-extern TraceManager&            traceMgr;
-extern PatchManager&            patchMgr;
 
 
 // win32Thread
-
 win32Thread::win32Thread(DWORD tid, DWORD desiredAccess)
-	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), rip{0}, _refCount(new DWORD(1)) {
+	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), rip(0), _refCount(new DWORD(1)) {
 	if (tid != 0) {
 		handle = OpenThread(desiredAccess, FALSE, tid);
 	}
@@ -42,7 +28,7 @@ win32Thread::win32Thread(const win32Thread& t)
 	++ *_refCount;
 }
 
-win32Thread::win32Thread(win32Thread&& t) noexcept : win32Thread() {
+win32Thread::win32Thread(win32Thread&& t) noexcept : win32Thread(0) {
 	_mySwap(*this, t);
 }
 
@@ -67,11 +53,9 @@ void win32Thread::_mySwap(win32Thread& t1, win32Thread& t2) {
 }
 
 
-
 // win32ThreadManager
-
 win32ThreadManager::win32ThreadManager() 
-	: pid(0), threadCount(0), threadList({}) {}
+	: pid(0), threadCount(0), threadList{} {}
 
 DWORD win32ThreadManager::getTargetPid() {  // ret == 0 if no proc.
 
@@ -137,13 +121,12 @@ bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadLis
 
 
 // win32SystemManager
-
 win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL), 
-	  hProgram(NULL), osVersion(OSVersion::OTHERS), logfp(NULL),
-	  icon({}), profileDir(), profile(), sysfile(), logfile() {}
+	  hProgram(NULL), osVersion(OSVersion::OTHERS), logfp(NULL), trayActiveMsg(), 
+	  icon{}, iconRcNum(), profileDir{}, profile{}, sysfile{}, logfile{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -184,10 +167,7 @@ void win32SystemManager::setupProcessDpi() {
 	}
 }
 
-bool win32SystemManager::systemInit(HINSTANCE hInst) {
-	
-	// initialize application vars.
-	hInstance = hInst;
+bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg) {
 
 	// decide whether it's single instance.
 	HANDLE hProgram = CreateMutex(NULL, FALSE, "sguard_limit");
@@ -195,6 +175,12 @@ bool win32SystemManager::systemInit(HINSTANCE hInst) {
 		MessageBox(0, "同时只能运行一个SGUARD限制器。", "错误", MB_OK);
 		return false;
 	}
+
+
+	// initialize application vars.
+	this->hInstance = hInst;
+	this->iconRcNum = iconRcNum;
+	this->trayActiveMsg = trayActiveMsg;
 
 
 	// initialize path vars.
@@ -224,15 +210,12 @@ bool win32SystemManager::systemInit(HINSTANCE hInst) {
 	}
 
 
-	// initialize log system.
-	
-	// if old log is larger than 1MiB, delete it.
+	// initialize log subsystem.
 	DWORD filesize = GetCompressedFileSize(logfile, NULL);
 	if (filesize != INVALID_FILE_SIZE && filesize > (1 << 20)) {
 		DeleteFile(logfile);
 	}
 
-	// open log handle.
 	logfp = fopen(logfile, "a+");
 
 	if (!logfp) {
@@ -242,7 +225,6 @@ bool win32SystemManager::systemInit(HINSTANCE hInst) {
 
 	setbuf(logfp, NULL);
 
-	// append new session sign to log.
 	time_t t = time(0);
 	tm* local = localtime(&t);
 	fprintf(logfp, "============ session start: [%d-%02d-%02d %02d:%02d:%02d] =============",
@@ -252,7 +234,6 @@ bool win32SystemManager::systemInit(HINSTANCE hInst) {
 
 	// acquire system version.
 	typedef NTSTATUS(WINAPI* pf)(OSVERSIONINFOEX*);
-	
 	pf RtlGetVersion = (pf)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
 
 	if (RtlGetVersion) {
@@ -266,7 +247,6 @@ bool win32SystemManager::systemInit(HINSTANCE hInst) {
 			osVersion = OSVersion::WIN_7;
 		} else {
 			osVersion = OSVersion::OTHERS;
-			panic("注意：你的系统不支持MemPatch。");
 		}
 	}
 
@@ -352,8 +332,7 @@ bool win32SystemManager::createWin32Window(WNDPROC WndProc) {
 WPARAM win32SystemManager::messageLoop() {
 	
 	MSG msg;
-	while (GetMessage(&msg, nullptr, 0, 0))
-	{
+	while (GetMessage(&msg, nullptr, 0, 0)) {
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
@@ -367,7 +346,7 @@ void win32SystemManager::createTray() {
 	icon.hWnd = hWnd;
 	icon.uID = 0;
 	icon.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
-	icon.uCallbackMessage = WM_TRAYACTIVATE;
+	icon.uCallbackMessage = trayActiveMsg;
 	icon.hIcon = (HICON)GetClassLongPtr(hWnd, GCLP_HICON);
 	strcpy(icon.szTip, "SGuard限制器");
 
@@ -376,145 +355,6 @@ void win32SystemManager::createTray() {
 
 void win32SystemManager::removeTray() {
 	Shell_NotifyIcon(NIM_DELETE, &icon);
-}
-
-bool win32SystemManager::loadConfig() {  // executes only when program is initalizing.
-
-	char          version[128];
-	bool          result = true;
-
-	// check version.
-	GetPrivateProfileString("Global", "Version", NULL, version, 128, profile);
-	if (strcmp(version, VERSION) != 0) {
-		WritePrivateProfileString("Global", "Version", VERSION, profile);
-		result = false;
-	}
-
-	// load configurations.
-	UINT res = GetPrivateProfileInt("Global", "Mode", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1 && res != 2)) {
-		WritePrivateProfileString("Global", "Mode", "2", profile);
-		g_Mode = 2;
-	} else {
-		g_Mode = res;
-	}
-
-	// limit module
-	res = GetPrivateProfileInt("Limit", "Percent", -1, profile);
-	if (res == (UINT)-1 || (res != 90 && res != 95 && res != 99 && res != 999)) {
-		WritePrivateProfileString("Limit", "Percent", "90", profile);
-		limitMgr.limitPercent = 90;
-	} else {
-		limitMgr.limitPercent = res;
-	}
-
-	// lock module
-	res = GetPrivateProfileInt("Lock", "Mode", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1 && res != 2 && res != 3)) {
-		WritePrivateProfileString("Lock", "Mode", "0", profile);
-		traceMgr.lockMode = 0;
-	} else {
-		traceMgr.lockMode = res;
-	}
-
-	res = GetPrivateProfileInt("Lock", "Round", -1, profile);
-	if (res == (UINT)-1 || (res < 1 || res > 99)) {
-		WritePrivateProfileString("Lock", "Round", "95", profile);
-		traceMgr.lockRound = 95;
-	} else {
-		traceMgr.lockRound = res;
-	}
-
-	// patch module
-	res = GetPrivateProfileInt("Patch", "Delay0", -1, profile);
-	if (res == (UINT)-1 || (res < 200 || res > 2000)) {
-		WritePrivateProfileString("Patch", "Delay0", "1250", profile);
-		patchMgr.patchDelay[0] = 1250;
-	} else {
-		patchMgr.patchDelay[0] = res;
-	}
-
-	res = GetPrivateProfileInt("Patch", "Delay1", -1, profile);
-	if (res == (UINT)-1 || (res < 200 || res > 5000)) {
-		WritePrivateProfileString("Patch", "Delay1", "2000", profile);
-		patchMgr.patchDelay[1] = 2000;
-	} else {
-		patchMgr.patchDelay[1] = res;
-	}
-
-	res = GetPrivateProfileInt("Patch", "Delay2", -1, profile);
-	if (res == (UINT)-1 || (res < 200 || res > 2000)) {
-		WritePrivateProfileString("Patch", "Delay2", "1250", profile);
-		patchMgr.patchDelay[2] = 1250;
-	} else {
-		patchMgr.patchDelay[2] = res;
-	}
-
-	res = GetPrivateProfileInt("Patch", "NtQueryVirtualMemory", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1)) {
-		WritePrivateProfileString("Patch", "NtQueryVirtualMemory", "1", profile);
-		patchMgr.patchSwitches.NtQueryVirtualMemory = true;
-	} else {
-		patchMgr.patchSwitches.NtQueryVirtualMemory = res ? true : false;
-	}
-
-	res = GetPrivateProfileInt("Patch", "NtWaitForSingleObject", -1, profile);
-	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
-		WritePrivateProfileString("Patch", "NtWaitForSingleObject", "0", profile);
-		patchMgr.patchSwitches.NtWaitForSingleObject = false;
-	} else {
-		patchMgr.patchSwitches.NtWaitForSingleObject = res ? true : false;
-	}
-
-	res = GetPrivateProfileInt("Patch", "NtDelayExecution", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1)) {
-		WritePrivateProfileString("Patch", "NtDelayExecution", "0", profile);
-		patchMgr.patchSwitches.NtDelayExecution = false;
-	} else {
-		patchMgr.patchSwitches.NtDelayExecution = res ? true : false;
-	}
-
-	// if it's first time user updates to this version, force to mode 2.
-	if (!result) {
-		g_Mode = 2;
-	}
-
-	return result;
-}
-
-void win32SystemManager::writeConfig() {
-
-	char buf[16];
-
-	sprintf(buf, "%u", g_Mode);
-	WritePrivateProfileString("Global", "Mode", buf, profile);
-
-	sprintf(buf, "%u", limitMgr.limitPercent);
-	WritePrivateProfileString("Limit", "Percent", buf, profile);
-
-	sprintf(buf, "%u", traceMgr.lockMode);
-	WritePrivateProfileString("Lock", "Mode", buf, profile);
-
-	sprintf(buf, "%u", traceMgr.lockRound);
-	WritePrivateProfileString("Lock", "Round", buf, profile);
-
-	sprintf(buf, "%u", patchMgr.patchDelay[0]);
-	WritePrivateProfileString("Patch", "Delay0", buf, profile);
-
-	sprintf(buf, "%u", patchMgr.patchDelay[1]);
-	WritePrivateProfileString("Patch", "Delay1", buf, profile);
-
-	sprintf(buf, "%u", patchMgr.patchDelay[2]);
-	WritePrivateProfileString("Patch", "Delay2", buf, profile);
-
-	sprintf(buf, patchMgr.patchSwitches.NtQueryVirtualMemory ? "1" : "0");
-	WritePrivateProfileString("Patch", "NtQueryVirtualMemory", buf, profile);
-
-	sprintf(buf, patchMgr.patchSwitches.NtWaitForSingleObject ? "1" : "0");
-	WritePrivateProfileString("Patch", "NtWaitForSingleObject", buf, profile);
-
-	sprintf(buf, patchMgr.patchSwitches.NtDelayExecution ? "1" : "0");
-	WritePrivateProfileString("Patch", "NtDelayExecution", buf, profile);
 }
 
 void win32SystemManager::log(const char* format, ...) {
@@ -532,8 +372,60 @@ void win32SystemManager::log(const char* format, ...) {
 	fprintf(logfp, "\n");
 }
 
-CHAR* win32SystemManager::sysfilePath() {
+void win32SystemManager::panic(const char* format, ...) {
+
+	char buf[2048];
+	va_list arg;
+	va_start(arg, format);
+	vsprintf(buf, format, arg);
+	va_end(arg);
+
+	DWORD error = GetLastError();
+
+	if (error != 0) {
+		char* description = NULL;
+		FormatMessage(
+			FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+			error,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			(LPSTR)&description,
+			0, NULL);
+
+		sprintf(buf + strlen(buf), "\n\n发生的错误：(0x%x)%s", error, description);
+		LocalFree(description);
+	}
+
+	MessageBox(0, buf, 0, MB_OK);
+}
+
+void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
+
+	char buf[2048];
+	va_list arg;
+	va_start(arg, format);
+	vsprintf(buf, format, arg);
+	va_end(arg);
+
+	char* description = NULL;
+	FormatMessage(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+		errorCode,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		(LPSTR)&description,
+		0, NULL);
+
+	sprintf(buf + strlen(buf), "\n\n发生的错误：(0x%x)%s", errorCode, description);
+	LocalFree(description);
+
+	MessageBox(0, buf, 0, MB_OK);
+}
+
+const CHAR* win32SystemManager::sysfilePath() {
 	return sysfile;
+}
+
+const CHAR* win32SystemManager::profilePath() {
+	return profile;
 }
 
 OSVersion win32SystemManager::getSystemVersion() {
@@ -549,7 +441,7 @@ ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc) {
 	wc.cbClsExtra = 0;
 	wc.cbWndExtra = 0;
 	wc.hInstance = hInstance;
-	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
+	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(iconRcNum));
 	wc.hCursor = 0;
 	wc.hbrBackground = 0;
 	wc.lpszMenuName = 0;

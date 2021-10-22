@@ -3,7 +3,6 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="wndproc.cpp" />
-    <ClCompile Include="panic.cpp" />
     <ClCompile Include="win32utility.cpp" />
     <ClCompile Include="limitcore.cpp">
       <Filter>limit</Filter>
@@ -14,11 +13,14 @@
     <ClCompile Include="mempatch.cpp">
       <Filter>mempatch</Filter>
     </ClCompile>
+    <ClCompile Include="kdriver.cpp">
+      <Filter>mempatch</Filter>
+    </ClCompile>
+    <ClCompile Include="config.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
     <ClInclude Include="wndproc.h" />
-    <ClInclude Include="panic.h" />
     <ClInclude Include="win32utility.h" />
     <ClInclude Include="limitcore.h">
       <Filter>limit</Filter>
@@ -29,6 +31,10 @@
     <ClInclude Include="mempatch.h">
       <Filter>mempatch</Filter>
     </ClInclude>
+    <ClInclude Include="kdriver.h">
+      <Filter>mempatch</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sguard_limit.rc" />

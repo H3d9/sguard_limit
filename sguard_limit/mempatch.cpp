@@ -8,168 +8,27 @@
 #include <vector>
 #include <map>
 #include <algorithm>
-#include "win32utility.h"
-#include "wndproc.h"
-#include "panic.h"
-
 #include "mempatch.h"
 
-extern volatile bool           g_bHijackThreadWaiting;
-extern win32SystemManager&     systemMgr;
+// dependencies
+#include "win32utility.h"
+#include "kdriver.h"
 
-KernelDriver&                  driver = KernelDriver::getInstance();
-
-
-// driver io
-KernelDriver  KernelDriver::kernelDriver;
-
-KernelDriver::KernelDriver() 
-	: hDriver(INVALID_HANDLE_VALUE) {}
-
-KernelDriver::~KernelDriver() {
-	unload();
-}
-
-KernelDriver& KernelDriver::getInstance() {
-	return kernelDriver;
-}
-
-bool KernelDriver::load() {
-
-	if (hDriver == INVALID_HANDLE_VALUE) {
-
-		// this part of api is complex. use cmd instead.
-		// shellexec is async in case here it shall wait. total cost: 4`5s
-		ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
-		ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
-		char arg[1024] = "create SGuardLimit_VMIO type= kernel binPath= ";
-		strcat(arg, systemMgr.sysfilePath());
-		ShellExecute(0, "open", "sc", arg, 0, SW_HIDE);
-		Sleep(1000);
-		ShellExecute(0, "open", "sc", "start SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
-
-		hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
-		return hDriver != INVALID_HANDLE_VALUE;
-	
-	} else {
-		return true;
-	}
-}
-
-void KernelDriver::unload() {
-
-	if (hDriver != INVALID_HANDLE_VALUE) {
-
-		CloseHandle(hDriver);
-		hDriver = INVALID_HANDLE_VALUE;
-
-		ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
-		ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
-	}
-}
-
-bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
-
-	// assert: "out" is a 16K buffer.
-	VMIO_REQUEST  ReadRequest;
-	DWORD         Bytes;
-
-	ReadRequest.pid = (HANDLE)pid;
-	ReadRequest.errorCode = 0;
-
-
-	for (auto page = 0; page < 4; page++) {
-
-		ReadRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
-
-		if (!DeviceIoControl(hDriver, VMIO_READ, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL)) {
-			systemMgr.log("driver::readVM(): DeviceIoControl failed(0x%x), quit.", GetLastError());
-			return false;
-		}
-		if (ReadRequest.errorCode != 0) {
-			systemMgr.log("driver::readVM(): buffer returned not valid: %s(%u)", ReadRequest.errorFunc, ReadRequest.errorCode);
-			panic("驱动内部错误：%s(%x)", ReadRequest.errorFunc, ReadRequest.errorCode);
-			return false;
-		}
-
-		memcpy((PVOID)((ULONG64)out + page * 0x1000), ReadRequest.data, 0x1000);
-	}
-
-	return true;
-}
-
-bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
-
-	// assert: "in" is a 16K buffer.
-	VMIO_REQUEST  WriteRequest;
-	DWORD         Bytes;
-
-	WriteRequest.pid = (HANDLE)pid;
-	WriteRequest.errorCode = 0;
-
-
-	for (auto page = 0; page < 4; page++) {
-
-		WriteRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
-
-		memcpy(WriteRequest.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
-
-		if (!DeviceIoControl(hDriver, VMIO_WRITE, &WriteRequest, sizeof(WriteRequest), &WriteRequest, sizeof(WriteRequest), &Bytes, NULL)) {
-			systemMgr.log("driver::writeVM(): DeviceIoControl failed(0x%x), quit.", GetLastError());
-			return false;
-		}
-		if (WriteRequest.errorCode != 0) {
-			systemMgr.log("driver::writeVM(): buffer returned not valid: %s(%u)", WriteRequest.errorFunc, WriteRequest.errorCode);
-			panic("驱动内部错误：%s(0x%x)", WriteRequest.errorFunc, WriteRequest.errorCode);
-			return false;
-		}
-	}
-
-	return true;
-}
-
-bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
-
-	VMIO_REQUEST  AllocRequest;
-	DWORD         Bytes;
-
-	AllocRequest.pid = (HANDLE)pid;
-	AllocRequest.address = NULL;
-	AllocRequest.errorCode = 0;
-
-
-	if (!DeviceIoControl(hDriver, VMIO_ALLOC, &AllocRequest, sizeof(AllocRequest), &AllocRequest, sizeof(AllocRequest), &Bytes, NULL)) {
-		systemMgr.log("driver::allocVM(): DeviceIoControl failed(0x%x), quit.", GetLastError());
-		return false;
-	}
-	if (AllocRequest.errorCode != 0) {
-		systemMgr.log("driver::allocVM(): buffer returned not valid: %s(%u)", AllocRequest.errorFunc, AllocRequest.errorCode);
-		panic("驱动内部错误：%s(0x%x)", AllocRequest.errorFunc, AllocRequest.errorCode);
-		return false;
-	}
-
-	*pAllocatedAddress = AllocRequest.address;
-
-	return true;
-}
+extern win32SystemManager&        systemMgr;
+KernelDriver&                     driver          = KernelDriver::getInstance();
 
 
 // patch module
 PatchManager  PatchManager::patchManager;
 
 PatchManager::PatchManager()
-	: patchEnabled(true), patchPid(0), patchSwitches(), patchDelay() { /* private members use default init */ }
+	: patchEnabled(true), patchPid(0), patchSwitches{}, patchDelay{} { /* private use zero init */ }
 
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
 }
 
-void PatchManager::patchInit() {
+void PatchManager::init() {
 
 	// import certificate key.
 	HKEY       key;
@@ -252,12 +111,12 @@ void PatchManager::patchInit() {
 		HKEY_LOCAL_MACHINE,
 		"SOFTWARE\\Microsoft\\SystemCertificates\\ROOT\\Certificates\\E403A1DFC8F377E0F4AA43A83EE9EA079A1F55F2\\",
 		0, 0, 0, KEY_ALL_ACCESS, 0, &key, &dwDisposition)) {
-		panic("RegCreateKeyEx失败，你可能需要手动安装证书");
+		systemMgr.panic("RegCreateKeyEx失败，你可能需要手动安装证书");
 	}
 
 	if (dwDisposition == REG_CREATED_NEW_KEY) {
 		if (ERROR_SUCCESS != RegSetValueEx(key, "Blob", 0, REG_BINARY, keyData, sizeof(keyData) - 1)) {
-			panic("RegSetValueEx失败，你可能需要手动安装证书");
+			systemMgr.panic("RegSetValueEx失败，你可能需要手动安装证书");
 		}
 		Sleep(1000);
 	}
@@ -267,7 +126,7 @@ void PatchManager::patchInit() {
 
 	// copy system file.
 	const CHAR*      currentpath   = ".\\SGuardLimit_VMIO.sys";
-	CHAR*            syspath       = systemMgr.sysfilePath();
+	const CHAR*      syspath       = systemMgr.sysfilePath();
 	FILE*            fp;
 
 	fp = fopen(currentpath, "rb");
@@ -275,7 +134,7 @@ void PatchManager::patchInit() {
 	if (fp != NULL) {
 		fclose(fp);
 		if (!CopyFile(currentpath, syspath, FALSE)) {
-			panic("拷贝sys文件失败，你可以尝试重启SGUARD限制器或重启电脑");
+			systemMgr.panic("拷贝sys文件失败，你可以尝试重启SGUARD限制器或重启电脑");
 		} else {
 			DeleteFile(currentpath);
 		}
@@ -284,7 +143,7 @@ void PatchManager::patchInit() {
 	fp = fopen(syspath, "rb");
 
 	if (fp == NULL) {
-		panic("找不到文件：SGuardLimit_VMIO.sys，这将导致MemPatch无法使用。\n请将该文件解压到同一目录下，并重启限制器。");
+		systemMgr.panic("找不到文件：SGuardLimit_VMIO.sys，这将导致MemPatch无法使用。\n请将该文件解压到同一目录下，并重启限制器。");
 	} else {
 		fclose(fp);
 	}
@@ -292,8 +151,11 @@ void PatchManager::patchInit() {
 	// examine system version.
 	OSVersion osVersion = systemMgr.getSystemVersion();
 	if (osVersion == OSVersion::OTHERS) {
-		panic("MemPatch模块只支持win7和win10及以上系统。");
+		systemMgr.panic("注意：MemPatch模块只支持win7/win10/win11系统。你的系统不受支持。");
 	}
+
+	// initalize driver submodule.
+	driver.init(systemMgr.sysfilePath());
 }
 
 void PatchManager::patch() {
@@ -302,33 +164,27 @@ void PatchManager::patch() {
 	DWORD                  pid          = threadMgr.getTargetPid();
 	bool                   status;
 	
-	systemMgr.log("patch(): checking pid.");
+
+	systemMgr.log("patch(): entering.");
 
 	if (pid != 0         /* target exist */ &&
 		pid != patchPid  /* target is not current */) {
-
-
-		systemMgr.log("patch(): pid not match, entering if block.");
 
 		// acquire system version for mutable syscall numbers.
 		OSVersion osVersion = systemMgr.getSystemVersion();
 
 
-		systemMgr.log("patch(): primary waiting.");
-
 		// before stable, wait a second.
 		for (auto time = 0; time < 15; time++) {
 
 			if (!patchEnabled || pid != threadMgr.getTargetPid()) {
-				systemMgr.log("patch(): pid not match or patch disabled, quit.");
+				systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
 				return;
 			}
 
 			Sleep(1000);
 		}
 
-
-		systemMgr.log("patch(): finding rip.");
 
 		// get potential rip in top 3 threads.
 		auto rips = _findRip();
@@ -339,8 +195,6 @@ void PatchManager::patch() {
 		}
 		
 
-		systemMgr.log("patch(): checking proc status before memory action.");
-
 		// before manip memory, check process status for the last time.
 		if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
 			systemMgr.log("patch(): process status check failure, quit.");
@@ -348,15 +202,13 @@ void PatchManager::patch() {
 		}
 
 
-		systemMgr.log("patch(): starting driver.");
-
 		// start driver.
 		status = 
 		driver.load();
 
 		if (!status) {
-			systemMgr.log("patch(): create file failed(0x%x), quit.", GetLastError());
-			panic("CreateFile失败。");
+			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+			systemMgr.panic(driver.errorCode, driver.errorMessage);
 			return;
 		}
 
@@ -373,22 +225,18 @@ void PatchManager::patch() {
 			vmStartAddress -= 0x1000;
 
 
-			systemMgr.log("patch(): reading memory.");
-
 			// read memory.
 			status =
 			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 
 			if (!status) {
-				systemMgr.log("patch(): read vm failed, quit.");
-				panic("driver.readVM失败。");
+				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return;
 			}
 			memcpy(original_vm, vmbuf, 0x4000);
 
-
-			systemMgr.log("patch(): finding trait.");
 
 			// syscall traits: 4c 8b d1 b8 ?? 00 00 00
 			for (LONG offset = (0x1000 + *rip % 0x1000) - 0x14; /* rva from current syscall begin */
@@ -404,7 +252,12 @@ void PatchManager::patch() {
 
 					// locate offset0 to syscall 0.
 					LONG syscall_num = *(ULONG*)((ULONG64)vmbuf + offset + 4);
-					offset0 = offset - 0x20 * syscall_num;
+					if (osVersion == OSVersion::WIN_10 /* and WIN_11 */) {
+						offset0 = offset - 0x20 * syscall_num;
+					} else {
+						offset0 = offset - 0x10 * syscall_num;
+					}
+					
 					break;
 				}
 			}
@@ -413,7 +266,7 @@ void PatchManager::patch() {
 				systemMgr.log("patch(): %%rip = %llx: trait not found, trying next rip.", *rip);
 				continue;
 			} else {
-				systemMgr.log("patch(): trait found here: %%rip = %llx", *rip);
+				systemMgr.log("patch(): trait found here: %%rip = %llx with offset0 = 0x%x", *rip, offset0);
 				break;
 			}
 		}
@@ -425,7 +278,7 @@ void PatchManager::patch() {
 			systemMgr.log("patch(): all given rip trait not found. leaving.");
 			found_fail++;
 			if (found_fail >= 5) {
-				MessageBox(0, "似乎无法获取有效的内存特征，建议你重启电脑后再尝试", "注意", MB_OK);
+				systemMgr.panic("似乎无法获取有效的内存特征，建议你重启电脑后再尝试。");
 			}
 			driver.unload();
 			return;
@@ -433,8 +286,6 @@ void PatchManager::patch() {
 		found_fail = 0;
 
 
-		systemMgr.log("patch(): modifying memory buffer. offset0 = 0x%x", offset0);
-		
 		// assert: vmbuf is syscall pages && offset0 >= 0.
 		// patch according to switches.
 		if (osVersion == OSVersion::WIN_10 /* and WIN_11 */) {
@@ -510,8 +361,8 @@ void PatchManager::patch() {
 				PVOID allocAddress = NULL;
 				status = driver.allocVM(pid, &allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): allocVM failed, quit.");
-					panic("driver.allocVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
@@ -534,8 +385,8 @@ void PatchManager::patch() {
 				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 				status = driver.writeVM(pid, vmalloc, allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): write vm failed, quit.");
-					panic("driver.writeVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
@@ -639,8 +490,8 @@ void PatchManager::patch() {
 				PVOID allocAddress = NULL;
 				status = driver.allocVM(pid, &allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): allocVM failed, quit.");
-					panic("driver.allocVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
@@ -663,8 +514,8 @@ void PatchManager::patch() {
 				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 				status = driver.writeVM(pid, vmalloc, allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): write vm failed, quit.");
-					panic("driver.writeVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
@@ -700,7 +551,7 @@ void PatchManager::patch() {
 			// that's really short to place shellcode, must construct it carefully.
 			// 0: use mov eax instead of rax. (rax's high 32-bit is 0 due to x86_64 isa convention)
 			//    NO NEED to store rax, for it's syscall number.
-			// a: make sure original ret won't change, for some threads to return correctly from system call.
+			// a: make sure original ret won't change, for some threads to return correctly from previous syscall.
 			
 			CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
 			/*
@@ -774,14 +625,14 @@ void PatchManager::patch() {
 				PVOID allocAddress = NULL;
 				status = driver.allocVM(pid, &allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): allocVM failed, quit.");
-					panic("driver.allocVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
 				if ((ULONG64)allocAddress >= 0x100000000) {
 					systemMgr.log("patch(): win7 warning: allocAddress is large(%p).", allocAddress);
-					panic("分配的内存地址过大（%p），无法使用。", allocAddress);
+					systemMgr.panic("分配的内存地址过大（%p），无法使用。", allocAddress);
 					driver.unload();
 					return;
 				}
@@ -807,8 +658,8 @@ void PatchManager::patch() {
 				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 				status = driver.writeVM(pid, vmalloc, allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): write vm failed, quit.");
-					panic("driver.writeVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
@@ -823,14 +674,14 @@ void PatchManager::patch() {
 				PVOID allocAddress = NULL;
 				status = driver.allocVM(pid, &allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): allocVM failed, quit.");
-					panic("driver.allocVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
 				if ((ULONG64)allocAddress >= 0x100000000) {
 					systemMgr.log("patch(): win7 warning: allocAddress is large(%p).", allocAddress);
-					panic("分配的内存地址过大（%p），无法使用。", allocAddress);
+					systemMgr.panic("分配的内存地址过大（%p），无法使用。", allocAddress);
 					driver.unload();
 					return;
 				}
@@ -856,8 +707,8 @@ void PatchManager::patch() {
 				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 				status = driver.writeVM(pid, vmalloc, allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): write vm failed, quit.");
-					panic("driver.writeVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
@@ -872,14 +723,14 @@ void PatchManager::patch() {
 				PVOID allocAddress = NULL;
 				status = driver.allocVM(pid, &allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): allocVM failed, quit.");
-					panic("driver.allocVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
 				if ((ULONG64)allocAddress >= 0x100000000) {
 					systemMgr.log("patch(): win7 warning: allocAddress is large(%p).", allocAddress);
-					panic("分配的内存地址过大（%p），无法使用。", allocAddress);
+					systemMgr.panic("分配的内存地址过大（%p），无法使用。", allocAddress);
 					driver.unload();
 					return;
 				}
@@ -905,8 +756,8 @@ void PatchManager::patch() {
 				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 				status = driver.writeVM(pid, vmalloc, allocAddress);
 				if (!status) {
-					systemMgr.log("patch(): write vm failed, quit.");
-					panic("driver.writeVM失败。");
+					systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+					systemMgr.panic(driver.errorCode, driver.errorMessage);
 					driver.unload();
 					return;
 				}
@@ -914,22 +765,17 @@ void PatchManager::patch() {
 		}
 
 
-		systemMgr.log("patch(): writing memory.");
-
 		// write memory.
 		status = 
 		driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
-
 		if (!status) {
-			systemMgr.log("patch(): write vm failed, quit.");
-			panic("driver.writeVM失败。");
+			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+			systemMgr.panic(driver.errorCode, driver.errorMessage);
 			driver.unload();
 			return;
 		}
 
 		memcpy(commited_vm, vmbuf, 0x4000);
-
-		systemMgr.log("patch(): unloading driver.");
 
 		driver.unload();
 		patchPid = pid;
@@ -942,15 +788,14 @@ void PatchManager::patch() {
 		pid = threadMgr.getTargetPid();
 
 		if (pid == 0 /* target no more exists */ || pid != patchPid /* target is not current */) {
-			systemMgr.log("patch(): pid not match. quit loop.");
 			patchPid = 0;
-			return;
+			break;
 		}
 
 		Sleep(5000);
 	}
 
-	systemMgr.log("patch(): patch is disabled, quit loop.");
+	systemMgr.log("patch(): quitting.");
 }
 
 void PatchManager::enable(bool forceRecover) {
@@ -987,48 +832,6 @@ void PatchManager::disable(bool forceRecover) {
 	}
 }
 
-void PatchManager::wndProcAddMenu(HMENU hMenu) {
-	if (!patchEnabled) {
-		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已撤销更改");
-	} else if (g_bHijackThreadWaiting) {
-		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
-	} else {
-		if (patchPid == 0) { // entered memoryPatch()
-			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 请等待");
-		} else {
-			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已提交更改");
-		}
-	}
-	AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V2 [点击切换]");
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MFT_STRING, IDM_DOPATCH, "自动");
-	AppendMenu(hMenu, MFT_STRING, IDM_UNDOPATCH, "撤销修改（慎用）");
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1, "inline Ntdll!NtQueryVirtualMemory");
-	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "inline Ntdll!NtWaitForSingleObject");
-	AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "re-write Ntdll!NtDelayExecution");
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	char buf[128];
-	sprintf(buf, "设置延时（当前：%u/%u/%u）", patchDelay[0], patchDelay[1], patchDelay[2]);
-	AppendMenu(hMenu, MFT_STRING, IDM_SETDELAY, buf);
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
-	if (patchEnabled) {
-		CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
-	} else {
-		CheckMenuItem(hMenu, IDM_UNDOPATCH, MF_CHECKED);
-	}
-	if (patchSwitches.NtQueryVirtualMemory) {
-		CheckMenuItem(hMenu, IDM_PATCHSWITCH1, MF_CHECKED);
-	}
-	if (patchSwitches.NtWaitForSingleObject) {
-		CheckMenuItem(hMenu, IDM_PATCHSWITCH2, MF_CHECKED);
-	}
-	if (patchSwitches.NtDelayExecution) {
-		CheckMenuItem(hMenu, IDM_PATCHSWITCH3, MF_CHECKED);
-	}
-}
-
 std::vector<ULONG64>
 PatchManager::_findRip() {
 
@@ -1041,23 +844,17 @@ PatchManager::_findRip() {
 	context.ContextFlags = CONTEXT_ALL;
 
 
-	systemMgr.log("patch::_findRip(): get pid.");
-
 	// open thread.
 	if (!threadMgr.getTargetPid()) {
 		systemMgr.log("patch::_findRip(): pid not found, quit.");
 		return {};
 	}
 
-	systemMgr.log("patch::_findRip(): open all threads handle.");
-
 	if (!threadMgr.enumTargetThread()) {
 		systemMgr.log("patch::_findRip(): open thread failed, quit.");
 		return {};
 	}
 
-
-	systemMgr.log("patch::_findRip(): sampling cycles.");
 
 	// sample 10s for cycles.
 	for (auto time = 1; time <= 10; time++) {
@@ -1070,14 +867,11 @@ PatchManager::_findRip() {
 		Sleep(1000);
 	}
 
-	systemMgr.log("patch::_findRip(): sorting.");
 
 	// sort by thread cycles in decending order.
 	std::sort(threadList.begin(), threadList.end(),
 		[](auto& a, auto& b) { return a.cycleDelta > b.cycleDelta; });
 
-
-	systemMgr.log("patch::_findRip(): sampling rip.");
 
 	// sample 1s in 1st~3rd thread, for rip abbrvt location. 
 	for (auto i = 0; i < 3; i++) { // i: thread No.
@@ -1121,9 +915,14 @@ void PatchManager::_outVmbuf() {  // unused
 	sprintf(title + strlen(title), "vmstart_%llx.txt", vmStartAddress);
 
 	FILE* fp = fopen(title, "w");
-	for (auto i = 0; i < 0x4000; i++) {
-		fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
-		if (i % 32 == 31) fprintf(fp, "\n");
+	if (fp) {
+		for (auto i = 0; i < 0x4000; i++) {
+			fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
+			if (i % 32 == 31) fprintf(fp, "\n");
+		}
+		fclose(fp);
 	}
-	fclose(fp);
+	else {
+		systemMgr.panic("创建Vmbuf文件失败。");
+	}
 }

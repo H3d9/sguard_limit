@@ -3,19 +3,17 @@
 #include <Windows.h>
 #include <tlhelp32.h>
 #include <process.h>
-#include "win32utility.h"
-#include "wndproc.h"
-
 #include "tracecore.h"
 
-extern volatile bool  g_bHijackThreadWaiting;
+// dependencies
+#include "win32utility.h"
 
 
 // Trace module
 TraceManager  TraceManager::traceManager;
 
 TraceManager::TraceManager() 
-	: lockEnabled(true), lockMode(0), lockRound(95), lockPid(0) { /* lockedThreads use default init */ }
+	: lockEnabled(true), lockMode(0), lockRound(95), lockPid(0), lockedThreads{} {}
 
 TraceManager& TraceManager::getInstance() {
 	return traceManager;
@@ -304,73 +302,6 @@ void TraceManager::setMode(DWORD mode) {
 	if (mode >= 0 && mode <= 3) {
 		lockEnabled = true;
 		lockMode = mode;
-	}
-}
-
-void TraceManager::wndProcAddMenu(HMENU hMenu) {
-
-	if (!lockEnabled) {
-		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
-	} else if (g_bHijackThreadWaiting) {
-		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
-	} else { // entered func: threadLock()
-		if (lockPid == 0) {
-			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 正在分析");
-		} else {
-			char titleBuf[512] = "SGuard限制器 - ";
-			switch (lockMode) {
-			case 0:
-				for (auto i = 0; i < 3; i++) {
-					sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", lockedThreads[i].tid, lockedThreads[i].locked ? 'O' : 'X');
-				}
-				break;
-			case 1:
-				for (auto i = 0; i < 3; i++) {
-					sprintf(titleBuf + strlen(titleBuf), "%x[..] ", lockedThreads[i].tid);
-				}
-				break;
-			case 2:
-				sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", lockedThreads[0].tid, lockedThreads[0].locked ? 'O' : 'X');
-				break;
-			case 3:
-				sprintf(titleBuf + strlen(titleBuf), "%x[..] ", lockedThreads[0].tid);
-				break;
-			}
-			AppendMenu(hMenu, MFT_STRING, IDM_TITLE, titleBuf);
-		}
-	}
-	AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：线程追踪 [点击切换]");
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MFT_STRING, IDM_LOCK3, "锁定");
-	AppendMenu(hMenu, MFT_STRING, IDM_LOCK1, "弱锁定");
-	AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR, "锁定-rr");
-	AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR, "弱锁定-rr");
-	AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK, "解除锁定");
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	if (lockMode == 1 || lockMode == 3) {
-		char buf[128];
-		sprintf(buf, "设置时间切分（当前：%d）", lockRound);
-		AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
-		AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	}
-	AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
-	if (lockEnabled) {
-		switch (lockMode) {
-		case 0:
-			CheckMenuItem(hMenu, IDM_LOCK3, MF_CHECKED);
-			break;
-		case 1:
-			CheckMenuItem(hMenu, IDM_LOCK3RR, MF_CHECKED);
-			break;
-		case 2:
-			CheckMenuItem(hMenu, IDM_LOCK1, MF_CHECKED);
-			break;
-		case 3:
-			CheckMenuItem(hMenu, IDM_LOCK1RR, MF_CHECKED);
-			break;
-		}
-	} else {
-		CheckMenuItem(hMenu, IDM_UNLOCK, MF_CHECKED);
 	}
 }
 

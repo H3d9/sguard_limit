@@ -8,13 +8,12 @@
 #include <shlwapi.h>
 #include <shlobj.h>
 #include <process.h>
-#include "win32utility.h"
-#include "wndproc.h"
-#include "panic.h"
-
 #include "limitcore.h"
 
-extern volatile bool  g_bHijackThreadWaiting;
+// dependencies
+#include "win32utility.h"
+
+extern volatile bool  g_HijackThreadWaiting;
 
 
 // Limit Manager
@@ -98,48 +97,10 @@ void LimitManager::enable() {
 
 void LimitManager::disable() {
 	limitEnabled = false;
-	while (!g_bHijackThreadWaiting); // spin; wait till hijack release target thread.
+	while (!g_HijackThreadWaiting); // spin; wait till hijack release target thread.
 }
 
 void LimitManager::setPercent(DWORD percent) {
 	limitEnabled = true;
 	limitPercent = percent;
-}
-
-void LimitManager::wndProcAddMenu(HMENU hMenu) {
-
-	if (!limitEnabled) {
-		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
-	} else if (g_bHijackThreadWaiting) {
-		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
-	} else {
-		AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 侦测到SGuard");
-	}
-	AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：时间片轮转 [点击切换]");
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MFT_STRING, IDM_PERCENT90, "限制资源：90%");
-	AppendMenu(hMenu, MFT_STRING, IDM_PERCENT95, "限制资源：95%");
-	AppendMenu(hMenu, MFT_STRING, IDM_PERCENT99, "限制资源：99%");
-	AppendMenu(hMenu, MFT_STRING, IDM_PERCENT999, "限制资源：99.9%");
-	AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT, "停止限制");
-	AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
-	if (limitEnabled) {
-		switch (limitPercent) {
-		case 90:
-			CheckMenuItem(hMenu, IDM_PERCENT90, MF_CHECKED);
-			break;
-		case 95:
-			CheckMenuItem(hMenu, IDM_PERCENT95, MF_CHECKED);
-			break;
-		case 99:
-			CheckMenuItem(hMenu, IDM_PERCENT99, MF_CHECKED);
-			break;
-		case 999:
-			CheckMenuItem(hMenu, IDM_PERCENT999, MF_CHECKED);
-			break;
-		}
-	} else {
-		CheckMenuItem(hMenu, IDM_STOPLIMIT, MF_CHECKED);
-	}
 }

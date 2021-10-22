@@ -2,20 +2,12 @@
 #include <Windows.h>
 #include <unordered_map>
 
-// wndproc button command
-#define IDM_LOCK3           208
-#define IDM_LOCK1           209
-#define IDM_LOCK3RR         210
-#define IDM_LOCK1RR         211
-#define IDM_SETRRTIME       212
-#define IDM_UNLOCK          213
-
 
 // Trace module (sington)
 class TraceManager {
 
 private:
-	static TraceManager         traceManager;
+	static TraceManager    traceManager;
 
 private:
 	TraceManager();
@@ -26,27 +18,28 @@ private:
 	TraceManager& operator= (TraceManager&&)         = delete;
 
 public:
-	static TraceManager&        getInstance();
-
-public:
-	volatile bool               lockEnabled;
-	volatile DWORD              lockMode;
-	volatile DWORD              lockRound;
+	static TraceManager&   getInstance();
 
 public:
 	void      chase();
 	void      enable();
 	void      disable();
 	void      setMode(DWORD mode);
-	void      wndProcAddMenu(HMENU hMenu);
 
-private:
+public:
 	struct lockedThreads_t {
-		DWORD         tid             = 0;
-		HANDLE        handle          = NULL;   // handle == NULL : not locked.
-		bool          locked          = false;
+		DWORD     tid        = 0;
+		HANDLE    handle     = NULL;   // handle == NULL : not locked.
+		bool      locked     = false;
 	};
 
+	volatile bool               lockEnabled;
+	volatile DWORD              lockMode;
+	volatile DWORD              lockRound;
+	volatile DWORD              lockPid;
+	volatile lockedThreads_t    lockedThreads[3];
+
+private:
 	struct threadinfo {
 		HANDLE        handle          = NULL;
 		ULONG64       cycles          = 0;
@@ -54,11 +47,8 @@ private:
 		int           dieCount        = 0;
 	};
 
-	using  map    = std::unordered_map<DWORD, threadinfo>;  // hashmap: tid -> {...}
-	using  mapIt  = decltype(map().begin());
-
-	DWORD                       lockPid;
-	lockedThreads_t             lockedThreads[3];
+	using  map    =  std::unordered_map<DWORD, threadinfo>;  // hashmap: tid -> {...}
+	using  mapIt  =  decltype(map().begin());
 
 private:
 	bool      _enumThreadInfo(DWORD pid, map* m);

@@ -84,18 +84,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="config.cpp" />
+    <ClCompile Include="kdriver.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="limitcore.cpp" />
     <ClCompile Include="mempatch.cpp" />
-    <ClCompile Include="panic.cpp" />
     <ClCompile Include="tracecore.cpp" />
     <ClCompile Include="win32utility.cpp" />
     <ClCompile Include="wndproc.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="config.h" />
+    <ClInclude Include="kdriver.h" />
     <ClInclude Include="limitcore.h" />
     <ClInclude Include="mempatch.h" />
-    <ClInclude Include="panic.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="tracecore.h" />
     <ClInclude Include="win32utility.h" />
