@@ -34,7 +34,7 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 
 			systemMgr.log("hijack thread: pid found.");
 			if (g_Mode == 0 && limitMgr.limitEnabled) {
-				g_HijackThreadWaiting = false;   // sync is done as we call schedule
+				g_HijackThreadWaiting = false;    // sync is done as we call schedule
 				limitMgr.hijack();                // start hijack.
 				g_HijackThreadWaiting = true;
 			}

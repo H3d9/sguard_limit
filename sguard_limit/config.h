@@ -6,7 +6,7 @@
 class ConfigManager {
 
 private:
-	static ConfigManager    configManager;
+	static ConfigManager     configManager;
 
 private:
 	ConfigManager();
@@ -17,13 +17,13 @@ private:
 	ConfigManager& operator= (ConfigManager&&)         = delete;
 
 public:
-	static ConfigManager& getInstance();
+	static ConfigManager&    getInstance();
 
 public:
-	void  init(const CHAR* profilepath);
-	bool  loadConfig();
-	void  writeConfig();
+	void    init(const CHAR* profilepath);
+	bool    loadConfig();
+	void    writeConfig();
 
 private:
-	const CHAR*  profile;
+	const CHAR*   profile;
 };

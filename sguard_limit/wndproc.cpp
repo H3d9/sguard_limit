@@ -430,6 +430,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			case IDM_PATCHSWITCH2:
 				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 					patchMgr.patchSwitches.NtWaitForSingleObject = false;
+					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				} else {
 					if (IDYES == MessageBox(0, "这是增强模式，已知可能导致游戏异常，你应该在了解开启该选项的风险后使用。\n如果你出现“3009”，“96”，“lol掉线”问题，请立即关闭该选项。要继续么？", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.NtWaitForSingleObject = true;

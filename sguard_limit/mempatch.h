@@ -1,6 +1,7 @@
 #pragma once
 #include <Windows.h>
 
+
 // patch module (sington)
 class PatchManager {
 
