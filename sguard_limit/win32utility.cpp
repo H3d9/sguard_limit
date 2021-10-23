@@ -228,7 +228,7 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 	time_t t = time(0);
 	tm* local = localtime(&t);
 	fprintf(logfp, "============ session start: [%d-%02d-%02d %02d:%02d:%02d] =============",
-		1900 + local->tm_year, local->tm_mon, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
+		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
 	fprintf(logfp, "\n");
 
 
@@ -242,9 +242,9 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 		RtlGetVersion(&osInfo);
 
 		if (osInfo.dwMajorVersion >= 10) {
-			osVersion = OSVersion::WIN_10;
+			osVersion = OSVersion::WIN_10;  // NT 10+
 		} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 1) {
-			osVersion = OSVersion::WIN_7;
+			osVersion = OSVersion::WIN_7;   // NT 6.1
 		} else {
 			osVersion = OSVersion::OTHERS;
 		}
@@ -361,7 +361,7 @@ void win32SystemManager::log(const char* format, ...) {
 
 	time_t t = time(0);
 	tm* local = localtime(&t);
-	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] ", 1900 + local->tm_year, local->tm_mon, local->tm_mday,
+	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] ", 1900 + local->tm_year, local->tm_mon + 1, local->tm_mday,
 		local->tm_hour, local->tm_min, local->tm_sec);
 
 	va_list arg;

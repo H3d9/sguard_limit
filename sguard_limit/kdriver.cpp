@@ -32,8 +32,9 @@ bool KernelDriver::load() {
 		Sleep(1000);
 		ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
 		Sleep(1000);
-		char arg[1024] = "create SGuardLimit_VMIO type= kernel binPath= ";
+		char arg[1024] = "create SGuardLimit_VMIO type= kernel binPath= \"";
 		strcat(arg, sysfile);
+		strcat(arg, "\"");
 		ShellExecute(0, "open", "sc", arg, 0, SW_HIDE);
 		Sleep(1000);
 		ShellExecute(0, "open", "sc", "start SGuardLimit_VMIO", 0, SW_HIDE);

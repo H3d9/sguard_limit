@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "21.10.22"
+#define VERSION             "21.10.23"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 

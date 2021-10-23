@@ -2,7 +2,6 @@
 // 2021.10.4 雨
 // 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
 #include <Windows.h>
-#include <tlhelp32.h>
 #include <stdio.h>
 #include <time.h>
 #include <vector>
@@ -251,7 +250,7 @@ void PatchManager::patch() {
 					vmbuf[offset + 7] == '\x00') {
 
 					// locate offset0 to syscall 0.
-					LONG syscall_num = *(ULONG*)((ULONG64)vmbuf + offset + 4);
+					LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
 					if (osVersion == OSVersion::WIN_10 /* and WIN_11 */) {
 						offset0 = offset - 0x20 * syscall_num;
 					} else {
@@ -564,7 +563,7 @@ void PatchManager::patch() {
 			*/
 
 			CHAR working_bytes[] =
-				"\x49\x89\xCA\xB8\xAB\x00\x00\x00\x0F\x05"
+				"\x49\x89\xCA\xB8\x00\x00\x00\x00\x0F\x05"
 				"\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
 				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x31\x00\x00\x00\x0F\x05\x41\x5A"
 				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
@@ -874,7 +873,7 @@ PatchManager::_findRip() {
 
 
 	// sample 1s in 1st~3rd thread, for rip abbrvt location. 
-	for (auto i = 0; i < 3; i++) { // i: thread No.
+	for (auto i = 0; threadList.size() <= 3 && i < 3; i++) { // i: thread No.
 
 		contextMap.clear();
 		for (auto time = 1; time <= 100; time++) {
@@ -911,7 +910,7 @@ void PatchManager::_outVmbuf() {  // unused
 	time_t t = time(0);
 	tm* local = localtime(&t);
 	sprintf(title, "[%d-%02d-%02d %02d.%02d.%02d] ",
-		1900 + local->tm_year, local->tm_mon, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
+		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
 	sprintf(title + strlen(title), "vmstart_%llx.txt", vmStartAddress);
 
 	FILE* fp = fopen(title, "w");
