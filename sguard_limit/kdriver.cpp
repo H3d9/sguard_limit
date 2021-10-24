@@ -8,7 +8,7 @@
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
-	: hDriver(INVALID_HANDLE_VALUE), sysfile(NULL), errorMessage{}, errorCode(0) {}
+	: sysfile(NULL), hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE), errorMessage{}, errorCode(0) {}
 
 KernelDriver::~KernelDriver() {
 	unload();
@@ -26,19 +26,7 @@ bool KernelDriver::load() {
 
 	if (hDriver == INVALID_HANDLE_VALUE) {
 
-		// this part of api is not easy to use. use cmd instead.
-		// shellexec is async in case here it shall wait. total cost: 4`5s
-		ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
-		ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
-		char arg[1024] = "create SGuardLimit_VMIO type= kernel binPath= \"";
-		strcat(arg, sysfile);
-		strcat(arg, "\"");
-		ShellExecute(0, "open", "sc", arg, 0, SW_HIDE);
-		Sleep(1000);
-		ShellExecute(0, "open", "sc", "start SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
+		_startService();
 
 		hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
 		
@@ -58,10 +46,7 @@ void KernelDriver::unload() {
 		CloseHandle(hDriver);
 		hDriver = INVALID_HANDLE_VALUE;
 
-		ShellExecute(0, "open", "sc", "stop SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
-		ShellExecute(0, "open", "sc", "delete SGuardLimit_VMIO", 0, SW_HIDE);
-		Sleep(1000);
+		_endService();
 	}
 }
 
@@ -145,6 +130,94 @@ bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 	*pAllocatedAddress = AllocRequest.address;
 
 	return true;
+}
+
+#define SVC_ERROR_EXIT(errorMsg)   _recordError(errorMsg); \
+                                   if (hService) CloseServiceHandle(hService); \
+                                   if (hSCManager) CloseServiceHandle(hSCManager); \
+                                   hService = NULL; \
+                                   hSCManager = NULL; \
+                                   return false;
+
+bool KernelDriver::_startService() {
+
+	SERVICE_STATUS svcStatus;
+
+	// open SCM.
+	hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+
+	if (!hSCManager) {
+		SVC_ERROR_EXIT("OpenSCManager失败。");
+	}
+
+	// open Service.
+	hService = OpenService(hSCManager, "SGuardLimit_VMIO", SERVICE_ALL_ACCESS);
+
+	if (!hService) {
+		hService = 
+		CreateService(hSCManager, "SGuardLimit_VMIO", "SGuardLimit_VMIO",
+			SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
+			sysfile,  /* no quote here, msdn e.g. is wrong */ /* assert path is valid */
+			NULL, NULL, NULL, NULL, NULL);
+
+		if (!hService) {
+			SVC_ERROR_EXIT("CreateService失败。");
+		}
+	}
+
+	// check service status.
+	QueryServiceStatus(hService, &svcStatus);
+
+	// if service is running, stop it.
+	if (svcStatus.dwCurrentState != SERVICE_STOPPED && svcStatus.dwCurrentState != SERVICE_STOP_PENDING) {
+		if (!ControlService(hService, SERVICE_CONTROL_STOP, &svcStatus)) {
+			DeleteService(hService);
+			SVC_ERROR_EXIT("无法停止当前服务。重启电脑应该能解决该问题。");
+		}
+	}
+
+	// if service is stopping,
+	// wait till it's completely stopped. 
+	if (svcStatus.dwCurrentState == SERVICE_STOP_PENDING) {
+		for (auto time = 0; time < 50; time++) {
+			Sleep(100);
+			QueryServiceStatus(hService, &svcStatus);
+			if (svcStatus.dwCurrentState == SERVICE_STOPPED) {
+				break;
+			}
+		}
+
+		if (svcStatus.dwCurrentState == SERVICE_STOP_PENDING) {
+			DeleteService(hService);
+			SVC_ERROR_EXIT("停止当前服务时的等待时间过长。重启电脑应该能解决该问题。");
+		}
+	}
+
+	// start service.
+	// if start failed, delete old one (cause old service may have wrong params)
+	if (!StartService(hService, 0, NULL)) {
+		DeleteService(hService);
+		SVC_ERROR_EXIT("StartService失败。重启电脑应该能解决该问题。");
+	}
+
+	return true;
+}
+
+void KernelDriver::_endService() {
+
+	SERVICE_STATUS svcStatus;
+
+	// stop service.
+	ControlService(hService, SERVICE_CONTROL_STOP, &svcStatus);
+
+	// mark service to be deleted.
+	DeleteService(hService);
+
+	// service will be deleted after we close service handle.
+	CloseServiceHandle(hService);
+	CloseServiceHandle(hSCManager);
+	hService = NULL;
+	hSCManager = NULL;
 }
 
 void KernelDriver::_recordError(const CHAR* msg, ...) {

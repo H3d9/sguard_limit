@@ -27,6 +27,11 @@ public:
 	bool     writeVM(DWORD pid, PVOID in, PVOID targetAddress);
 	bool     allocVM(DWORD pid, PVOID* pAllocatedAddress);
 
+
+private:
+	bool     _startService();
+	void     _endService();
+
 private:
 	typedef struct {
 		CHAR       data[4096];
@@ -41,9 +46,10 @@ private:
 	static constexpr DWORD   VMIO_WRITE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD   VMIO_ALLOC  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
-	HANDLE        hDriver;
-	const CHAR*   sysfile;
-	
+	const CHAR*    sysfile;
+	SC_HANDLE      hSCManager;
+	SC_HANDLE      hService;
+	HANDLE         hDriver;
 
 public:
 	CHAR     errorMessage[1024];

@@ -189,7 +189,7 @@ void PatchManager::patch() {
 		auto rips = _findRip();
 
 		if (rips.empty()) {
-			systemMgr.log("patch(): top 3's rip all not found, quit.");
+			systemMgr.log("patch(): rips empty, quit.");
 			return;
 		}
 		
@@ -257,6 +257,7 @@ void PatchManager::patch() {
 						offset0 = offset - 0x10 * syscall_num;
 					}
 					
+					systemMgr.log("patch(): offset0 found here: +0x%x => syscall 0x%x", offset0, syscall_num);
 					break;
 				}
 			}
@@ -265,7 +266,7 @@ void PatchManager::patch() {
 				systemMgr.log("patch(): %%rip = %llx: trait not found, trying next rip.", *rip);
 				continue;
 			} else {
-				systemMgr.log("patch(): trait found here: %%rip = %llx with offset0 = 0x%x", *rip, offset0);
+				systemMgr.log("patch(): trait found here: %%rip = %llx", *rip);
 				break;
 			}
 		}
@@ -873,7 +874,7 @@ PatchManager::_findRip() {
 
 
 	// sample 1s in 1st~3rd thread, for rip abbrvt location. 
-	for (auto i = 0; threadList.size() <= 3 && i < 3; i++) { // i: thread No.
+	for (auto i = 0; i < threadList.size() && i < 3; i++) { // i: thread No.
 
 		contextMap.clear();
 		for (auto time = 1; time <= 100; time++) {
