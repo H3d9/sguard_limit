@@ -32,6 +32,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 
 	char          version[128];
 	bool          result = true;
+	char          buf[128];
 
 	// check version.
 	GetPrivateProfileString("Global", "Version", NULL, version, 128, profile);
@@ -41,8 +42,9 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	}
 
 	// load configurations.
+	// if it's first time user updates to this version, force to mode 2.
 	UINT res = GetPrivateProfileInt("Global", "Mode", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1 && res != 2)) {
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1 && res != 2)) {
 		WritePrivateProfileString("Global", "Mode", "2", profile);
 		g_Mode = 2;
 	} else {
@@ -76,40 +78,62 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	}
 
 	// patch module
+	auto& delayRange = patchMgr.patchDelayRange;
+
 	res = GetPrivateProfileInt("Patch", "Delay0", -1, profile);
-	if (res == (UINT)-1 || (res < 200 || res > 2000)) {
-		WritePrivateProfileString("Patch", "Delay0", "1250", profile);
-		patchMgr.patchDelay[0] = 1250;
+	if (!result || res == (UINT)-1 || (res < delayRange[0].low || res > delayRange[0].high)) {
+		sprintf(buf, "%u", delayRange[0].def);
+		WritePrivateProfileString("Patch", "Delay0", buf, profile);
+		patchMgr.patchDelay[0] = delayRange[0].def;
 	} else {
 		patchMgr.patchDelay[0] = res;
 	}
 
 	res = GetPrivateProfileInt("Patch", "Delay1", -1, profile);
-	if (res == (UINT)-1 || (res < 200 || res > 5000)) {
-		WritePrivateProfileString("Patch", "Delay1", "2000", profile);
-		patchMgr.patchDelay[1] = 2000;
+	if (!result || res == (UINT)-1 || (res < delayRange[1].low || res > delayRange[1].high)) {
+		sprintf(buf, "%u", delayRange[1].def);
+		WritePrivateProfileString("Patch", "Delay1", buf, profile);
+		patchMgr.patchDelay[1] = delayRange[1].def;
 	} else {
 		patchMgr.patchDelay[1] = res;
 	}
 
 	res = GetPrivateProfileInt("Patch", "Delay2", -1, profile);
-	if (res == (UINT)-1 || (res < 200 || res > 2000)) {
-		WritePrivateProfileString("Patch", "Delay2", "1250", profile);
-		patchMgr.patchDelay[2] = 1250;
+	if (!result || res == (UINT)-1 || (res < delayRange[2].low || res > delayRange[2].high)) {
+		sprintf(buf, "%u", delayRange[2].def);
+		WritePrivateProfileString("Patch", "Delay2", buf, profile);
+		patchMgr.patchDelay[2] = delayRange[2].def;
 	} else {
 		patchMgr.patchDelay[2] = res;
 	}
 
+	res = GetPrivateProfileInt("Patch", "Delay3", -1, profile);
+	if (!result || res == (UINT)-1 || (res < delayRange[3].low || res > delayRange[3].high)) {
+		sprintf(buf, "%u", delayRange[3].def);
+		WritePrivateProfileString("Patch", "Delay3", buf, profile);
+		patchMgr.patchDelay[3] = delayRange[3].def;
+	} else {
+		patchMgr.patchDelay[3] = res;
+	}
+
 	res = GetPrivateProfileInt("Patch", "NtQueryVirtualMemory", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("Patch", "NtQueryVirtualMemory", "1", profile);
 		patchMgr.patchSwitches.NtQueryVirtualMemory = true;
 	} else {
 		patchMgr.patchSwitches.NtQueryVirtualMemory = res ? true : false;
 	}
 
+	res = GetPrivateProfileInt("Patch", "GetAsyncKeyState", -1, profile);
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Patch", "GetAsyncKeyState", "1", profile);
+		patchMgr.patchSwitches.GetAsyncKeyState = true;
+	} else {
+		patchMgr.patchSwitches.GetAsyncKeyState = res ? true : false;
+	}
+
 	res = GetPrivateProfileInt("Patch", "NtWaitForSingleObject", -1, profile);
-	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {    // reset this option when update.
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("Patch", "NtWaitForSingleObject", "0", profile);
 		patchMgr.patchSwitches.NtWaitForSingleObject = false;
 	} else {
@@ -117,16 +141,11 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	}
 
 	res = GetPrivateProfileInt("Patch", "NtDelayExecution", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("Patch", "NtDelayExecution", "0", profile);
 		patchMgr.patchSwitches.NtDelayExecution = false;
 	} else {
 		patchMgr.patchSwitches.NtDelayExecution = res ? true : false;
-	}
-
-	// if it's first time user updates to this version, force to mode 2.
-	if (!result) {
-		g_Mode = 2;
 	}
 
 	return result;
@@ -157,8 +176,14 @@ void ConfigManager::writeConfig() {
 	sprintf(buf, "%u", patchMgr.patchDelay[2]);
 	WritePrivateProfileString("Patch", "Delay2", buf, profile);
 
+	sprintf(buf, "%u", patchMgr.patchDelay[3]);
+	WritePrivateProfileString("Patch", "Delay3", buf, profile);
+
 	sprintf(buf, patchMgr.patchSwitches.NtQueryVirtualMemory ? "1" : "0");
 	WritePrivateProfileString("Patch", "NtQueryVirtualMemory", buf, profile);
+
+	sprintf(buf, patchMgr.patchSwitches.GetAsyncKeyState ? "1" : "0");
+	WritePrivateProfileString("Patch", "GetAsyncKeyState", buf, profile);
 
 	sprintf(buf, patchMgr.patchSwitches.NtWaitForSingleObject ? "1" : "0");
 	WritePrivateProfileString("Patch", "NtWaitForSingleObject", buf, profile);

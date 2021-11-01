@@ -7,7 +7,7 @@
 
 // win32Thread
 win32Thread::win32Thread(DWORD tid, DWORD desiredAccess)
-	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), rip(0), _refCount(new DWORD(1)) {
+	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), _refCount(new DWORD(1)) {
 	if (tid != 0) {
 		handle = OpenThread(desiredAccess, FALSE, tid);
 	}
@@ -24,7 +24,7 @@ win32Thread::~win32Thread() {
 }
 
 win32Thread::win32Thread(const win32Thread& t)
-	: tid(t.tid), handle(t.handle), cycles(t.cycles), cycleDelta(t.cycleDelta), rip(t.rip), _refCount(t._refCount) {
+	: tid(t.tid), handle(t.handle), cycles(t.cycles), cycleDelta(t.cycleDelta), _refCount(t._refCount) {
 	++ *_refCount;
 }
 
@@ -32,14 +32,8 @@ win32Thread::win32Thread(win32Thread&& t) noexcept : win32Thread(0) {
 	_mySwap(*this, t);
 }
 
-win32Thread& win32Thread::operator= (const win32Thread& t) {
-	win32Thread tmp = t;  /* copy & swap */
-	_mySwap(*this, tmp);
-	return *this;
-}
-
-win32Thread& win32Thread::operator= (win32Thread&& t) noexcept {
-	_mySwap(*this, t);
+win32Thread& win32Thread::operator= (win32Thread t) noexcept {
+	_mySwap(*this, t); /* copy & swap */ /* NRVO: optimize for both by-value and r-value */
 	return *this;
 }
 
@@ -48,7 +42,6 @@ void win32Thread::_mySwap(win32Thread& t1, win32Thread& t2) {
 	std::swap(t1.handle, t2.handle);
 	std::swap(t1.cycles, t2.cycles);
 	std::swap(t1.cycleDelta, t2.cycleDelta);
-	std::swap(t1.rip, t2.rip);
 	std::swap(t1._refCount, t2._refCount);
 }
 
@@ -170,7 +163,7 @@ void win32SystemManager::setupProcessDpi() {
 bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg) {
 
 	// decide whether it's single instance.
-	HANDLE hProgram = CreateMutex(NULL, FALSE, "sguard_limit");
+	hProgram = CreateMutex(NULL, FALSE, "sguard_limit");
 	if (!hProgram || GetLastError() == ERROR_ALREADY_EXISTS) {
 		MessageBox(0, "同时只能运行一个SGUARD限制器。", "错误", MB_OK);
 		return false;
@@ -245,10 +238,8 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 			osVersion = OSVersion::WIN_10;  // NT 10+
 		} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 1) {
 			osVersion = OSVersion::WIN_7;   // NT 6.1
-		} else {
-			osVersion = OSVersion::OTHERS;
 		}
-	}
+	}   // ^^ otherwise, default to OSVersion::OTHERS
 
 	return true;
 }
@@ -391,7 +382,7 @@ void win32SystemManager::panic(const char* format, ...) {
 			(LPSTR)&description,
 			0, NULL);
 
-		sprintf(buf + strlen(buf), "\n\n发生的错误：(0x%x)%s", error, description);
+		sprintf(buf + strlen(buf), "\n\n发生的错误：(0x%x) %s", error, description);
 		LocalFree(description);
 	}
 
@@ -405,17 +396,19 @@ void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 	va_start(arg, format);
 	vsprintf(buf, format, arg);
 	va_end(arg);
+	
+	if (errorCode != 0) {
+		char* description = NULL;
+		FormatMessage(
+			FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+			errorCode,
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			(LPSTR)&description,
+			0, NULL);
 
-	char* description = NULL;
-	FormatMessage(
-		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-		errorCode,
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-		(LPSTR)&description,
-		0, NULL);
-
-	sprintf(buf + strlen(buf), "\n\n发生的错误：(0x%x)%s", errorCode, description);
-	LocalFree(description);
+		sprintf(buf + strlen(buf), "\n\n发生的错误：(0x%x) %s", errorCode, description);
+		LocalFree(description);
+	}
 
 	MessageBox(0, buf, 0, MB_OK);
 }

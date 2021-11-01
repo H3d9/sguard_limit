@@ -99,13 +99,15 @@ INT WINAPI WinMain(
 
 	if (!status) {
 		MessageBox(0,
-			"首次使用说明：\n\n"
-			"更新模式：MemPatch V2\n\n"
-			"1 重构驱动加载模块，修复CreateFile失败问题。\n\n"
-			"2 修复旧版（21.10.16/17）在【win7】/【win11】下无效的问题。\n\n"
+			"【首次使用说明】\n\n"
+			"更新模式：MemPatch -> V3\n\n"
+			"【新特性】在上一版的基础上进一步压缩SGUARD的cpu使用率令其接近0。\n（但必要时SGUARD仍会短暂占用cpu以防游戏出现异常）\n\n"
+			"1 新增定位点 GetAsyncKeyState。\n\n"
+			"2 修复旧版（21.10.16/17）在【win7】/【win11】下无效的问题。\n"
 			"  (特别感谢@白嫖怪 提供的远程win11系统)\n\n"
-			"【注意】默认关闭增强模式（NtWaitForSingleObject）。开这个之前，最好做好游戏异常的准备。\n\n\n"
-			"【提示】双击右下角托盘图标，可以查看新版详细说明。",
+			"3 修改增强模式（NtWaitForSingleObject）的延迟范围以降低触发游戏异常的几率。尽管如此，仍不建议使用。\n\n"
+			"【提示】双击右下角托盘图标，可以查看新版详细说明。\n"
+			"若你第一次使用，建议详细阅读上述说明。",
 			VERSION " colg@H3d9", MB_OK);
 		ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);
 	}

@@ -2,7 +2,6 @@
 // 特别感谢: Zer0Mem0ry 提供的声明
 #include <ntdef.h>
 #include <ntifs.h>
-#include <ntddk.h>
 
 
 // 全局对象
@@ -10,7 +9,7 @@ UNICODE_STRING dev, dos;
 PDEVICE_OBJECT pDeviceObject;
 
 
-// I/O接口事件及缓冲区
+// I/O接口事件和缓冲区结构
 #define VMIO_READ   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_WRITE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_ALLOC  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
@@ -46,42 +45,31 @@ NTSTATUS NTAPI MmCopyVirtualMemory(
 
 
 // 包装器
-NTSTATUS KeReadVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID TargetAddress, SIZE_T Size)
-{
+NTSTATUS KeReadVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID TargetAddress, SIZE_T Size) {
 	SIZE_T Bytes;
-	if (NT_SUCCESS(MmCopyVirtualMemory(Process, SourceAddress, PsGetCurrentProcess(),
-		TargetAddress, Size, KernelMode, &Bytes))) {
-		return STATUS_SUCCESS;
-	}
-	else
-		return STATUS_ACCESS_DENIED;
+	return MmCopyVirtualMemory(Process, SourceAddress, PsGetCurrentProcess(), TargetAddress,
+		Size, KernelMode, &Bytes);
 }
 
-NTSTATUS KeWriteVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID TargetAddress, SIZE_T Size)
-{
+NTSTATUS KeWriteVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID TargetAddress, SIZE_T Size) {
 	SIZE_T Bytes;
-	if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), SourceAddress, Process,
-		TargetAddress, Size, KernelMode, &Bytes)))
-	{
-		return STATUS_SUCCESS;
-	}
-		
-	else
-		return STATUS_ACCESS_DENIED;
+	return MmCopyVirtualMemory(PsGetCurrentProcess(), SourceAddress, Process, TargetAddress,
+		Size, KernelMode, &Bytes);
 }
+
 
 // 各种回调函数
-NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp)
-{
+NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp) {
+
 	irp->IoStatus.Status = STATUS_SUCCESS;
 	irp->IoStatus.Information = 0;
-
 	IoCompleteRequest(irp, IO_NO_INCREMENT);
+
 	return STATUS_SUCCESS;
 }
 
 #define IOCTL_LOG_EXIT(errorName)  if (pEProcess) ObDereferenceObject(pEProcess); \
-                                   Input->errorCode = Status; \
+                                   Input->errorCode = RtlNtStatusToDosError(Status); \
                                    memcpy(Input->errorFunc, errorName, sizeof(errorName)); \
                                    Irp->IoStatus.Information = sizeof(VMIO_REQUEST); \
                                    Irp->IoStatus.Status = STATUS_SUCCESS; \
@@ -105,7 +93,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
 			
 			if (!NT_SUCCESS(Status)) {
-				IOCTL_LOG_EXIT("VMIO_READ::PsLookupProcessByProcessId");
+				IOCTL_LOG_EXIT("VMIO_READ:: (process id not found)");
 			}
 
 			Status = KeReadVirtualMemory(pEProcess, Input->address, &Input->data, rwSize);
@@ -114,13 +102,14 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				IOCTL_LOG_EXIT("VMIO_READ::KeReadVirtualMemory");
 			}
 		}
-			break;
+		break;
+
 		case VMIO_WRITE:
 		{
 			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
 
 			if (!NT_SUCCESS(Status)) {
-				IOCTL_LOG_EXIT("VMIO_WRITE::PsLookupProcessByProcessId");
+				IOCTL_LOG_EXIT("VMIO_WRITE:: (process id not found)");
 			}
 
 			HANDLE               hProcess;
@@ -158,13 +147,14 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 			ZwClose(hProcess);
 		}
-			break;
+		break;
+
 		case VMIO_ALLOC:
 		{
 			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
 
 			if (!NT_SUCCESS(Status)) {
-				IOCTL_LOG_EXIT("VMIO_ALLOC::PsLookupProcessByProcessId");
+				IOCTL_LOG_EXIT("VMIO_ALLOC:: (process id not found)");
 			}
 
 			HANDLE               hProcess;
@@ -191,13 +181,14 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 			ZwClose(hProcess);
 		}
-			break;
+		break;
+
 		default:
 		{
 			Status = STATUS_UNSUCCESSFUL;
 			IOCTL_LOG_EXIT("IOCTL: Bad IO code");
 		}
-			break;
+		break;
 	}
 
 	if (pEProcess) {
@@ -273,6 +264,7 @@ NTSTATUS DriverEntry(
 		ULONG64 ZwClose = (ULONG64)MmGetSystemRoutineAddress(&ZwCloseName);
 
 		// 获取ZwClose的系统服务号。
+		// 由于我们知道NT6.1的ZwClose服务号，故这一步可省略。
 		ULONG ZwCloseId = *(ULONG*)(ZwClose + 0x15);
 
 		// 索引到0号系统服务的地址，再索引到0x4D号系统服务的地址。

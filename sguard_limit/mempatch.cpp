@@ -1,6 +1,8 @@
 // Memory Patch（用户态模块）
 // 2021.10.4 雨
 // 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
+// 2021.11.1 万圣节
+// 明天，我在等明天。
 #include <Windows.h>
 #include <stdio.h>
 #include <time.h>
@@ -21,7 +23,13 @@ KernelDriver&                     driver          = KernelDriver::getInstance();
 PatchManager  PatchManager::patchManager;
 
 PatchManager::PatchManager()
-	: patchEnabled(true), patchPid(0), patchSwitches{}, patchDelay{} { /* private use zero init */ }
+	: patchEnabled(true), patchPid(0), patchSwitches{}, patchDelay{}, patchv3ok{false},
+	patchDelayRange{ 
+		{ 200, 1500, 2500 },   /* NtQueryVirtualMemory */
+		{ 100, 1000, 1500 },   /* GetAsyncKeyState */
+		{ 1,   10,   200  },   /* NtWaitForSingleObject */
+		{ 500, 1250, 2000 }    /* NtDelayExecution */ 
+	}  { /* private use zero init */ }
 
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
@@ -196,7 +204,7 @@ void PatchManager::patch() {
 
 		// before manip memory, check process status for the last time.
 		if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
-			systemMgr.log("patch(): process status check failure, quit.");
+			systemMgr.log("patch(): usr switched mode or process terminated, quit.");
 			return;
 		}
 
@@ -218,8 +226,8 @@ void PatchManager::patch() {
 		// when loop complete, vmbuf contains syscall pages, and offset0 is rva in it.
 		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
 			
-			// round page.
-			vmStartAddress = *rip;        // %rip: near 16xx, round up.
+			// round up page.
+			vmStartAddress = *rip;
 			vmStartAddress &= ~0xfff;
 			vmStartAddress -= 0x1000;
 
@@ -229,13 +237,11 @@ void PatchManager::patch() {
 			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 
 			if (!status) {
+				systemMgr.log("patch(): warning: load memory failed at: %llx", vmStartAddress);
 				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
-				driver.unload();
-				return;
+				continue;
 			}
-			memcpy(original_vm, vmbuf, 0x4000);
-
+			
 
 			// syscall traits: 4c 8b d1 b8 ?? 00 00 00
 			for (LONG offset = (0x1000 + *rip % 0x1000) - 0x14; /* rva from current syscall begin */
@@ -263,7 +269,6 @@ void PatchManager::patch() {
 			}
 
 			if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
-				systemMgr.log("patch(): %%rip = %llx: trait not found, trying next rip.", *rip);
 				continue;
 			} else {
 				systemMgr.log("patch(): trait found here: %%rip = %llx", *rip);
@@ -275,7 +280,7 @@ void PatchManager::patch() {
 		// decide whether trait found success.
 		static DWORD found_fail = 0;
 		if (offset0 < 0 /* offset0 not found at all rip given. */) {
-			systemMgr.log("patch(): all given rip trait not found. leaving.");
+			systemMgr.log("patch(): trait not found at all given rip, leaving.");
 			found_fail++;
 			if (found_fail >= 5) {
 				systemMgr.panic("似乎无法获取有效的内存特征，建议你重启电脑后再尝试。");
@@ -394,7 +399,7 @@ void PatchManager::patch() {
 				// 旧版使用以下这段shellcode，这偶尔会引发SGUARD崩溃（空指针异常），
 				// 推测原因为sleep系统调用修改了调用者某个被优化到寄存器的局部变量，
 				// 而该寄存器在原系统调用中被优化编译器认为不会修改，或被ntdll封装的native api认为不会修改，
-				// 或并非由调用者保存的寄存器（在windows x64的语义下）。
+				// 或并非由被调用者保存的寄存器（在windows x64的语义下）。
 				//  mov r10, rcx
 				//	mov eax, 0x23
 				//	syscall
@@ -500,7 +505,7 @@ void PatchManager::patch() {
 				memcpy(patch_bytes + 0x3, &allocAddress, 8);
 
 				// delay => working_bytes.
-				LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
 				memcpy(working_bytes + 0x26, &delay_param, 4);
 
 				// returnAddress => working_bytes.
@@ -535,7 +540,7 @@ void PatchManager::patch() {
 				*/
 
 				// modify delay.
-				LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[3];
 				memcpy(patch_bytes + 3, &delay_param, 4);
 
 				// syscall rva => offset.
@@ -693,7 +698,7 @@ void PatchManager::patch() {
 				working_bytes[0x4] = 0x1;
 
 				// delay => working_bytes.
-				LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
 				memcpy(working_bytes + 0x25, &delay_param, 4);
 
 				// returnAddress => working_bytes.
@@ -742,7 +747,7 @@ void PatchManager::patch() {
 				working_bytes[0x4] = 0x31;
 
 				// delay => working_bytes.
-				LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
+				LONG64 delay_param = (LONG64)-10000 * patchDelay[3];
 				memcpy(working_bytes + 0x25, &delay_param, 4);
 
 				// returnAddress => working_bytes.
@@ -775,10 +780,29 @@ void PatchManager::patch() {
 			return;
 		}
 
-		memcpy(commited_vm, vmbuf, 0x4000);
 
+		// stage 1 complete.
 		driver.unload();
 		patchPid = pid;
+
+
+		// additional v3 switches.
+		if (patchSwitches.GetAsyncKeyState) {
+
+			// try 3 times for most.
+			for (auto i = 0; !patchv3ok && i < 2; i++) {
+				if (_patch_stage2()) {
+					patchv3ok = true;
+				}
+			}
+			if (!patchv3ok) {
+				systemMgr.log("warning: patch2() failed too many times, abort.");
+				systemMgr.panic("对目标地址空间的User32.dll操作似乎无法成功，与之相关的选项将失效。\n"
+				                "在%%appdata%%\\sguard_limit\\log.txt中可以查看更详细的信息。");
+			}
+		}
+
+		systemMgr.log("patch(): complete.");
 	}
 
 	systemMgr.log("patch(): fall in wait loop.");
@@ -789,6 +813,7 @@ void PatchManager::patch() {
 
 		if (pid == 0 /* target no more exists */ || pid != patchPid /* target is not current */) {
 			patchPid = 0;
+			patchv3ok = false;
 			break;
 		}
 
@@ -800,36 +825,10 @@ void PatchManager::patch() {
 
 void PatchManager::enable(bool forceRecover) {
 	patchEnabled = true;
-
-	if (forceRecover) {
-
-		win32ThreadManager threadMgr;
-
-		DWORD pid = threadMgr.getTargetPid();
-
-		if (patchPid != 0 && patchPid == pid) {
-			driver.load();
-			driver.writeVM(patchPid, commited_vm, (PVOID)vmStartAddress);
-			driver.unload();
-		}
-	}
 }
 
 void PatchManager::disable(bool forceRecover) {
 	patchEnabled = false;
-
-	if (forceRecover) {
-
-		win32ThreadManager threadMgr;
-
-		DWORD pid = threadMgr.getTargetPid();
-
-		if (patchPid != 0 && patchPid == pid) {
-			driver.load();
-			driver.writeVM(patchPid, original_vm, (PVOID)vmStartAddress);
-			driver.unload();
-		}
-	}
 }
 
 std::vector<ULONG64>
@@ -874,7 +873,9 @@ PatchManager::_findRip() {
 
 
 	// sample 1s in 1st~3rd thread, for rip abbrvt location. 
-	for (auto i = 0; i < threadList.size() && i < 3; i++) { // i: thread No.
+	for (auto i = 0; i < threadList.size() && i < 5; i++) { // i: thread No.
+
+		//systemMgr.log("patch::_findRip(): checking thread %d (tid %u)", i, threadList[i].tid);
 
 		contextMap.clear();
 		for (auto time = 1; time <= 100; time++) {
@@ -886,16 +887,19 @@ PatchManager::_findRip() {
 			Sleep(10);
 		}
 
+		/*for (auto& it : contextMap)
+			systemMgr.log("patch::_findRip(): contextMap %llx -> %u", it.first, it.second);*/
+
 		// if sample complete successfully, record 3 top visited rip in each thread.
 		if (!contextMap.empty()) {
 			for (auto ripcount = 0; !contextMap.empty() && ripcount < 3; ripcount++) {
-				threadList[i].rip =
+				ULONG64 rip =
 					std::max_element(
 						contextMap.begin(), contextMap.end(),
 						[](auto& a, auto& b) { return a.second < b.second; })
 					->first;
-				contextMap.erase(threadList[i].rip);
-				result.push_back(threadList[i].rip);
+				contextMap.erase(rip);
+				result.push_back(rip);
 			}
 		} else {
 			systemMgr.log("patch::_findRip(): warning: contextMap[%d].empty.", i);
@@ -903,6 +907,299 @@ PatchManager::_findRip() {
 	}
 
 	return result;
+}
+
+bool PatchManager::_patch_stage2() {
+
+	OSVersion              osVersion     = systemMgr.getSystemVersion();
+	DWORD                  osBuildNumber;
+	win32ThreadManager     threadMgr;
+	DWORD                  pid           = threadMgr.getTargetPid();
+	bool                   status;
+
+
+	systemMgr.log("patch2(): entering.");
+
+	// wait for stable after previous patch.
+	for (auto time = 0; time < 5; time++) {
+
+		if (!patchEnabled || pid != threadMgr.getTargetPid()) {
+			systemMgr.log("patch2(): primary wait: pid not match or patch disabled, quit.");
+			return false;
+		}
+
+		Sleep(1000);
+	}
+
+
+	// get system build number.
+	typedef NTSTATUS(WINAPI* pf)(OSVERSIONINFOEX*);
+	pf RtlGetVersion = (pf)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
+
+	if (RtlGetVersion) {
+		OSVERSIONINFOEX osInfo;
+		osInfo.dwOSVersionInfoSize = sizeof(osInfo);
+		RtlGetVersion(&osInfo);
+		osBuildNumber = osInfo.dwBuildNumber;
+	} else {
+		systemMgr.log("patch2(): failed to get rtlgetversion entry, quit.");
+		return false;
+	}
+
+
+	// start driver.
+	status =
+	driver.load();
+
+	if (!status) {
+		systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+		return false;
+	}
+
+
+	LONG offset0 = -1;
+
+	// find win32k / user32 rip location.
+	for (auto try_times = 0; offset0 == -1 && try_times <= 3; try_times++) {
+
+		// get potential rip in top 3 threads.
+		auto rips = _findRip();
+
+		if (rips.empty()) {
+			systemMgr.log("patch2(): rips empty, quit.");
+			return false;
+		}
+
+
+		// find target syscall entry (rva).
+		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
+
+			//systemMgr.log("patch2(): cheking rip: %llx", *rip);
+
+			// round page.
+			vmStartAddress = *rip;
+			vmStartAddress &= ~0xfff;
+
+
+			// before read memory, check process status.
+			if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
+				systemMgr.log("patch2(): usr switched mode or process terminated, quit.");
+				return false;
+			}
+
+
+			// read memory.
+			status =
+			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
+
+			if (!status) {
+				systemMgr.log("patch2(): warning: load memory failed at: %llx", vmStartAddress);
+				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+				continue;
+			}
+
+			// check if rip is near syscall entry.
+			char traits[] = "\x4c\x8b\xd1\xb8\x44\x10\x00\x00";
+			if (osVersion == OSVersion::WIN_10 && osBuildNumber <= 18363) {
+				traits[4] = '\x47';
+			}
+
+			for (LONG offset = *rip % 0x1000; offset >= 0 && offset >= *rip % 0x1000 - 0x20; offset--) {
+				if (0 == memcmp(vmbuf + offset, traits, 8)) {
+					offset0 = offset;
+					systemMgr.log("patch2(): syscall found here: +0x%x => syscall 0x1044(7)", offset0);
+					break;
+				}
+			}
+
+			if (offset0 >= 0) {
+				systemMgr.log("patch2(): trait found here: %%rip = %llx", *rip);
+				break;
+			}
+		}
+	}
+
+
+	// if after some times no target found, quit.
+	if (offset0 == -1) {
+		systemMgr.log("patch2(): no memory trait found in user32, give up.");
+		return false;
+	}
+
+
+	// MEMORY PATCH V3
+
+	CHAR working_bytes[] =
+		"\x49\x89\xCA\xB8\x44\x10\x00\x00\x0F\x05"
+		"\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
+		"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
+		"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
+		"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+	/*
+		0:  49 89 ca                mov    r10, rcx
+		3:  b8 44 10 00 00          mov    eax, <call number>
+		8:  0f 05                   syscall
+		a:  50                      push   rax
+		b:  53                      push   rbx
+		c:  51                      push   rcx
+		d:  52                      push   rdx
+		e:  56                      push   rsi
+		f:  57                      push   rdi
+		10: 55                      push   rbp
+		11: 41 50                   push   r8
+		13: 41 51                   push   r9
+		15: 41 52                   push   r10
+		17: 41 53                   push   r11
+		19: 41 54                   push   r12
+		1b: 41 55                   push   r13
+		1d: 41 56                   push   r14
+		1f: 41 57                   push   r15
+		21: 9c                      pushf
+		22: 49 c7 c2 e0 43 41 ff    mov    r10, 0xffffffffff4143e0
+		29: 41 52                   push   r10
+		2b: 48 89 e2                mov    rdx, rsp
+		2e: b8 34 00 00 00          mov    eax, 0x34
+		33: 0f 05                   syscall
+		35: 41 5a                   pop    r10
+		37: 9d                      popf
+		38: 41 5f                   pop    r15
+		3a: 41 5e                   pop    r14
+		3c: 41 5d                   pop    r13
+		3e: 41 5c                   pop    r12
+		40: 41 5b                   pop    r11
+		42: 41 5a                   pop    r10
+		44: 41 59                   pop    r9
+		46: 41 58                   pop    r8
+		48: 5d                      pop    rbp
+		49: 5f                      pop    rdi
+		4a: 5e                      pop    rsi
+		4b: 5a                      pop    rdx
+		4c: 59                      pop    rcx
+		4d: 5b                      pop    rbx
+		4e: 48 b8 00 00 00 00 00    movabs rax, <ReturnAddress>
+		55: 00 00 00
+		58: ff e0                   jmp    rax
+	*/
+
+	// delay => working_bytes.
+	LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+	memcpy(working_bytes + 0x25, &delay_param, 4);
+
+	if (osVersion == OSVersion::WIN_10) {
+
+		CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\x90\xC3";
+		/*
+			0:  48 b8 00 00 00 00 00    movabs rax,  <AllocAddress>
+			7:  00 00 00
+			a:  ff e0                   jmp    rax
+			c:  58                      pop    rax
+			d:  c3                      ret
+			e:  90                      nop
+			f:  90                      nop
+			10: 90                      nop
+			11: 90                      nop
+			12: 90                      nop
+			13: 90                      nop
+			14: c3                      ret         ; previous rip.
+		*/
+
+		// allocate vm.
+		PVOID allocAddress = NULL;
+		status = driver.allocVM(pid, &allocAddress);
+		if (!status) {
+			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+			driver.unload();
+			return false;
+		}
+
+		// allocAddress => patch_bytes.
+		memcpy(patch_bytes + 0x2, &allocAddress, 8);
+
+		// call num => working_bytes.
+		// win10 <= 1909 = 1047. win7 and others = 1044.
+		if (osBuildNumber > 18363) {
+			working_bytes[0x4] = '\x44'; /* WIN_10_>1909 && WIN_11 */
+		} else {
+			working_bytes[0x4] = '\x47'; /* WIN_10_<=1909 */
+		}
+
+		// returnAddress => working_bytes.
+		ULONG64	returnAddress = vmStartAddress + offset0 + 0xc;
+		memcpy(working_bytes + 0x50, &returnAddress, 8);
+
+		// patch_bytes => vmbuf.
+		memcpy(vmbuf + offset0, patch_bytes, sizeof(patch_bytes) - 1);
+
+		// working_bytes => allocated vm.
+		memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+		status = driver.writeVM(pid, vmalloc, allocAddress);
+		if (!status) {
+			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+			driver.unload();
+			return false;
+		}
+
+	} else { // if WIN_7
+
+		CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
+		/*
+			0:  b8 00 00 00 00          mov    eax, <AllocAddress>
+			5:  ff e0                   jmp    rax
+			7:  58                      pop    rax
+			8:  90                      nop
+			9:  90                      nop
+			a:  c3                      ret        ; previous rip.
+		*/
+
+		// allocate vm.
+		PVOID allocAddress = NULL;
+		status = driver.allocVM(pid, &allocAddress);
+		if (!status) {
+			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+			driver.unload();
+			return false;
+		}
+		if ((ULONG64)allocAddress >= 0x100000000) {
+			systemMgr.log("patch2(): win7 warning: allocAddress is large(%p).", allocAddress);
+			driver.unload();
+			return false;
+		}
+
+		// allocAddress => patch_bytes.
+		memcpy(patch_bytes + 0x1, &allocAddress, 4);
+
+		// call num => working_bytes.
+		working_bytes[0x4] = '\x44'; /* WIN_7 */
+
+		// returnAddress => working_bytes.
+		ULONG64	returnAddress = vmStartAddress + offset0 + 0x7;
+		memcpy(working_bytes + 0x50, &returnAddress, 8);
+
+		// patch_bytes => vmbuf.
+		memcpy(vmbuf + offset0, patch_bytes, sizeof(patch_bytes) - 1);
+
+		// working_bytes => allocated vm.
+		memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
+		status = driver.writeVM(pid, vmalloc, allocAddress);
+		if (!status) {
+			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+			driver.unload();
+			return false;
+		}
+	}
+	
+	// write memory.
+	status =
+	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
+	if (!status) {
+		systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+		driver.unload();
+		return false;
+	}
+
+	systemMgr.log("patch2(): complete.");
+	driver.unload();
+	return true;
 }
 
 void PatchManager::_outVmbuf() {  // unused

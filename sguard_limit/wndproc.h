@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "21.10.24"
+#define VERSION             "21.10.31 万圣节特别版"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 
@@ -35,6 +35,7 @@
 #define IDM_PATCHSWITCH1    217
 #define IDM_PATCHSWITCH2    218
 #define IDM_PATCHSWITCH3    219
+#define IDM_PATCHSWITCH4    220
 
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

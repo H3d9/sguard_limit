@@ -24,18 +24,26 @@ static void ShowAbout() {
 		"本工具启动后自动优化后台ACE-Guard Client EXE的资源占用。\n"
 		"该工具仅供研究交流游戏优化使用，将来可能失效，不保证稳定性。\n"
 		"如果你发现无法正常使用，请更换模式或选项；若还不行请停止使用，并将遇到的错误反馈至下方链接。\n\n"
-		"工作模式说明：\n"
-		"1 时间片轮转（21.2.6）：已知可能导致“96-0”，若出现该情况可切换至【线程跟踪】。\n"
-		"  (当然，即使没有出现错误你也可以使用其他模式，不会有任何影响)\n\n"
-		"2 线程追踪（21.7.17）：已知部分机器使用“锁定”选项时会出现“3009-0”，若出现该情况可以尝试【锁定-rr】。\n"
-		"如果你使用【锁定-rr】依旧出问题，可点击【设置时间切分】，并尝试较小的时间。例如尝试90，85，80...直到合适即可。\n"
-		"注：【时间切分】设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n\n"
+		"【工作模式说明】\n\n"
+		"1 时间片轮转（21.2.6）：\n"
+		"这是最早的模式，容易出问题，不建议使用。\n\n"
+		"2 线程追踪（21.7.17）：\n"
+		"【注】建议你优先使用模式3。若模式3不能用再使用该模式。\n"
+		"根据统计反馈，目前该模式中最好用的选项为【弱锁定-rr】。\n"
+		"如果出现问题，可以点击【设置时间切分】，并尝试90，85，80...直到合适即可。\n"
+		"【时间切分】设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n\n"
 		"3 Memory Patch（21.10.6）：\n"
-		"NtQueryVirtualMemory: 只干预SGUARD扫内存，理论上并不会出现游戏异常。\n"
-		"NtWaitForSingleObject: 增强模式，已知可能导致游戏异常，不建议开启。\n"
-		"【注意】某些机器可以正常使用该项。如果你想使用，应做好应对游戏异常的准备。\n"
-		"NtDelayExecution:（旧版功能）不建议开启，以免可能出现游戏异常或偶尔卡顿的问题。如果你想用这个，建议取消勾选其余两项。\n\n"
-		"【注意】模式3需要临时装载一次驱动（提交更改后会立即将之卸载）。若你使用时出现问题，可以去论坛链接下载证书。\n\n\n"
+		"  >1 NtQueryVirtualMemory: 令SGUARD扫内存的速度变慢。\n"
+		"  （若只开这一项，理论上并不会出现游戏异常。）\n"
+		"  >2 GetAsyncKeyState: 令SGUARD读取键盘按键的速度变慢。\n"
+		"  （虽然我并不知道为何它会频繁读取键盘按键，但该项似乎能有效提升游戏流畅度。）\n"
+		"  （与之相关的引用位于SGUARD使用的动态库ACE-DRV64.dll中。 ）\n"
+		"  >3 NtWaitForSingleObject:（旧版增强模式）已知可能导致游戏异常，不建议使用。\n"
+		"  （某些机器可以正常使用该项。如果你想使用，不建议设置太大的数值。）\n"
+		"  >4 NtDelayExecution:（旧版功能）已知可能导致游戏异常和卡顿，不建议使用。\n"
+		"  （如果你想用这个，建议取消勾选其余两项，并且不建议设置太大的数值。）\n\n"
+		"  Memory Patch需要临时装载一次驱动，提交内存后会立即将之卸载。\n"
+		"  若你使用时出现问题，可以去下方链接下载证书。\n\n\n"
 		"SGUARD讨论群：775176979\n\n"
 		"论坛链接：https://bbs.colg.cn/thread-8087898-1-1.html \n"
 		"项目地址：https://github.com/H3d9/sguard_limit （点ctrl+C复制到记事本）",
@@ -82,71 +90,56 @@ static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, L
 // dialog: set syscall delay.
 static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
-	static int mode = 0;
+	static DWORD id = 0;
+
+	auto& delayRange = patchMgr.patchDelayRange;
+	auto& delay      = patchMgr.patchDelay;
 
 	switch (message) {
-	case WM_INITDIALOG:
-	{
-		char buf[128];
-		if (lParam == 0) {
-			mode = 0;
-			sprintf(buf, "输入200~2000的整数（当前值：%u）", patchMgr.patchDelay[0]);
+		case WM_INITDIALOG:
+		{
+			id = (DWORD)lParam;
+
+			char buf[128];
+			sprintf(buf, "输入%u~%u的整数（当前值：%u）", delayRange[id].low, delayRange[id].high, delay[id]);
 			SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
-			SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtQueryVirtualMemory");
-		} else if (lParam == 1) {
-			mode = 1;
-			sprintf(buf, "输入500~5000的整数（当前值：%u）", patchMgr.patchDelay[1]);
-			SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
-			SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtWaitForSingleObject");
-		} else { // if lParam == 2
-			mode = 2;
-			sprintf(buf, "输入200~2000的整数（当前值：%u）", patchMgr.patchDelay[2]);
-			SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
-			SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtDelayExecution");
+
+			if (lParam == 0) {
+				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtQueryVirtualMemory");
+			} else if (lParam == 1) {
+				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：GetAsyncKeyState");
+			} else if (lParam == 2) {
+				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtWaitForSingleObject\n【注意】不建议设置大于100的数值。");
+			} else { // if lParam == 3
+				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtDelayExecution");
+			}
+
+			return (INT_PTR)TRUE;
 		}
-		return (INT_PTR)TRUE;
-	}
 
-	case WM_COMMAND:
-	{
-		if (LOWORD(wParam) == IDC_SETDELAYOK) {
-			BOOL translated;
-			UINT res = GetDlgItemInt(hDlg, IDC_SETDELAYEDIT, &translated, FALSE);
+		case WM_COMMAND:
+		{
+			if (LOWORD(wParam) == IDC_SETDELAYOK) {
+				BOOL translated;
+				UINT res = GetDlgItemInt(hDlg, IDC_SETDELAYEDIT, &translated, FALSE);
 
-			if (mode == 0) {
-				if (!translated || res < 200 || res > 2500) {
-					MessageBox(0, "输入200~2500的整数", "错误", MB_OK);
+				if (!translated || res < delayRange[id].low || res > delayRange[id].high) {
+					systemMgr.panic("应输入%u~%u的整数", delayRange[id].low, delayRange[id].high);
+					return (INT_PTR)FALSE;
 				} else {
-					patchMgr.patchDelay[0] = res;
-					EndDialog(hDlg, LOWORD(wParam));
-					return (INT_PTR)TRUE;
-				}
-			} else if (mode == 1) {
-				if (!translated || res < 500 || res > 5000) {
-					MessageBox(0, "输入500~5000的整数", "错误", MB_OK);
-				} else {
-					patchMgr.patchDelay[1] = res;
-					EndDialog(hDlg, LOWORD(wParam));
-					return (INT_PTR)TRUE;
-				}
-			} else { // if mode == 2
-				if (!translated || res < 200 || res > 2000) {
-					MessageBox(0, "输入200~2000的整数", "错误", MB_OK);
-				} else {
-					patchMgr.patchDelay[2] = res;
+					patchMgr.patchDelay[id] = res;
 					EndDialog(hDlg, LOWORD(wParam));
 					return (INT_PTR)TRUE;
 				}
 			}
 		}
-	}
-		break;
+			break;
 
-	case WM_CLOSE:
-	{
-		EndDialog(hDlg, LOWORD(wParam));
-		return (INT_PTR)TRUE;
-	}
+		case WM_CLOSE:
+		{
+			EndDialog(hDlg, LOWORD(wParam));
+			return (INT_PTR)TRUE;
+		}
 	}
 
 	return (INT_PTR)FALSE;
@@ -160,8 +153,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	{
 		if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
 			
-			HMENU hMenu = CreatePopupMenu();
-			
+			CHAR    buf   [128] = {};
+			HMENU   hMenu       = CreatePopupMenu();
+
 			if (g_Mode == 0) {
 				if (!limitMgr.limitEnabled) {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
@@ -170,7 +164,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				} else {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 侦测到SGuard");
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：时间片轮转 [点击切换]");
+				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：时间片轮转  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT90, "限制资源：90%");
 				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT95, "限制资源：95%");
@@ -206,29 +200,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					if (traceMgr.lockPid == 0) {
 						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 正在分析");
 					} else {
-						char titleBuf[512] = "SGuard限制器 - ";
+						sprintf(buf, "SGuard限制器 - ");
 						switch (traceMgr.lockMode) {
 						case 0:
 							for (auto i = 0; i < 3; i++) {
-								sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", traceMgr.lockedThreads[i].tid, traceMgr.lockedThreads[i].locked ? 'O' : 'X');
+								sprintf(buf + strlen(buf), "%x[%c] ", traceMgr.lockedThreads[i].tid, traceMgr.lockedThreads[i].locked ? 'O' : 'X');
 							}
 							break;
 						case 1:
 							for (auto i = 0; i < 3; i++) {
-								sprintf(titleBuf + strlen(titleBuf), "%x[..] ", traceMgr.lockedThreads[i].tid);
+								sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[i].tid);
 							}
 							break;
 						case 2:
-							sprintf(titleBuf + strlen(titleBuf), "%x[%c] ", traceMgr.lockedThreads[0].tid, traceMgr.lockedThreads[0].locked ? 'O' : 'X');
+							sprintf(buf + strlen(buf), "%x[%c] ", traceMgr.lockedThreads[0].tid, traceMgr.lockedThreads[0].locked ? 'O' : 'X');
 							break;
 						case 3:
-							sprintf(titleBuf + strlen(titleBuf), "%x[..] ", traceMgr.lockedThreads[0].tid);
+							sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[0].tid);
 							break;
 						}
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, titleBuf);
+						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, buf);
 					}
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：线程追踪 [点击切换]");
+				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：线程追踪  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3, "锁定");
 				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1, "弱锁定");
@@ -237,7 +231,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK, "解除锁定");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				if (traceMgr.lockMode == 1 || traceMgr.lockMode == 3) {
-					char buf[128];
 					sprintf(buf, "设置时间切分（当前：%d）", traceMgr.lockRound);
 					AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
 					AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
@@ -262,44 +255,52 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					CheckMenuItem(hMenu, IDM_UNLOCK, MF_CHECKED);
 				}
 			} else {
-				if (!patchMgr.patchEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已撤销更改");
-				} else if (g_HijackThreadWaiting) {
+				if (g_HijackThreadWaiting) {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
 				} else {
+					DWORD finished;
 					if (patchMgr.patchPid == 0) {
+						finished = 0;
+					} else if (!patchMgr.patchv3ok) {
+						finished = 1;
+					} else { // patchMgr.patchv3ok
+						finished = 2;
+					}
+
+					if (finished == 0) {
 						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 请等待");
 					} else {
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 已提交更改");
+						DWORD total = patchMgr.patchSwitches.GetAsyncKeyState ? 2 : 1;
+						sprintf(buf, "SGuard限制器 - 已提交  [%u/%u]", finished, total);
+						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, buf);
 					}
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V2 [点击切换]");
+				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V3  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_DOPATCH, "自动");
-				AppendMenu(hMenu, MFT_STRING, IDM_UNDOPATCH, "撤销修改（慎用）");
+				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH, "撤销修改");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1, "inline Ntdll!NtQueryVirtualMemory");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "inline Ntdll!NtWaitForSingleObject");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "re-write Ntdll!NtDelayExecution");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "inline User32!GetAsyncKeyState");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "inline Ntdll!NtWaitForSingleObject");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH4, "re-write Ntdll!NtDelayExecution");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				char buf[128];
-				sprintf(buf, "设置延时（当前：%u/%u/%u）", patchMgr.patchDelay[0], patchMgr.patchDelay[1], patchMgr.patchDelay[2]);
+				sprintf(buf, "设置延时（当前：%u/%u/%u/%u）", patchMgr.patchDelay[0], patchMgr.patchDelay[1], patchMgr.patchDelay[2], patchMgr.patchDelay[3]);
 				AppendMenu(hMenu, MFT_STRING, IDM_SETDELAY, buf);
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
-				if (patchMgr.patchEnabled) {
-					CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
-				} else {
-					CheckMenuItem(hMenu, IDM_UNDOPATCH, MF_CHECKED);
-				}
+				CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH1, MF_CHECKED);
 				}
-				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
+				if (patchMgr.patchSwitches.GetAsyncKeyState) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH2, MF_CHECKED);
 				}
-				if (patchMgr.patchSwitches.NtDelayExecution) {
+				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH3, MF_CHECKED);
+				}
+				if (patchMgr.patchSwitches.NtDelayExecution) {
+					CheckMenuItem(hMenu, IDM_PATCHSWITCH4, MF_CHECKED);
 				}
 			}
 			
@@ -398,22 +399,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 				
 			// patch command
-			case IDM_DOPATCH:
-				if (!patchMgr.patchEnabled) {
-					patchMgr.enable(true);
-				}
-				break;
-			case IDM_UNDOPATCH:
-				if (patchMgr.patchEnabled && 
-					MessageBox(0, "提交修改后最好让目标保持原样（即重启游戏时让他自动关闭）。\n不建议使用该功能，除非你知道自己在做什么，仍要继续么？", "注意", MB_YESNO) == IDYES) {
-					patchMgr.disable(true);
-				}
-				break;
 			case IDM_SETDELAY:
-				if (IDYES == MessageBox(0, "请依次设置以下函数的强制延时。\n如果不想设置某个选项，可以直接关掉对应的窗口。\n\nNtQueryVirtualMemory\nNtWaitForSingleObject\nNtDelayExecution\n", "信息", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "请依次设置以下开关的强制延时。\n如果不想设置某个选项，可以直接关掉对应的窗口。\n\nNtQueryVirtualMemory\nGetAsyncKeyState\nNtWaitForSingleObject\nNtDelayExecution\n", "信息", MB_YESNO)) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 0);
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 1);
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 2);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 3);
 					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 					configMgr.writeConfig();
 				}
@@ -428,23 +419,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				configMgr.writeConfig();
 				break;
 			case IDM_PATCHSWITCH2:
+				if (patchMgr.patchSwitches.GetAsyncKeyState) {
+					patchMgr.patchSwitches.GetAsyncKeyState = false;
+				} else {
+					patchMgr.patchSwitches.GetAsyncKeyState = true;
+				}
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				configMgr.writeConfig();
+				break;
+			case IDM_PATCHSWITCH3:
 				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 					patchMgr.patchSwitches.NtWaitForSingleObject = false;
 					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				} else {
-					if (IDYES == MessageBox(0, "这是增强模式，已知可能导致游戏异常，你应该在了解开启该选项的风险后使用。\n如果你出现“3009”，“96”，“lol掉线”问题，请立即关闭该选项。要继续么？", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "这是旧版增强模式，已知可能导致游戏异常。如果你出现“3009”，“96”，“lol掉线”问题，需要立即关闭该选项。要继续么？", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.NtWaitForSingleObject = true;
 						MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 					}
 				}
 				configMgr.writeConfig();
 				break;
-			case IDM_PATCHSWITCH3:
+			case IDM_PATCHSWITCH4:
 				if (patchMgr.patchSwitches.NtDelayExecution) {
 					patchMgr.patchSwitches.NtDelayExecution = false;
 					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				} else {
-					if (IDYES == MessageBox(0, "这是旧版功能，如果你之前出现“3009”，“96”，“偶尔卡顿”等问题，不要启用该选项。要继续么？", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "这是旧版功能，不建议启用该选项，以免出现“3009”，“96”，“偶尔卡顿”等问题。要继续么？", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.NtDelayExecution = true;
 						MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 					}

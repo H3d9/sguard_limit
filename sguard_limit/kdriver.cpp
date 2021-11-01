@@ -26,7 +26,9 @@ bool KernelDriver::load() {
 
 	if (hDriver == INVALID_HANDLE_VALUE) {
 
-		_startService();
+		if (!_startService()) {
+			return false;
+		}
 
 		hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
 		
@@ -56,7 +58,7 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 	VMIO_REQUEST  ReadRequest;
 	DWORD         Bytes;
 
-	ReadRequest.pid = (HANDLE)pid;
+	ReadRequest.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
 	ReadRequest.errorCode = 0;
 
 
@@ -69,7 +71,8 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 			return false;
 		}
 		if (ReadRequest.errorCode != 0) {
-			_recordError("driver::readVM(): 驱动内部错误：%s(0x%x)。", ReadRequest.errorFunc, ReadRequest.errorCode);
+			_recordError("driver::readVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", ReadRequest.errorFunc);
+			this->errorCode = ReadRequest.errorCode;
 			return false;
 		}
 
@@ -85,7 +88,7 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 	VMIO_REQUEST  WriteRequest;
 	DWORD         Bytes;
 
-	WriteRequest.pid = (HANDLE)pid;
+	WriteRequest.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
 	WriteRequest.errorCode = 0;
 
 
@@ -100,7 +103,8 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 			return false;
 		}
 		if (WriteRequest.errorCode != 0) {
-			_recordError("driver::writeVM(): 驱动内部错误：%s(0x%x)。", WriteRequest.errorFunc, WriteRequest.errorCode);
+			_recordError("driver::writeVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", WriteRequest.errorFunc);
+			this->errorCode = WriteRequest.errorCode;
 			return false;
 		}
 	}
@@ -113,7 +117,7 @@ bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 	VMIO_REQUEST  AllocRequest;
 	DWORD         Bytes;
 
-	AllocRequest.pid = (HANDLE)pid;
+	AllocRequest.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
 	AllocRequest.address = NULL;
 	AllocRequest.errorCode = 0;
 
@@ -123,7 +127,8 @@ bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 		return false;
 	}
 	if (AllocRequest.errorCode != 0) {
-		_recordError("driver::allocVM(): 驱动内部错误：%s(0x%x)。", AllocRequest.errorFunc, AllocRequest.errorCode);
+		_recordError("driver::allocVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", AllocRequest.errorFunc);
+		this->errorCode = AllocRequest.errorCode;
 		return false;
 	}
 

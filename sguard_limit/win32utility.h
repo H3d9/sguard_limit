@@ -21,22 +21,20 @@ struct win32Thread {
 	// module properties
 	ULONG64     cycles;
 	ULONG64     cycleDelta;
-	ULONG64     rip; 
 
 	// ctors
 	win32Thread(DWORD tid, DWORD desiredAccess = THREAD_ALL_ACCESS);
 	~win32Thread();
 	win32Thread(const win32Thread& t);
 	win32Thread(win32Thread&& t) noexcept;
-	win32Thread& operator= (const win32Thread& t);
-	win32Thread& operator= (win32Thread&& t) noexcept;
-
+	win32Thread& operator= (win32Thread t) noexcept;
+	// win32Thread& operator= (win32Thread&&);  >> no need; overload resolution is before '=delete'
+	
 private:
-	// do not use mutable data, which won't SHARE reference.
 	DWORD*      _refCount;
 
 private:
-	static void _mySwap(win32Thread& t1, win32Thread& t2);
+	static void _mySwap(win32Thread& t1, win32Thread& t2);  // friend ADL? no way
 };
 
 
