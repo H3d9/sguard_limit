@@ -9,6 +9,7 @@
 #include "tracecore.h"
 #include "mempatch.h"
 
+
 win32SystemManager&     systemMgr               = win32SystemManager::getInstance();
 ConfigManager&          configMgr               = ConfigManager::getInstance();
 LimitManager&           limitMgr                = LimitManager::getInstance();
@@ -33,6 +34,7 @@ static DWORD WINAPI HijackThreadWorker(LPVOID) {
 		if (threadMgr.getTargetPid()) {
 
 			systemMgr.log("hijack thread: pid found.");
+
 			if (g_Mode == 0 && limitMgr.limitEnabled) {
 				g_HijackThreadWaiting = false;    // sync is done as we call schedule
 				limitMgr.hijack();                // start hijack.
@@ -65,17 +67,17 @@ INT WINAPI WinMain(
 
 	systemMgr.setupProcessDpi();
 
+	systemMgr.enableDebugPrivilege();
+
 	status =
-	systemMgr.init(hInstance, IDI_ICON1, WM_TRAYACTIVATE);
+	systemMgr.checkDebugPrivilege();
 
 	if (!status) {
 		return -1;
 	}
 
-	systemMgr.enableDebugPrivilege();
-
 	status =
-	systemMgr.checkDebugPrivilege();
+	systemMgr.init(hInstance, IDI_ICON1, WM_TRAYACTIVATE);
 
 	if (!status) {
 		return -1;
@@ -100,14 +102,14 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【首次使用说明】\n\n"
-			"更新模式：MemPatch -> V3\n\n"
+			"更新模式：MemPatch V3\n\n"
 			"【新特性】在上一版的基础上进一步压缩SGUARD的cpu使用率令其接近0。\n（但必要时SGUARD仍会短暂占用cpu以防游戏出现异常）\n\n"
 			"1 新增定位点 GetAsyncKeyState。\n\n"
 			"2 修复旧版（21.10.16/17）在【win7】/【win11】下无效的问题。\n"
 			"  (特别感谢@白嫖怪 提供的远程win11系统)\n\n"
 			"3 修改增强模式（NtWaitForSingleObject）的延迟范围以降低触发游戏异常的几率。尽管如此，仍不建议使用。\n\n"
-			"【提示】双击右下角托盘图标，可以查看新版详细说明。\n"
-			"若你第一次使用，建议详细阅读上述说明。",
+			"【问题修复】重写采样和搜索模块，以增加搜索稳定性，并适配win11。\n\n"
+			"【重要提示】若你第一次使用，建议双击右下角托盘图标，并仔细阅读说明。\n",
 			VERSION " colg@H3d9", MB_OK);
 		ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_HIDE);
 	}

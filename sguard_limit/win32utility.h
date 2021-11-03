@@ -5,8 +5,8 @@
 
 // system version (used in patch module)
 enum class OSVersion { 
-	WIN_7   = 1, 
-	WIN_10,
+	WIN_7       = 1, 
+	WIN_10_11,
 	OTHERS
 };
 
@@ -18,9 +18,10 @@ struct win32Thread {
 	DWORD       tid;
 	HANDLE      handle;
 
-	// module properties
+	// time properties
 	ULONG64     cycles;
 	ULONG64     cycleDelta;
+	ULONG64     cycleDeltaAvg;
 
 	// ctors
 	win32Thread(DWORD tid, DWORD desiredAccess = THREAD_ALL_ACCESS);
@@ -34,7 +35,7 @@ private:
 	DWORD*      _refCount;
 
 private:
-	static void _mySwap(win32Thread& t1, win32Thread& t2);  // friend ADL? no way
+	static void _mySwap(win32Thread& t1, win32Thread& t2);  // friend ADL? no way, i don't need inline
 };
 
 
@@ -100,6 +101,7 @@ public:
 	const CHAR* profilePath();  // used by config manager
 	const CHAR* sysfilePath();  // used by memory patch
 	OSVersion   getSystemVersion();
+	DWORD       getSystemBuildNum();
 
 private:
 	ATOM        _registerMyClass(WNDPROC WndProc);
@@ -107,12 +109,13 @@ private:
 private:
 	HANDLE                       hProgram;
 	OSVersion                    osVersion;
+	DWORD                        osBuildNum;
 	FILE*                        logfp;
 	DWORD                        iconRcNum;
 	UINT                         trayActiveMsg;
 	NOTIFYICONDATA               icon;
-	CHAR                         profileDir[1024];
-	CHAR                         profile[1024];
-	CHAR                         sysfile[1024];
-	CHAR                         logfile[1024];
+	CHAR                         profileDir     [1024];
+	CHAR                         profile        [1024];
+	CHAR                         sysfile        [1024];
+	CHAR                         logfile        [1024];
 };

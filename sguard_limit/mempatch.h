@@ -20,21 +20,28 @@ public:
 	static PatchManager&       getInstance();
 
 public:
+	struct patchStatus_t {
+		bool stage1                  = false;
+		bool stage2                  = false;
+	};
 	struct patchSwitches_t {
 		bool NtQueryVirtualMemory    = true;
 		bool GetAsyncKeyState        = true;
 		bool NtWaitForSingleObject   = false;
 		bool NtDelayExecution        = false;
 	};
+	struct patchDelayRange_t {
+		DWORD low, def, high;
+	};
 
 	volatile bool                 patchEnabled;
+
 	volatile DWORD                patchPid;
+	volatile patchStatus_t        patchStatus;
+
 	volatile patchSwitches_t      patchSwitches;
 	volatile DWORD                patchDelay[4];
-	const struct 
-	{ DWORD low, def, high; }     patchDelayRange[4];
-
-	volatile bool                 patchv3ok;
+	const patchDelayRange_t       patchDelayRange[4];
 
 public:
 	void      init();
@@ -43,8 +50,9 @@ public:
 	void      disable(bool forceRecover = false);
 
 private:
-	std::vector<ULONG64>    _findRip();
+	bool                    _patch_stage1();
 	bool                    _patch_stage2();
+	std::vector<ULONG64>    _findRip();
 	void                    _outVmbuf();
 							
 private:					

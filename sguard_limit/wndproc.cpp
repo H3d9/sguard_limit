@@ -258,19 +258,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (g_HijackThreadWaiting) {
 					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
 				} else {
-					DWORD finished;
-					if (patchMgr.patchPid == 0) {
-						finished = 0;
-					} else if (!patchMgr.patchv3ok) {
-						finished = 1;
-					} else { // patchMgr.patchv3ok
-						finished = 2;
+					DWORD total = 0;
+					if (patchMgr.patchSwitches.NtQueryVirtualMemory  ||
+						patchMgr.patchSwitches.NtWaitForSingleObject ||
+						patchMgr.patchSwitches.NtDelayExecution) {
+						total ++;
+					}
+					if (patchMgr.patchSwitches.GetAsyncKeyState) {
+						total ++;
+					}
+
+					DWORD finished = 0;
+					if (patchMgr.patchStatus.stage1) {
+						finished ++;
+					}
+					if (patchMgr.patchStatus.stage2) {
+						finished ++;
 					}
 
 					if (finished == 0) {
 						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 请等待");
 					} else {
-						DWORD total = patchMgr.patchSwitches.GetAsyncKeyState ? 2 : 1;
 						sprintf(buf, "SGuard限制器 - 已提交  [%u/%u]", finished, total);
 						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, buf);
 					}

@@ -4,10 +4,12 @@
 #include <time.h>
 #include "win32utility.h"
 
+// dependency: Userenv.lib
+
 
 // win32Thread
 win32Thread::win32Thread(DWORD tid, DWORD desiredAccess)
-	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), _refCount(new DWORD(1)) {
+	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), cycleDeltaAvg(0), _refCount(new DWORD(1)) {
 	if (tid != 0) {
 		handle = OpenThread(desiredAccess, FALSE, tid);
 	}
@@ -24,7 +26,7 @@ win32Thread::~win32Thread() {
 }
 
 win32Thread::win32Thread(const win32Thread& t)
-	: tid(t.tid), handle(t.handle), cycles(t.cycles), cycleDelta(t.cycleDelta), _refCount(t._refCount) {
+	: tid(t.tid), handle(t.handle), cycles(t.cycles), cycleDelta(t.cycleDelta), cycleDeltaAvg(t.cycleDeltaAvg), _refCount(t._refCount) {
 	++ *_refCount;
 }
 
@@ -42,6 +44,7 @@ void win32Thread::_mySwap(win32Thread& t1, win32Thread& t2) {
 	std::swap(t1.handle, t2.handle);
 	std::swap(t1.cycles, t2.cycles);
 	std::swap(t1.cycleDelta, t2.cycleDelta);
+	std::swap(t1.cycleDeltaAvg, t2.cycleDeltaAvg);
 	std::swap(t1._refCount, t2._refCount);
 }
 
@@ -117,8 +120,8 @@ bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadLis
 win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
-	: hWnd(NULL), hInstance(NULL), 
-	  hProgram(NULL), osVersion(OSVersion::OTHERS), logfp(NULL), trayActiveMsg(), 
+	: hWnd(NULL), hInstance(NULL),
+	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), trayActiveMsg(),
 	  icon{}, iconRcNum(), profileDir{}, profile{}, sysfile{}, logfile{} {}
 
 win32SystemManager::~win32SystemManager() {
@@ -171,14 +174,14 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 
 
 	// initialize application vars.
-	this->hInstance = hInst;
-	this->iconRcNum = iconRcNum;
-	this->trayActiveMsg = trayActiveMsg;
+	this->hInstance      = hInst;
+	this->iconRcNum      = iconRcNum;
+	this->trayActiveMsg  = trayActiveMsg;
 
 
 	// initialize path vars.
 	HANDLE       hToken;
-	DWORD        size = 1024;
+	DWORD        size    = 1024;
 
 	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
 	GetUserProfileDirectory(hToken, profileDir, &size);
@@ -205,7 +208,7 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 
 	// initialize log subsystem.
 	DWORD filesize = GetCompressedFileSize(logfile, NULL);
-	if (filesize != INVALID_FILE_SIZE && filesize > (1 << 20)) {
+	if (filesize != INVALID_FILE_SIZE && filesize > (1 << 16)) {
 		DeleteFile(logfile);
 	}
 
@@ -234,12 +237,14 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 		osInfo.dwOSVersionInfoSize = sizeof(osInfo);
 		RtlGetVersion(&osInfo);
 
-		if (osInfo.dwMajorVersion >= 10) {
-			osVersion = OSVersion::WIN_10;  // NT 10+
+		if (osInfo.dwMajorVersion == 10) {
+			osVersion = OSVersion::WIN_10_11;  // NT 10.0
 		} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 1) {
-			osVersion = OSVersion::WIN_7;   // NT 6.1
-		}
-	}   // ^^ otherwise, default to OSVersion::OTHERS
+			osVersion = OSVersion::WIN_7;      // NT 6.1
+		}  // else default to OSVersion::OTHERS
+		
+		osBuildNum = osInfo.dwBuildNumber;
+	}
 
 	return true;
 }
@@ -423,6 +428,10 @@ const CHAR* win32SystemManager::profilePath() {
 
 OSVersion win32SystemManager::getSystemVersion() {
 	return osVersion;
+}
+
+DWORD win32SystemManager::getSystemBuildNum() {
+	return osBuildNum;
 }
 
 ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc) {
