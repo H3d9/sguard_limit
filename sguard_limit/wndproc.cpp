@@ -153,16 +153,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	{
 		if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
 			
-			CHAR    buf   [128] = {};
-			HMENU   hMenu       = CreatePopupMenu();
+			CHAR    buf      [128] = {};
+			HMENU   hMenu          = CreatePopupMenu();
+			HMENU   hSubMenu       = CreatePopupMenu();
+
+			AppendMenu(hSubMenu, MFT_STRING, IDM_MORE_UPDATEPAGE, "检查更新【当前版本：" VERSION "】");
+			AppendMenu(hSubMenu, MFT_STRING, IDM_ABOUT,           "查看说明");
+			AppendMenu(hSubMenu, MFT_STRING, IDM_MORE_SOURCEPAGE, "查看源代码");
+
 
 			if (g_Mode == 0) {
 				if (!limitMgr.limitEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 用户手动暂停");
 				} else if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
 				} else {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 侦测到SGuard");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 侦测到SGuard");
 				}
 				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：时间片轮转  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
@@ -170,8 +176,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT95, "限制资源：95%");
 				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT99, "限制资源：99%");
 				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT999, "限制资源：99.9%");
+				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT, "停止限制");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, "其他选项");
 				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
 				if (limitMgr.limitEnabled) {
 					switch (limitMgr.limitPercent) {
@@ -193,12 +201,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 			} else if (g_Mode == 1) {
 				if (!traceMgr.lockEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 用户手动暂停");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 用户手动暂停");
 				} else if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
 				} else {
 					if (traceMgr.lockPid == 0) {
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 正在分析");
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 正在分析");
 					} else {
 						sprintf(buf, "SGuard限制器 - ");
 						switch (traceMgr.lockMode) {
@@ -219,7 +227,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[0].tid);
 							break;
 						}
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, buf);
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 					}
 				}
 				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：线程追踪  [点击切换]");
@@ -233,8 +241,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (traceMgr.lockMode == 1 || traceMgr.lockMode == 3) {
 					sprintf(buf, "设置时间切分（当前：%d）", traceMgr.lockRound);
 					AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
-					AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				}
+				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, "其他选项");
 				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
 				if (traceMgr.lockEnabled) {
 					switch (traceMgr.lockMode) {
@@ -256,7 +265,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 			} else {
 				if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 等待游戏运行");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
 				} else {
 					DWORD total = 0;
 					if (patchMgr.patchSwitches.NtQueryVirtualMemory  ||
@@ -277,10 +286,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					}
 
 					if (finished == 0) {
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, "SGuard限制器 - 请等待");
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
 					} else {
 						sprintf(buf, "SGuard限制器 - 已提交  [%u/%u]", finished, total);
-						AppendMenu(hMenu, MFT_STRING, IDM_TITLE, buf);
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 					}
 				}
 				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V3  [点击切换]");
@@ -296,6 +305,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				sprintf(buf, "设置延时（当前：%u/%u/%u/%u）", patchMgr.patchDelay[0], patchMgr.patchDelay[1], patchMgr.patchDelay[2], patchMgr.patchDelay[3]);
 				AppendMenu(hMenu, MFT_STRING, IDM_SETDELAY, buf);
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, "其他选项");
 				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
 				CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
@@ -328,7 +338,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		UINT id = LOWORD(wParam);
 		switch (id) {
 			// general command
-			case IDM_TITLE:
+			case IDM_ABOUT:
 				ShowAbout();
 				break;
 			case IDM_SWITCHMODE:
@@ -458,6 +468,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					}
 				}
 				configMgr.writeConfig();
+				break;
+
+			// more options command
+			case IDM_MORE_UPDATEPAGE:
+				ShellExecute(0, "open", "https://bbs.colg.cn/thread-8087898-1-1.html", 0, 0, SW_SHOW);
+				break;
+			case IDM_MORE_SOURCEPAGE:
+				ShellExecute(0, "open", "https://github.com/H3d9/sguard_limit", 0, 0, SW_SHOW);
 				break;
 		}
 	}

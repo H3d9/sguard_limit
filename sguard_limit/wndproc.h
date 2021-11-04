@@ -2,11 +2,11 @@
 #include <Windows.h>
 
 
-#define VERSION             "21.11.2 万圣节特别版"
+#define VERSION             "21.11.3 万圣节特别版"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 
-#define IDM_TITLE           200
+#define IDM_ABOUT           200
 #define IDM_EXIT            201
 #define IDM_SWITCHMODE      202
 
@@ -36,6 +36,9 @@
 #define IDM_PATCHSWITCH2    218
 #define IDM_PATCHSWITCH3    219
 #define IDM_PATCHSWITCH4    220
+
+#define IDM_MORE_UPDATEPAGE 221
+#define IDM_MORE_SOURCEPAGE 222
 
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
