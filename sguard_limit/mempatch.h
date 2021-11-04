@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <memory> // std::unique_ptr
 
 
 // patch module (sington)
@@ -50,13 +51,13 @@ public:
 	void      disable(bool forceRecover = false);
 
 private:
-	bool                    _patch_stage1();
-	bool                    _patch_stage2();
-	std::vector<ULONG64>    _findRip();
-	void                    _outVmbuf();
-							
-private:					
-	ULONG64                 vmStartAddress             = 0;
-	CHAR                    vmbuf           [0x4000]   = {};
-	CHAR                    vmalloc         [0x4000]   = {};
+	bool                      _patch_stage1();
+	bool                      _patch_stage2();
+	std::vector<ULONG64>      _findRip(bool useAll = false);
+	void                      _outVmbuf(ULONG64, const CHAR*);
+
+private:
+	ULONG64                   vmStartAddress;
+	std::unique_ptr<CHAR[]>   vmbuf_ptr;
+	std::unique_ptr<CHAR[]>   vmalloc_ptr;
 };

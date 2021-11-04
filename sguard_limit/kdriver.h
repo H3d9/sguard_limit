@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <memory>
 
 
 // driver io module (sington)
@@ -52,9 +53,10 @@ private:
 	HANDLE         hDriver;
 
 public:
-	CHAR     errorMessage[1024];
-	DWORD    errorCode;
+	DWORD                    errorCode;
+	CHAR*                    errorMessage;
 
 private:
-	void     _recordError(const CHAR* msg, ...);
+	std::unique_ptr<CHAR[]>  errorMessage_ptr;
+	void                     _recordError(const CHAR* msg, ...);
 };

@@ -8,7 +8,10 @@
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
-	: sysfile(NULL), hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE), errorMessage{}, errorCode(0) {}
+	: sysfile(NULL), hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE), 
+	  errorMessage_ptr(new CHAR[1024]), errorCode(0), errorMessage(NULL) {
+	errorMessage = errorMessage_ptr.get();
+}
 
 KernelDriver::~KernelDriver() {
 	unload();
@@ -55,28 +58,28 @@ void KernelDriver::unload() {
 bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 
 	// assert: "out" is a 16K buffer.
-	VMIO_REQUEST  ReadRequest;
+	VMIO_REQUEST  request;
 	DWORD         Bytes;
 
-	ReadRequest.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
-	ReadRequest.errorCode = 0;
+	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
+	request.errorCode = 0;
 
 
 	for (auto page = 0; page < 4; page++) {
 
-		ReadRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
+		request.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
 
-		if (!DeviceIoControl(hDriver, VMIO_READ, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL)) {
+		if (!DeviceIoControl(hDriver, VMIO_READ, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
 			_recordError("driver::readVM(): DeviceIoControl失败。");
 			return false;
 		}
-		if (ReadRequest.errorCode != 0) {
-			_recordError("driver::readVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", ReadRequest.errorFunc);
-			this->errorCode = ReadRequest.errorCode;
+		if (request.errorCode != 0) {
+			_recordError("driver::readVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", request.errorFunc);
+			this->errorCode = request.errorCode;
 			return false;
 		}
 
-		memcpy((PVOID)((ULONG64)out + page * 0x1000), ReadRequest.data, 0x1000);
+		memcpy((PVOID)((ULONG64)out + page * 0x1000), request.data, 0x1000);
 	}
 
 	return true;
@@ -85,26 +88,26 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 
 	// assert: "in" is a 16K buffer.
-	VMIO_REQUEST  WriteRequest;
+	VMIO_REQUEST  request;
 	DWORD         Bytes;
 
-	WriteRequest.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
-	WriteRequest.errorCode = 0;
+	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
+	request.errorCode = 0;
 
 
 	for (auto page = 0; page < 4; page++) {
 
-		WriteRequest.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
+		request.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
 
-		memcpy(WriteRequest.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
+		memcpy(request.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
 
-		if (!DeviceIoControl(hDriver, VMIO_WRITE, &WriteRequest, sizeof(WriteRequest), &WriteRequest, sizeof(WriteRequest), &Bytes, NULL)) {
+		if (!DeviceIoControl(hDriver, VMIO_WRITE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
 			_recordError("driver::writeVM(): DeviceIoControl失败。");
 			return false;
 		}
-		if (WriteRequest.errorCode != 0) {
-			_recordError("driver::writeVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", WriteRequest.errorFunc);
-			this->errorCode = WriteRequest.errorCode;
+		if (request.errorCode != 0) {
+			_recordError("driver::writeVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", request.errorFunc);
+			this->errorCode = request.errorCode;
 			return false;
 		}
 	}
@@ -114,25 +117,25 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 
 bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 
-	VMIO_REQUEST  AllocRequest;
+	VMIO_REQUEST  request;
 	DWORD         Bytes;
 
-	AllocRequest.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
-	AllocRequest.address = NULL;
-	AllocRequest.errorCode = 0;
+	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
+	request.address = NULL;
+	request.errorCode = 0;
 
 
-	if (!DeviceIoControl(hDriver, VMIO_ALLOC, &AllocRequest, sizeof(AllocRequest), &AllocRequest, sizeof(AllocRequest), &Bytes, NULL)) {
+	if (!DeviceIoControl(hDriver, VMIO_ALLOC, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
 		_recordError("driver::allocVM(): DeviceIoControl失败。");
 		return false;
 	}
-	if (AllocRequest.errorCode != 0) {
-		_recordError("driver::allocVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", AllocRequest.errorFunc);
-		this->errorCode = AllocRequest.errorCode;
+	if (request.errorCode != 0) {
+		_recordError("driver::allocVM(): 驱动内部错误：%s。\n【注】SGuard进程可能已经关闭。建议你重启游戏。", request.errorFunc);
+		this->errorCode = request.errorCode;
 		return false;
 	}
 
-	*pAllocatedAddress = AllocRequest.address;
+	*pAllocatedAddress = request.address;
 
 	return true;
 }

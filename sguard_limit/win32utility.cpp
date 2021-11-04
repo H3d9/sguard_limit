@@ -121,8 +121,8 @@ win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL),
-	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), trayActiveMsg(),
-	  icon{}, iconRcNum(), profileDir{}, profile{}, sysfile{}, logfile{} {}
+	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), trayActiveMsg(), icon{}, iconRcNum(),
+	  profileDir(new CHAR[1024]), profile(new CHAR[1024]), sysfile(new CHAR[1024]), logfile(new CHAR[1024]) {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -168,7 +168,7 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 	// decide whether it's single instance.
 	hProgram = CreateMutex(NULL, FALSE, "sguard_limit");
 	if (!hProgram || GetLastError() == ERROR_ALREADY_EXISTS) {
-		MessageBox(0, "同时只能运行一个SGUARD限制器。", "错误", MB_OK);
+		panic(0, "同时只能运行一个SGUARD限制器。");
 		return false;
 	}
 
@@ -184,38 +184,38 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 	DWORD        size    = 1024;
 
 	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
-	GetUserProfileDirectory(hToken, profileDir, &size);
-	strcat(profileDir, "\\AppData\\Roaming\\sguard_limit");
+	GetUserProfileDirectory(hToken, profileDir.get(), &size);
+	strcat(profileDir.get(), "\\AppData\\Roaming\\sguard_limit");
 	CloseHandle(hToken);
 
-	strcpy(profile, profileDir);
-	strcpy(sysfile, profileDir);
-	strcpy(logfile, profileDir);
-	strcat(profile, "\\config.ini");
-	strcat(sysfile, "\\SGuardLimit_VMIO.sys");
-	strcat(logfile, "\\log.txt");
+	strcpy(profile.get(), profileDir.get());
+	strcpy(sysfile.get(), profileDir.get());
+	strcpy(logfile.get(), profileDir.get());
+	strcat(profile.get(), "\\config.ini");
+	strcat(sysfile.get(), "\\SGuardLimit_VMIO.sys");
+	strcat(logfile.get(), "\\log.txt");
 
 
 	// initialize profile directory.
-	DWORD pathAttr = GetFileAttributes(profileDir);
+	DWORD pathAttr = GetFileAttributes(profileDir.get());
 	if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
-		if (!CreateDirectory(profileDir, NULL)) {
-			panic("%s目录创建失败。", profileDir);
+		if (!CreateDirectory(profileDir.get(), NULL)) {
+			panic("%s目录创建失败。", profileDir.get());
 			return false;
 		}
 	}
 
 
 	// initialize log subsystem.
-	DWORD filesize = GetCompressedFileSize(logfile, NULL);
+	DWORD filesize = GetCompressedFileSize(logfile.get(), NULL);
 	if (filesize != INVALID_FILE_SIZE && filesize > (1 << 16)) {
-		DeleteFile(logfile);
+		DeleteFile(logfile.get());
 	}
 
-	logfp = fopen(logfile, "a+");
+	logfp = fopen(logfile.get(), "a+");
 
 	if (!logfp) {
-		panic("打开log文件%s失败。", logfile);
+		panic("打开log文件%s失败。", logfile.get());
 		return false;
 	}
 
@@ -419,11 +419,11 @@ void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 }
 
 const CHAR* win32SystemManager::sysfilePath() {
-	return sysfile;
+	return sysfile.get();
 }
 
 const CHAR* win32SystemManager::profilePath() {
-	return profile;
+	return profile.get();
 }
 
 OSVersion win32SystemManager::getSystemVersion() {

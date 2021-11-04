@@ -1,6 +1,7 @@
 #pragma once
 #include <Windows.h>
 #include <vector>
+#include <memory> // std::unique_ptr
 
 
 // system version (used in patch module)
@@ -83,28 +84,28 @@ public:
 	HINSTANCE                    hInstance;
 
 public:
-	bool        init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg);
-	void        setupProcessDpi();
-	void        enableDebugPrivilege();
-	bool        checkDebugPrivilege();
-	bool        createWin32Window(WNDPROC WndProc);
-	void        createTray();
-	void        removeTray();
-	WPARAM      messageLoop();
-	
-public:
-	void        log(const char* format, ...);
-	void        panic(const char* format, ...);
-	void        panic(DWORD errorCode, const char* format, ...);
-
-public:
-	const CHAR* profilePath();  // used by config manager
-	const CHAR* sysfilePath();  // used by memory patch
-	OSVersion   getSystemVersion();
-	DWORD       getSystemBuildNum();
-
-private:
-	ATOM        _registerMyClass(WNDPROC WndProc);
+	bool          init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg);
+	void          setupProcessDpi();
+	void          enableDebugPrivilege();
+	bool          checkDebugPrivilege();
+	bool          createWin32Window(WNDPROC WndProc);
+	void          createTray();
+	void          removeTray();
+	WPARAM        messageLoop();
+				  
+public:			  
+	void          log(const char* format, ...);
+	void          panic(const char* format, ...);
+	void          panic(DWORD errorCode, const char* format, ...);
+				  
+public:			  
+	const CHAR*   profilePath();  // used by config manager
+	const CHAR*   sysfilePath();  // used by mempatch module
+	OSVersion     getSystemVersion();
+	DWORD         getSystemBuildNum();
+				  
+private:		  
+	ATOM          _registerMyClass(WNDPROC WndProc);
 
 private:
 	HANDLE                       hProgram;
@@ -114,8 +115,8 @@ private:
 	DWORD                        iconRcNum;
 	UINT                         trayActiveMsg;
 	NOTIFYICONDATA               icon;
-	CHAR                         profileDir     [1024];
-	CHAR                         profile        [1024];
-	CHAR                         sysfile        [1024];
-	CHAR                         logfile        [1024];
+	std::unique_ptr<CHAR[]>      profileDir;
+	std::unique_ptr<CHAR[]>      profile;
+	std::unique_ptr<CHAR[]>      sysfile;
+	std::unique_ptr<CHAR[]>      logfile;
 };

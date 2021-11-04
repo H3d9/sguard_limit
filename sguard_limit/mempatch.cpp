@@ -8,7 +8,8 @@
 #include <time.h>
 #include <vector>
 #include <unordered_map>
-#include <algorithm>
+#include <algorithm> // std::sort
+#include <memory>    // std::unique_ptr
 #include "mempatch.h"
 
 // dependencies
@@ -24,12 +25,12 @@ PatchManager  PatchManager::patchManager;
 
 PatchManager::PatchManager()
 	: patchEnabled(true), patchPid(0), patchSwitches{}, patchStatus{}, patchDelay{},
-	patchDelayRange{ 
-		{ 200, 1500, 2500 },   /* NtQueryVirtualMemory */
-		{ 100, 1000, 1500 },   /* GetAsyncKeyState */
-		{ 1,   10,   200  },   /* NtWaitForSingleObject */
-		{ 500, 1250, 2000 }    /* NtDelayExecution */ 
-	}  { /* private use zero init */ }
+	  patchDelayRange{
+	   { 200, 1500, 2500 },   /* NtQueryVirtualMemory */
+	   { 100, 1000, 1500 },   /* GetAsyncKeyState */
+	   { 1,   10,   200  },   /* NtWaitForSingleObject */
+	   { 500, 1250, 2000 }    /* NtDelayExecution */
+      }, vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
 
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
@@ -243,9 +244,11 @@ void PatchManager::disable(bool forceRecover) {
 
 bool PatchManager::_patch_stage1() {
 
-	OSVersion              osVersion   = systemMgr.getSystemVersion();
 	win32ThreadManager     threadMgr;
-	DWORD                  pid         = threadMgr.getTargetPid();
+	DWORD                  pid               = threadMgr.getTargetPid();
+	OSVersion              osVersion         = systemMgr.getSystemVersion();
+	auto                   vmbuf             = vmbuf_ptr.get();
+	auto                   vmalloc           = vmalloc_ptr.get();
 	bool                   status;
 
 
@@ -263,22 +266,6 @@ bool PatchManager::_patch_stage1() {
 	}
 
 
-	// get potential rip in top 3 threads.
-	auto rips = _findRip();
-
-	if (rips.empty()) {
-		systemMgr.log("patch1(): rips empty, quit.");
-		return false;
-	}
-
-
-	// before manip memory, check process status for the last time.
-	if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
-		systemMgr.log("patch1(): usr switched mode or process terminated, quit.");
-		return false;
-	}
-
-
 	// start driver.
 	status =
 	driver.load();
@@ -290,75 +277,104 @@ bool PatchManager::_patch_stage1() {
 	}
 
 
-	// offset0: syscall 0 location, offset from vmbuf:0.
+	// find ntdll target offset.
+
+	// offset0: syscall 0 entry,
+	// offset from vmbuf:0.
 	LONG offset0 = -1;
 
-	for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
+	// try multi-times to find target offset.
+	for (auto try_times = 1; try_times <= 5; try_times++) {
 
-		// round up page.
-		vmStartAddress = *rip;
-		vmStartAddress &= ~0xfff;
-		vmStartAddress -= 0x1000;
+		// get potential rip in top 3 threads.
+		auto rips = _findRip();
 
-
-		// read memory.
-		status =
-		driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
-
-		if (!status) {
-			systemMgr.log("patch1(): warning: load memory failed at: %llx", vmStartAddress);
-			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-			continue;
+		if (rips.empty()) {
+			systemMgr.log("patch1(): rips empty, quit.");
+			driver.unload();
+			return false;
 		}
 
 
-		// syscall traits: 4c 8b d1 b8 ?? 00 00 00
-		for (LONG offset = (0x1000 + *rip % 0x1000) - 0x14; /* rva from current syscall begin */
-			offset < 0x4000 - 0x20 /* buf sz - bytes to write */; offset++) {
-			if (vmbuf[offset] == '\x4c' &&
-				vmbuf[offset + 1] == '\x8b' &&
-				vmbuf[offset + 2] == '\xd1' &&
-				vmbuf[offset + 3] == '\xb8' &&
-				/* vmbuf[offset + 4] == ?? && */
-				vmbuf[offset + 5] == '\x00' &&
-				vmbuf[offset + 6] == '\x00' &&
-				vmbuf[offset + 7] == '\x00') {
+		// search memory traits in all rip found.
+		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
 
-				// locate offset0 to syscall 0.
-				LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
-				if (osVersion == OSVersion::WIN_10_11) {
-					offset0 = offset - 0x20 * syscall_num;
-				} else {
-					offset0 = offset - 0x10 * syscall_num;
+			// round up page.
+			vmStartAddress = *rip;
+			vmStartAddress &= ~0xfff;
+			vmStartAddress -= 0x1000;
+
+
+			// read memory.
+			status =
+			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
+
+			if (!status) {
+				systemMgr.log("patch1(): warning: load memory failed at: %llx", vmStartAddress);
+				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+				continue;
+			}
+
+
+			// syscall traits: 4c 8b d1 b8 ?? 00 00 00
+			for (LONG offset = (0x1000 + *rip % 0x1000) - 0x14; /* rva from current syscall begin */
+				offset < 0x4000 - 0x20 /* buf sz - bytes to write */; offset++) {
+				if (vmbuf[offset] == '\x4c' &&
+					vmbuf[offset + 1] == '\x8b' &&
+					vmbuf[offset + 2] == '\xd1' &&
+					vmbuf[offset + 3] == '\xb8' &&
+					/* vmbuf[offset + 4] == ?? && */
+					vmbuf[offset + 5] == '\x00' &&
+					vmbuf[offset + 6] == '\x00' &&
+					vmbuf[offset + 7] == '\x00') {
+
+					// locate offset0 to syscall 0.
+					LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
+					if (osVersion == OSVersion::WIN_10_11) {
+						offset0 = offset - 0x20 * syscall_num;
+					} else {
+						offset0 = offset - 0x10 * syscall_num;
+					}
+
+					systemMgr.log("patch1(): offset0 found here: +0x%x => syscall 0x%x", offset0, syscall_num);
+					break;
 				}
+			}
 
-				systemMgr.log("patch1(): target_offset found here: +0x%x => syscall 0x%x", offset0, syscall_num);
+			if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
+				systemMgr.log("patch1(): trait not found at %%rip = %llx", *rip);
+				continue;
+			} else {
+				systemMgr.log("patch1(): trait found here: %%rip = %llx", *rip);
 				break;
 			}
 		}
 
-		if (offset0 < 0 /* target_offset == -1: not found || target_offset < 0: out of page range */) {
+		// check if offset0 found in all result in _findRip().
+		if (offset0 < 0) {
+			systemMgr.log("patch1(): round %u: trait not found in all result in _findRip().", try_times);
+			Sleep(10000);
 			continue;
 		} else {
-			systemMgr.log("patch1(): trait found here: %%rip = %llx", *rip);
 			break;
 		}
 	}
 
-
-	// decide whether trait found success.
-	static DWORD found_fail = 0;
-	if (offset0 < 0 /* offset0 not found at all rip given. */) {
-		systemMgr.log("patch1(): trait not found at all given rip, leaving.");
-		found_fail++;
-		if (found_fail >= 5) {
-			systemMgr.panic("似乎无法获取有效的内存特征，建议你重启电脑后再尝试。");
-		}
+	// decide whether trait found success in all rounds.
+	if (offset0 < 0) {
+		systemMgr.log("patch1(): trait search failed too many times, abort.");
+		systemMgr.panic(0, "似乎无法获取有效的内存特征，建议你重启电脑后再尝试。");
 		driver.unload();
 		return false;
 	}
-	found_fail = 0;
 
+
+	// before manip memory, check process status.
+	if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
+		systemMgr.log("patch1(): usr switched mode or process terminated, quit.");
+		driver.unload();
+		return false;
+	}
 
 	// assert: vmbuf is syscall pages && offset0 >= 0.
 	// patch according to switches.
@@ -856,11 +872,13 @@ bool PatchManager::_patch_stage1() {
 
 bool PatchManager::_patch_stage2() {
 
-	OSVersion              osVersion       = systemMgr.getSystemVersion();
-	DWORD                  osBuildNumber   = systemMgr.getSystemBuildNum();
-	win32ThreadManager     threadMgr;
-	DWORD                  pid             = threadMgr.getTargetPid();
-	bool                   status;
+	win32ThreadManager       threadMgr;
+	DWORD                    pid               = threadMgr.getTargetPid();
+	OSVersion                osVersion         = systemMgr.getSystemVersion();
+	DWORD                    osBuildNumber     = systemMgr.getSystemBuildNum();
+	auto                     vmbuf             = vmbuf_ptr.get();
+	auto                     vmalloc           = vmalloc_ptr.get();
+	bool                     status;
 
 
 	systemMgr.log("patch2(): entering.");
@@ -877,22 +895,6 @@ bool PatchManager::_patch_stage2() {
 	}
 
 
-	// get potential rip in top 3 threads.
-	auto rips = _findRip();
-
-	if (rips.empty()) {
-		systemMgr.log("patch2(): rips empty, quit.");
-		return false;
-	}
-
-
-	// before read memory, check process status.
-	if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
-		systemMgr.log("patch2(): usr switched mode or process terminated, quit.");
-		return false;
-	}
-
-
 	// start driver.
 	status =
 	driver.load();
@@ -903,147 +905,176 @@ bool PatchManager::_patch_stage2() {
 	}
 
 
-	// find win32k / user32 rip location.
-	// target_offset: target syscall entry (offset from vmbuf:0).
+	// find win32k / user32 target offset.
+	
+	// target_offset: target syscall entry,
+	// offset from vmbuf:0.
 	LONG target_offset = -1;
 
-	// find target syscall entry.
-	for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
+	// try multi-times to find target offset.
+	for (auto try_times = 1; try_times <= 5; try_times++) {
+		
+		// get potential rip in top 3 threads.
+		auto rips = _findRip(true);
 
-		// round page.
-		vmStartAddress = *rip;
-		vmStartAddress &= ~0xfff;
-		vmStartAddress -= 0x1000;
-
-
-		// read memory.
-		status =
-		driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
-
-		if (!status) {
-			systemMgr.log("patch2(): warning: load memory failed at: %llx", vmStartAddress);
-			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-			continue;
+		if (rips.empty()) {
+			systemMgr.log("patch2(): rips empty, quit.");
+			driver.unload();
+			return false;
 		}
 
 
-		// get mem trait from system version.
-		char traits[] = "\x4c\x8b\xd1\xb8\x44\x10\x00\x00";
-		if (osVersion == OSVersion::WIN_10_11 && osBuildNumber <= 18363) {
-			traits[4] = '\x47';  // win10 1909 and former: 0x1047
-		} else if (osVersion == OSVersion::WIN_10_11 && osBuildNumber >= 22000) {
-			traits[4] = '\x3f';  // win11: 0x103f
-		} // else default to:    // win10 after 1909: 0x1044
+		// find offset we need in all rip given, load memory to vmbuf btw.
+		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
+
+			// round page.
+			vmStartAddress = *rip;
+			vmStartAddress &= ~0xfff;
+			vmStartAddress -= 0x1000;
 
 
-		// loop var to search for syscall entry.
-		LONG offset;
+			// read memory.
+			status =
+			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 
-		// search round 1: find exact value.
-		offset = 0x1000 + *rip % 0x1000 - 0x14;
-		for (offset < 0 ? offset = 0 : 0; offset <= 0x4000 - 0x20; offset++) {
-			if (0 == memcmp(vmbuf + offset, traits, 8)) { // if strict: 4c 8b d1 b8 XX 10 00 00
+			if (!status) {
+				systemMgr.log("patch2(): trait search warning: load memory failed at: %llx", vmStartAddress);
+				continue;
+			}
 
-				target_offset = offset;
 
-				systemMgr.log("patch2(): strict search found here: +0x%x => syscall 0x%x", target_offset, *(LONG*)(traits + 4));
+			// get mem trait from system version.
+			char traits[] = "\x4c\x8b\xd1\xb8\x44\x10\x00\x00";
+			if (osVersion == OSVersion::WIN_10_11 && osBuildNumber <= 18363) {
+				traits[4] = '\x47';  // win10 1909 and former: 0x1047
+			} else if (osVersion == OSVersion::WIN_10_11 && osBuildNumber >= 22000) {
+				traits[4] = '\x3f';  // win11: 0x103f
+			} // else default to:    // win10 after 1909: 0x1044
+
+
+			// loop var to search for syscall entry.
+			LONG offset;
+
+			// search round 1: find exact value.
+			offset = 0x1000 + *rip % 0x1000 - 0x14;
+			for (offset < 0 ? offset = 0 : 0; offset <= 0x4000 - 0x20; offset++) {
+				if (0 == memcmp(vmbuf + offset, traits, 8)) { // if strict: 4c 8b d1 b8 XX 10 00 00
+
+					target_offset = offset;
+
+					systemMgr.log("patch2(): strict search found here: +0x%x => syscall 0x%x", target_offset, *(LONG*)(traits + 4));
+					break;
+				}
+			}
+
+			// search round 2: if not found, find fuzzy value. (WIN_10_11 only)
+			// [remark] WIN_7 do NOT map continuous memory for syscall 0x10xx by a single library (win32u.dll).
+			// syscalls are simply inlined in user32.dll's function implementation.
+			// just like ntdll, win32u are all aligned to 0x20 Bytes in WIN_10_11.
+			if (target_offset == -1 && osVersion == OSVersion::WIN_10_11) {
+
+				for (offset = 0x0; offset <= 0x4000 - 0x20; offset++) {
+					if (0 == memcmp(vmbuf + offset, traits, 4) &&
+						0 == memcmp(vmbuf + offset + 5, traits + 5, 3)) { // if fuzzy: 4c 8b d1 b8 ?? 10 00 00
+
+						// from the syscall we found, switch to syscall 0x1000, then switch to syscall we need.
+						LONG found_call_num = *(LONG*)(vmbuf + offset + 4);
+						LONG real_call_num = *(LONG*)(traits + 4);
+						target_offset = offset - (found_call_num - 0x1000) * 0x20 + (real_call_num - 0x1000) * 0x20;
+
+						systemMgr.log("patch2(): fuzzy search found here: +0x%x => syscall 0x%x", target_offset, found_call_num);
+						break;
+					}
+				}
+			}
+
+			// search round 3: if not found, find relative in user32 and jump over. (WIN_10_11 only)
+			// [remark] WIN_7 do NOT use rex.W call to enter syscall part.
+			if (target_offset == -1 && osVersion == OSVersion::WIN_10_11) {
+
+				char user32_traits[] = "\x8B\xCB\x48\xFF\x15\x00\x00\x00\x00\x0F\x1F\x44\x00\x00\x0F\xB7\xF8\x0F\xB7\xC7";
+				/*
+					traits: user32.dll!GetAsyncKeyState+0xb4:
+					0:  8b cb                   mov    ecx,ebx
+					2:  48 ff 15 ?? ?? ?? ??    rex.W call QWORD PTR [rip+<imm32>]  ;<__imp_NtUserGetAsyncKeyState>
+					9:  0f 1f 44 00 00          nop    DWORD PTR [rax+rax*1+0x0]
+					e:  0f b7 f8                movzx  edi,ax
+					11: 0f b7 c7                movzx  eax,di
+				*/
+
+				for (offset = 0x0; offset < 0x4000 - 0x20; offset++) {
+					if (0 == memcmp(vmbuf + offset, user32_traits, 5) &&
+						0 == memcmp(vmbuf + offset + 0x9, user32_traits + 0x9, 11)) {
+						
+						std::unique_ptr<CHAR[]> vmrel_ptr(new CHAR[0x4000]);
+						auto vmrel = vmrel_ptr.get();
+
+						// parse rex.W call qword ptr [rip+<dword>].
+						// entry_virtual = <__imp_NtUserGetAsyncKeyState>.
+						LONG    relative_shift    = *(LONG*)(vmbuf + offset + 0x5);
+						ULONG64 relative_virtual  = vmStartAddress + offset + 0x9 + relative_shift;
+
+						if (!driver.readVM(pid, vmrel, (PVOID)((relative_virtual & ~0xfff) - 0x1000))) {
+							systemMgr.log("patch2(): search round 3 warning: read relative_virtual failed.");
+							continue;
+						}
+
+						ULONG64 entry_virtual = *(ULONG64*)(vmrel + 0x1000 + relative_virtual % 0x1000);
+
+						if (!driver.readVM(pid, vmrel, (PVOID)((entry_virtual & ~0xfff) - 0x1000))) {
+							systemMgr.log("patch2(): search round 3 warning: read entry_virtual failed.");
+							continue;
+						}
+
+						if (0 != memcmp(vmrel + 0x1000 + entry_virtual % 0x1000, traits, 8)) {
+							systemMgr.log("patch2(): search round 3 warning: entry found do not match traits.");
+							systemMgr.log("patch2():   note: maybe fake traits.");
+							continue;
+						} else {
+							vmStartAddress  = (entry_virtual & ~0xfff) - 0x1000;
+							target_offset   = 0x1000 + entry_virtual % 0x1000;
+							memcpy(vmbuf, vmrel, 0x4000);
+
+							systemMgr.log("patch2(): relative search found here: 0x%llx", entry_virtual);
+							systemMgr.log("patch2():   >> search path: [rip+0x%x] => 0x%llx => 0x%llx (syscall 0x%x)",
+								relative_shift, relative_virtual, entry_virtual, *(LONG*)(vmbuf + target_offset + 4));
+							break;
+						}
+					}
+				}
+			}
+
+			if (target_offset == -1) {
+				systemMgr.log("patch2(): trait not found at %%rip = %llx.", *rip);
+				continue;
+			} else {
+				systemMgr.log("patch2(): trait found here: %%rip = %llx.", *rip);
 				break;
 			}
 		}
 
-		// search round 2: if not found, find fuzzy value. (WIN_10_11 only)
-		// [remark] WIN_7 do NOT map continuous memory for syscall 0x10xx by a single library (win32u.dll).
-		// syscalls are simply inlined in user32.dll's function implementation.
-		// just like ntdll, win32u are all aligned to 0x20 Bytes in WIN_10_11.
-		if (target_offset == -1 && osVersion == OSVersion::WIN_10_11) {
-
-			offset = 0x1000 + *rip % 0x1000 - 0x14;
-			for (offset < 0 ? offset = 0 : 0; offset <= 0x4000 - 0x20; offset++) {
-				if (0 == memcmp(vmbuf + offset, traits, 4) &&
-					0 == memcmp(vmbuf + offset + 5, traits + 5, 3)) { // if fuzzy: 4c 8b d1 b8 ?? 10 00 00
-
-					// from the syscall we found, switch to syscall 0x1000, then switch to syscall we need.
-					LONG found_call_num = *(LONG*)(vmbuf + offset + 4);
-					LONG real_call_num = *(LONG*)(traits + 4);
-					target_offset = offset - (found_call_num - 0x1000) * 0x20 + (real_call_num - 0x1000) * 0x20;
-
-					systemMgr.log("patch2(): fuzzy search found here: +0x%x => syscall 0x%x", target_offset, found_call_num);
-					break;
-				}
-			}
-		}
-
-		// search round 3: if not found, find relative in user32 and jump over. (WIN_10_11 only)
-		// [remark] WIN_7 do NOT use rex.W call to enter syscall part.
-		if (target_offset == -1 && osVersion == OSVersion::WIN_10_11) {
-
-			char user32_traits[] = "\x8B\xCB\x48\xFF\x15\x00\x00\x00\x00\x0F\x1F\x44\x00\x00\x0F\xB7\xF8\x0F\xB7\xC7";
-			/*
-				traits: user32.dll!GetAsyncKeyState+0xb4:
-				0:  8b cb                   mov    ecx,ebx
-				2:  48 ff 15 ?? ?? ?? ??    rex.W call QWORD PTR [rip+<dword>]  ;<__imp_NtUserGetAsyncKeyState>
-				9:  0f 1f 44 00 00          nop    DWORD PTR [rax+rax*1+0x0]
-				e:  0f b7 f8                movzx  edi,ax
-				11: 0f b7 c7                movzx  eax,di
-			*/
-
-			offset = 0x1000 + *rip % 0x1000 - 0xe4;
-			for (auto i = 0; i < 0x100; i++, offset++) {
-				if (0 == memcmp(vmbuf + offset, user32_traits, 5) &&
-					0 == memcmp(vmbuf + offset + 0x9, user32_traits + 0x9, 11)) {
-
-					// parse rex.W call qword ptr[rip+dword].
-					// entry_virtual = <__imp_NtUserGetAsyncKeyState>.
-					LONG    relative_shift    = *(LONG*)(vmbuf + offset + 0x5);
-					ULONG64 relative_virtual  = vmStartAddress + offset + 0x9 + relative_shift;
-
-					if (!driver.readVM(pid, vmbuf, (PVOID)((relative_virtual & ~0xfff) - 0x1000))) {
-						systemMgr.log("patch2(): warning: search round 3: read relative VM failed.");
-						systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-						break;
-					}
-
-					ULONG64 entry_virtual = *(ULONG64*)(vmbuf + 0x1000 + relative_virtual % 0x1000);
-					
-					// update vmStartAddress, and reload memory.
-					vmStartAddress = (entry_virtual & ~0xfff) - 0x1000;
-
-					if (!driver.readVM(pid, vmbuf, (PVOID)((entry_virtual & ~0xfff) - 0x1000))) {
-						systemMgr.log("patch2(): warning: search round 3: read VM failed.");
-						systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-						break;
-					}
-
-					// check if the entry we found is target mode. if it is, search complete.
-					if (0 != memcmp(vmbuf + 0x1000 + entry_virtual % 0x1000, traits, 8)) {
-						systemMgr.log("patch2(): warning: search round 3: warning: entry found do not match traits.");
-					} else {
-						target_offset = 0x1000 + entry_virtual % 0x1000;
-						systemMgr.log("patch2(): relative search found here: 0x%llx", entry_virtual);
-						systemMgr.log("patch2():  note: search path is [rip+0x%x] => 0x%llx => 0x%llx (syscall 0x%x)",
-							relative_shift, relative_virtual, entry_virtual, *(LONG*)(vmbuf + target_offset + 4));
-					}
-
-					break;
-				}
-			}
-		}
-
-
+		// check if target_offset found in all result in _findRip().
 		if (target_offset == -1) {
-			systemMgr.log("patch2(): no trait at %%rip = %llx.", *rip);
+			systemMgr.log("patch2(): round %u: trait not found in all result in _findRip().", try_times);
+			Sleep(10000);
+			continue;
 		} else {
-			systemMgr.log("patch2(): trait found at %%rip = %llx.", *rip);
 			break;
 		}
 	}
 
-
-	// if no target found in all rip, quit.
+	// decide whether trait found success in all rounds.
 	if (target_offset == -1) {
 		systemMgr.log("patch2(): no memory trait found in win32k / user32, abort.");
-		systemMgr.panic(0, "对目标地址空间的User32.dll操作失败，相关的选项(GetAsyncKeyState)将无法生效。\n"
-			               "在%%appdata%%\\sguard_limit\\log.txt中可以查看更详细的信息。");
+		driver.unload();
+		return false;
+	}
+
+
+	// before manip memory, check process status.
+	if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
+		systemMgr.log("patch2(): usr switched mode or process terminated, quit.");
+		driver.unload();
 		return false;
 	}
 
@@ -1227,10 +1258,11 @@ bool PatchManager::_patch_stage2() {
 }
 
 std::vector<ULONG64>
-PatchManager::_findRip() {
+PatchManager::_findRip(bool useAll) {
 
 	win32ThreadManager                  threadMgr;
 	auto&                               threadList   = threadMgr.threadList;
+	const DWORD                         sampleSecs   = 5;
 	std::unordered_map<ULONG64, DWORD>  contextMap;  // rip -> visit times
 	CONTEXT                             context;
 	context.ContextFlags = CONTEXT_ALL;
@@ -1256,8 +1288,8 @@ PatchManager::_findRip() {
 	for (auto& item : threadList) {
 		QueryThreadCycleTime(item.handle, &item.cycles);
 	}
-	// 2. sample cycles for 3 secs.
-	for (auto time = 1; time <= 3; time++) {
+	// 2. sample cycles for sampleSecs secs.
+	for (auto time = 1; time <= sampleSecs; time++) {
 		Sleep(1000);
 		for (auto& item : threadList) {
 			ULONG64 cycles;
@@ -1268,9 +1300,9 @@ PatchManager::_findRip() {
 			item.cycleDeltaAvg += item.cycleDelta;
 		}
 	}
-	// calc avg cycledelta. secs = 3.
+	// calc avg cycledelta.
 	for (auto& item : threadList) {
-		item.cycleDeltaAvg /= 3;
+		item.cycleDeltaAvg /= sampleSecs;
 	}
 
 
@@ -1290,8 +1322,8 @@ PatchManager::_findRip() {
 
 		contextMap.clear();
 
-		// sample 5 rounds. each round sample .5sec and wait .1sec.
-		for (auto round = 1; round <= 5; round++) {
+		// sample 4 rounds. each round sample .5sec and wait .5sec.
+		for (auto round = 1; round <= 4; round++) {
 			for (auto time = 1; time <= 50; time++) {
 				SuspendThread(threadList[i].handle);
 				if (GetThreadContext(threadList[i].handle, &context)) {
@@ -1300,20 +1332,20 @@ PatchManager::_findRip() {
 				ResumeThread(threadList[i].handle);
 				Sleep(10);
 			}
-			Sleep(100);
+			Sleep(500);
 		}
 
 
 		systemMgr.log("_findRip(): context of thread %u:", threadList[i].tid);
 
-		// if sample complete successfully, record 5 top visited rip in each thread.
+		// if sample complete successfully, record visited rip in each thread in decending order.
 		if (!contextMap.empty()) {
 
 			for (auto& it : contextMap)
 				systemMgr.log("_findRip(): > rip %llx -> cnt %u", it.first, it.second);
 
-
-			for (auto ripcount = 0; !contextMap.empty() && ripcount < 5; ripcount++) {
+			auto ripneed = useAll ? contextMap.size() : 5;
+			for (auto ripcount = 0; !contextMap.empty() && ripcount < ripneed; ripcount++) {
 				ULONG64 rip =
 					std::max_element(
 						contextMap.begin(), contextMap.end(),
@@ -1337,14 +1369,14 @@ PatchManager::_findRip() {
 	return result;
 }
 
-void PatchManager::_outVmbuf() {  // unused
+void PatchManager::_outVmbuf(ULONG64 vmStart, const CHAR* vmbuf) {  // for debug only
 
 	char title[512];
 	time_t t = time(0);
 	tm* local = localtime(&t);
 	sprintf(title, "[%d-%02d-%02d %02d.%02d.%02d] ",
 		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
-	sprintf(title + strlen(title), "vmstart_%llx.txt", vmStartAddress);
+	sprintf(title + strlen(title), "vmstart_%llx.txt", vmStart);
 
 	FILE* fp = fopen(title, "w");
 	if (fp) {
