@@ -1204,6 +1204,9 @@ bool PatchManager::_patch_stage2() {
 			a:  c3                      ret        ; previous rip.
 		*/
 
+		// if WIN7, use 0x31 to delay.
+		working_bytes[0x2f] = '\x31';
+
 		// allocate vm.
 		PVOID allocAddress = NULL;
 		status = driver.allocVM(pid, &allocAddress);
