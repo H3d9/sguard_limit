@@ -5,8 +5,9 @@
 
 
 // 全局对象
-UNICODE_STRING dev, dos;
-PDEVICE_OBJECT pDeviceObject;
+RTL_OSVERSIONINFOW   OSVersion;
+UNICODE_STRING       dev, dos;
+PDEVICE_OBJECT       pDeviceObject;
 
 
 // I/O接口事件和缓冲区结构
@@ -68,7 +69,8 @@ NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp) {
 	return STATUS_SUCCESS;
 }
 
-#define IOCTL_LOG_EXIT(errorName)  if (pEProcess) ObDereferenceObject(pEProcess); \
+#define IOCTL_LOG_EXIT(errorName)  if (hProcess) ZwClose(hProcess); \
+                                   if (pEProcess) ObDereferenceObject(pEProcess); \
                                    Input->errorCode = RtlNtStatusToDosError(Status); \
                                    memcpy(Input->errorFunc, errorName, sizeof(errorName)); \
                                    Irp->IoStatus.Information = sizeof(VMIO_REQUEST); \
@@ -78,12 +80,15 @@ NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp) {
 
 NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
-	ULONG          controlCode  = IoGetCurrentIrpStackLocation(Irp)->Parameters.DeviceIoControl.IoControlCode;
-	VMIO_REQUEST*  Input        = Irp->AssociatedIrp.SystemBuffer;  /* input buf init in user space */
-	NTSTATUS       Status       = STATUS_SUCCESS;
-	SIZE_T         rwSize       = 0x1000;      /* bytes io in an ioctl. same as sizeof(request->data) */
-	SIZE_T         allocSize    = 0x1000 * 4;  /* alloc 4 pages in an ioctl */
-	PEPROCESS      pEProcess    = NULL;
+	ULONG                controlCode  = IoGetCurrentIrpStackLocation(Irp)->Parameters.DeviceIoControl.IoControlCode;
+	VMIO_REQUEST*        Input        = Irp->AssociatedIrp.SystemBuffer;  /* copied from user space */
+	PEPROCESS            pEProcess    = NULL;
+	SIZE_T               rwSize       = 0x1000;      /* bytes io in an ioctl. = sizeof(request->data) */
+	SIZE_T               allocSize    = 0x1000 * 4;  /* alloc 4 pages in an ioctl. */
+	HANDLE               hProcess     = NULL;
+	OBJECT_ATTRIBUTES    objAttr      = { 0 };
+	CLIENT_ID            clientId     = { Input->pid, 0 };
+	NTSTATUS             Status       = STATUS_SUCCESS;
 
 
 	switch (controlCode) {
@@ -93,7 +98,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
 			
 			if (!NT_SUCCESS(Status)) {
-				IOCTL_LOG_EXIT("VMIO_READ:: (process id not found)");
+				IOCTL_LOG_EXIT("VMIO_READ::(process not found)");
 			}
 
 			Status = KeReadVirtualMemory(pEProcess, Input->address, &Input->data, rwSize);
@@ -109,20 +114,15 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
 
 			if (!NT_SUCCESS(Status)) {
-				IOCTL_LOG_EXIT("VMIO_WRITE:: (process id not found)");
+				IOCTL_LOG_EXIT("VMIO_WRITE::(process not found)");
 			}
-
-			HANDLE               hProcess;
-			OBJECT_ATTRIBUTES    objAttr    = {0};
-			CLIENT_ID            clientId;
-			clientId.UniqueProcess = Input->pid;
-			clientId.UniqueThread = 0;
 
 			Status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &clientId);
 
 			if (!NT_SUCCESS(Status)) {
-				IOCTL_LOG_EXIT("VMIO_WRITE::ZwOpenProcess");
+				IOCTL_LOG_EXIT("VMIO_WRITE::(process not found)");
 			}
+
 
 			ULONG oldProtect;
 
@@ -144,42 +144,33 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			if (!NT_SUCCESS(Status)) {
 				IOCTL_LOG_EXIT("VMIO_WRITE::ZwProtectVirtualMemory2");
 			}
-
-			ZwClose(hProcess);
 		}
 		break;
 
 		case VMIO_ALLOC:
 		{
-			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
-
-			if (!NT_SUCCESS(Status)) {
-				IOCTL_LOG_EXIT("VMIO_ALLOC:: (process id not found)");
-			}
-
-			HANDLE               hProcess;
-			OBJECT_ATTRIBUTES    objAttr = {0};
-			CLIENT_ID            clientId;
-			clientId.UniqueProcess = Input->pid;
-			clientId.UniqueThread = 0;
-
 			Status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &clientId);
 
 			if (!NT_SUCCESS(Status)) {
-				IOCTL_LOG_EXIT("VMIO_ALLOC::ZwOpenProcess");
+				IOCTL_LOG_EXIT("VMIO_ALLOC::(process not found)");
 			}
+
 
 			PVOID BaseAddress = NULL;
 
-			Status = ZwAllocateVirtualMemory(hProcess, &BaseAddress, 0, &allocSize, MEM_COMMIT, PAGE_EXECUTE);
-
+			if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) {
+				// 对于win7，约束堆的起始地址在32bit以内，以方便构造shellcode。注：参数ZeroBits的msdn描述有误，详见：
+				// https://stackoverflow.com/questions/50429365/what-is-the-most-reliable-portable-way-to-allocate-memory-at-low-addresses-on
+				Status = ZwAllocateVirtualMemory(hProcess, &BaseAddress, 0x7FFFFFFF, &allocSize, MEM_COMMIT, PAGE_EXECUTE);
+			} else {
+				Status = ZwAllocateVirtualMemory(hProcess, &BaseAddress, 0, &allocSize, MEM_COMMIT, PAGE_EXECUTE);
+			}
+			
 			if (!NT_SUCCESS(Status)) {
 				IOCTL_LOG_EXIT("VMIO_ALLOC::ZwAllocateVirtualMemory");
 			}
 
 			Input->address = BaseAddress;
-
-			ZwClose(hProcess);
 		}
 		break;
 
@@ -191,9 +182,14 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		break;
 	}
 
-	if (pEProcess) {
-		ObDereferenceObject(pEProcess); 
+	if (hProcess) {
+		ZwClose(hProcess);
 	}
+
+	if (pEProcess) {
+		ObDereferenceObject(pEProcess);
+	}
+
 
 	Irp->IoStatus.Information = sizeof(VMIO_REQUEST);
 	Irp->IoStatus.Status = STATUS_SUCCESS;
@@ -217,25 +213,21 @@ NTSTATUS DriverEntry(
 	PDRIVER_OBJECT pDriverObject, 
 	PUNICODE_STRING pRegistryPath) {
 
+	// 设置回调函数组
 	pDriverObject->MajorFunction[IRP_MJ_CREATE]         = CreateOrClose;    // <- CreateFile()
 	pDriverObject->MajorFunction[IRP_MJ_CLOSE]          = CreateOrClose;    // <- CloseHandle()
 	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = IoControl;        // <- DeviceIoControl()
 	pDriverObject->DriverUnload                         = UnloadDriver;     // <- service stop
 
-	RtlInitUnicodeString(&dev, L"\\Device\\SGuardLimit_VMIO");
-	RtlInitUnicodeString(&dos, L"\\DosDevices\\SGuardLimit_VMIO");
-	IoCreateSymbolicLink(&dos, &dev);
 
-	IoCreateDevice(pDriverObject, 0, &dev, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);
-	if (pDeviceObject) {
-		pDeviceObject->Flags |= DO_DIRECT_IO;
-		pDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-	} else {
-		return STATUS_UNSUCCESSFUL;
-	}
+	// 获取操作系统版本
+	memset(&OSVersion, 0, sizeof(RTL_OSVERSIONINFOW));
+	OSVersion.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
+	RtlGetVersion(&OSVersion);
 
-	// win7 x64的ntoskrnl.exe似乎没有导出ZwProtectVirtualMemory，无法直接引用。
-	// 由于装载未导出的函数将使得驱动加载失败，故此处不采用静态链接。
+
+	// win7x64的ntoskrnl.exe并没有导出ZwProtectVirtualMemory，无法直接引用。
+	// 若直接（隐式）动态链接，则win7的PEloader将找不到该函数入口导致驱动加载失败，故此处手动获取地址。
 
 	UNICODE_STRING ZwProtectVirtualMemoryName;
 	RtlInitUnicodeString(&ZwProtectVirtualMemoryName, L"ZwProtectVirtualMemory");
@@ -243,19 +235,14 @@ NTSTATUS DriverEntry(
 
 	if (!ZwProtectVirtualMemory) {
 
-		// 判断操作系统版本，如果不是win7（且没导出目标函数），则退出。
-		RTL_OSVERSIONINFOW OSVersion = {0};
-		OSVersion.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
-		RtlGetVersion(&OSVersion);
-
+		// 如果未导出目标函数，且不是win7（NT6.1），则退出。
 		if (!(OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1)) {
-
-			DbgPrintEx(0, 0, "unsupported OS. \n");
 			return STATUS_UNSUCCESSFUL;
 		}
 
 		// 若是win7，则尝试手动获取ZwProtectVirtualMemory的虚拟地址。
-		// 幸运的是，所有的Zw函数都按0x20字节对齐，并按顺序映射到连续的虚拟内存空间。
+		// 幸运的是，尽管win7的nt内核没有导出所有Zw函数，但所有SSDT中标明的服务都在内核中存在镜像入口，
+		// 此外所有的Zw函数都按0x20字节对齐，且依据SSDT中的顺序映射到连续的虚拟内存空间。
 		// 只要得到一个必定导出的Zw函数和目标Zw函数的系统服务号，就可以得到目标Zw函数的入口地址。
 
 		// 获取ZwClose的入口地址，该函数必定导出。
@@ -270,6 +257,21 @@ NTSTATUS DriverEntry(
 		// 索引到0号系统服务的地址，再索引到0x4D号系统服务的地址。
 		ZwProtectVirtualMemory = (PVOID)(ZwClose - 0x20 * ZwCloseId + 0x20 * 0x4D);
 	}
+
+
+	// 初始化符号链接和I/O设备
+	RtlInitUnicodeString(&dev, L"\\Device\\SGuardLimit_VMIO");
+	RtlInitUnicodeString(&dos, L"\\DosDevices\\SGuardLimit_VMIO");
+	IoCreateSymbolicLink(&dos, &dev);
+
+	IoCreateDevice(pDriverObject, 0, &dev, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);
+	if (pDeviceObject) {
+		pDeviceObject->Flags |= DO_DIRECT_IO;
+		pDeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
+	} else {
+		return STATUS_UNSUCCESSFUL;
+	}
+
 
 	return STATUS_SUCCESS;
 }
