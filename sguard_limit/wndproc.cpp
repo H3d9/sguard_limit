@@ -47,7 +47,7 @@ static void ShowAbout() {
 		"SGUARD讨论群：775176979\n\n"
 		"论坛链接：https://bbs.colg.cn/thread-8087898-1-1.html \n"
 		"项目地址：https://github.com/H3d9/sguard_limit （点ctrl+C复制到记事本）",
-		"SGuard限制器 " VERSION "  colg@H3d9",
+		"SGuard限制器 " VERSION "  by: @H3d9",
 		MB_OK);
 }
 

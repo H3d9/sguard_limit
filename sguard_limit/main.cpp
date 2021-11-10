@@ -109,7 +109,7 @@ INT WINAPI WinMain(
 			"3 修复旧版（21.10.16/17）在【win7】/【win11】下无效的问题。\n"
 			"  (特别感谢@白嫖怪 提供的远程win11系统)\n\n\n"
 			"【重要提示】若你第一次使用，建议双击右下角托盘图标，并仔细阅读说明。\n",
-			VERSION " colg@H3d9", MB_OK);	
+			VERSION "  by: @H3d9", MB_OK);	
 		if (IDYES == MessageBox(0, "要查看网页版说明么？", "提示", MB_YESNO)) {
 			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_SHOW);
 		}
