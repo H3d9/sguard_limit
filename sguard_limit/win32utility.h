@@ -1,7 +1,7 @@
 #pragma once
 #include <Windows.h>
 #include <vector>
-#include <memory> // std::unique_ptr
+#include <string>
 
 
 // system version (used in patch module)
@@ -115,8 +115,8 @@ private:
 	DWORD                        iconRcNum;
 	UINT                         trayActiveMsg;
 	NOTIFYICONDATA               icon;
-	std::unique_ptr<CHAR[]>      profileDir;
-	std::unique_ptr<CHAR[]>      profile;
-	std::unique_ptr<CHAR[]>      sysfile;
-	std::unique_ptr<CHAR[]>      logfile;
+	std::string                  profileDir;
+	std::string                  profile;
+	std::string                  sysfile;
+	std::string                  logfile;
 };

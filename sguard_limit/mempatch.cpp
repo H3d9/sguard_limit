@@ -16,8 +16,8 @@
 #include "win32utility.h"
 #include "kdriver.h"
 
-extern win32SystemManager&        systemMgr;
-KernelDriver&                     driver          = KernelDriver::getInstance();
+extern win32SystemManager&    systemMgr;
+KernelDriver&                 driver       = KernelDriver::getInstance();
 
 
 // patch module
@@ -133,16 +133,16 @@ void PatchManager::init() {
 
 
 	// copy system file.
-	const CHAR*      currentpath   = ".\\SGuardLimit_VMIO.sys";
-	const CHAR*      syspath       = systemMgr.sysfilePath();
-	FILE*            fp;
+	auto      currentpath   = ".\\SGuardLimit_VMIO.sys";
+	auto      syspath       = systemMgr.sysfilePath();
+	FILE*     fp;
 
 	fp = fopen(currentpath, "rb");
 
 	if (fp != NULL) {
 		fclose(fp);
 		if (!CopyFile(currentpath, syspath, FALSE)) {
-			systemMgr.panic("拷贝sys文件失败，你可以尝试重启SGUARD限制器或重启电脑");
+			systemMgr.panic("拷贝文件失败，你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", syspath);
 		} else {
 			DeleteFile(currentpath);
 		}
@@ -151,13 +151,14 @@ void PatchManager::init() {
 	fp = fopen(syspath, "rb");
 
 	if (fp == NULL) {
-		systemMgr.panic("找不到文件：SGuardLimit_VMIO.sys，这将导致MemPatch无法使用。\n请将该文件解压到同一目录下，并重启限制器。");
+		systemMgr.panic("找不到文件：SGuardLimit_VMIO.sys，这将导致MemPatch无法使用。\n"
+			            "你可以把附带的“sys文件”手动拷贝到以下路径，并重启限制器：\n\n%s", syspath);
 	} else {
 		fclose(fp);
 	}
 
 	// examine system version.
-	OSVersion osVersion = systemMgr.getSystemVersion();
+	auto osVersion = systemMgr.getSystemVersion();
 	if (osVersion == OSVersion::OTHERS) {
 		systemMgr.panic("注意：MemPatch模块只支持win7/win10/win11系统。你的系统不受支持。");
 	}
@@ -169,7 +170,7 @@ void PatchManager::init() {
 void PatchManager::patch() {
 
 	win32ThreadManager     threadMgr;
-	DWORD                  pid          = threadMgr.getTargetPid();
+	auto                   pid          = threadMgr.getTargetPid();
 
 
 	systemMgr.log("patch(): entering.");
@@ -245,8 +246,8 @@ void PatchManager::disable(bool forceRecover) {
 bool PatchManager::_patch_stage1() {
 
 	win32ThreadManager     threadMgr;
-	DWORD                  pid               = threadMgr.getTargetPid();
-	OSVersion              osVersion         = systemMgr.getSystemVersion();
+	auto                   pid               = threadMgr.getTargetPid();
+	auto                   osVersion         = systemMgr.getSystemVersion();
 	auto                   vmbuf             = vmbuf_ptr.get();
 	auto                   vmalloc           = vmalloc_ptr.get();
 	bool                   status;
@@ -353,7 +354,7 @@ bool PatchManager::_patch_stage1() {
 		// check if offset0 found in all result in _findRip().
 		if (offset0 < 0) {
 			systemMgr.log("patch1(): round %u: trait not found in all result in _findRip().", try_times);
-			Sleep(10000);
+			Sleep(15000);
 			continue;
 		} else {
 			break;
@@ -363,7 +364,7 @@ bool PatchManager::_patch_stage1() {
 	// decide whether trait found success in all rounds.
 	if (offset0 < 0) {
 		systemMgr.log("patch1(): trait search failed too many times, abort.");
-		systemMgr.panic(0, "似乎无法获取有效的内存特征，建议你重启电脑后再尝试。");
+		systemMgr.panic(0, "无法获取有效的内存特征，你可以重启游戏后再尝试限制SGUARD。");
 		driver.unload();
 		return false;
 	}
@@ -485,7 +486,7 @@ bool PatchManager::_patch_stage1() {
 			// 推测原因为sleep系统调用修改了调用者某个被优化到寄存器的局部变量，
 			// 而该寄存器在原系统调用中被优化编译器认为不会修改，或被ntdll封装的native api认为不会修改，
 			// 或并非由被调用者保存的寄存器（在windows x64的语义下）。
-			//  mov r10, rcx
+			//	mov r10, rcx
 			//	mov eax, 0x23
 			//	syscall
 			//	mov r10, 0xFFFFFFFFFF4143E0
@@ -636,9 +637,9 @@ bool PatchManager::_patch_stage1() {
 
 		// win7 ntdll maps 0x10 bytes for each syscall.
 		// that's really short to place shellcode, caus 'ret' cannot be moved.
-		// fortunately, VirtualAlloc in NT 6.1 will give an addr smaller than 0x1 0000 0000 in general.
+		// fortunately, by assigning param@ZeroBits we can make VirtualAlloc give an addr smaller than 0x1 0000 0000, then
 		// 0: use mov eax instead of rax. (rax's high 32-bit is 0 due to x86_64 isa convention)
-		// a: original 'ret' cannot change, for some threads to return correctly from previous syscall.
+		// a: [caution] original 'ret' cannot change, for some threads to return correctly from previous syscall.
 
 		CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
 		/*
@@ -708,18 +709,12 @@ bool PatchManager::_patch_stage1() {
 			LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x20;
 
 			// allocate vm.
-			// allocAddress must < 32 bit. (which satisfied in all test cases)
+			// allocAddress must < 32 bit, that's ensured by driver's allocator's param@ZeroBits.
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
 				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
-				driver.unload();
-				return false;
-			}
-			if ((ULONG64)allocAddress >= 0x100000000) {
-				systemMgr.log("patch1(): win7 warning: allocAddress is large(%p).", allocAddress);
-				systemMgr.panic("分配的内存地址过大（%p），无法使用。", allocAddress);
 				driver.unload();
 				return false;
 			}
@@ -766,12 +761,6 @@ bool PatchManager::_patch_stage1() {
 				driver.unload();
 				return false;
 			}
-			if ((ULONG64)allocAddress >= 0x100000000) {
-				systemMgr.log("patch1(): win7 warning: allocAddress is large(%p).", allocAddress);
-				systemMgr.panic("分配的内存地址过大（%p），无法使用。", allocAddress);
-				driver.unload();
-				return false;
-			}
 
 			// allocAddress => patch_bytes.
 			memcpy(patch_bytes + 0x1, &allocAddress, 4);
@@ -812,12 +801,6 @@ bool PatchManager::_patch_stage1() {
 			if (!status) {
 				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
-				driver.unload();
-				return false;
-			}
-			if ((ULONG64)allocAddress >= 0x100000000) {
-				systemMgr.log("patch1(): win7 warning: allocAddress is large(%p).", allocAddress);
-				systemMgr.panic("分配的内存地址过大（%p），无法使用。", allocAddress);
 				driver.unload();
 				return false;
 			}
@@ -962,7 +945,7 @@ bool PatchManager::_patch_stage2() {
 
 					target_offset = offset;
 
-					systemMgr.log("patch2(): strict search found here: +0x%x => syscall 0x%x", target_offset, *(LONG*)(traits + 4));
+					systemMgr.log("patch2(): strict search found here: +0x%x (syscall 0x%x)", target_offset, *(LONG*)(traits + 4));
 					break;
 				}
 			}
@@ -982,7 +965,7 @@ bool PatchManager::_patch_stage2() {
 						LONG real_call_num = *(LONG*)(traits + 4);
 						target_offset = offset - (found_call_num - 0x1000) * 0x20 + (real_call_num - 0x1000) * 0x20;
 
-						systemMgr.log("patch2(): fuzzy search found here: +0x%x => syscall 0x%x", target_offset, found_call_num);
+						systemMgr.log("patch2(): fuzzy search found here: +0x%x (syscall 0x%x)", target_offset, found_call_num);
 						break;
 					}
 				}
@@ -1056,7 +1039,7 @@ bool PatchManager::_patch_stage2() {
 		// check if target_offset found in all result in _findRip().
 		if (target_offset == -1) {
 			systemMgr.log("patch2(): round %u: trait not found in all result in _findRip().", try_times);
-			Sleep(10000);
+			Sleep(15000);
 			continue;
 		} else {
 			break;
@@ -1215,11 +1198,6 @@ bool PatchManager::_patch_stage2() {
 			driver.unload();
 			return false;
 		}
-		if ((ULONG64)allocAddress >= 0x100000000) {
-			systemMgr.log("patch2(): win7 warning: allocAddress is large(%p).", allocAddress);
-			driver.unload();
-			return false;
-		}
 
 		// allocAddress => patch_bytes.
 		memcpy(patch_bytes + 0x1, &allocAddress, 4);
@@ -1372,7 +1350,7 @@ PatchManager::_findRip(bool useAll) {
 	return result;
 }
 
-void PatchManager::_outVmbuf(ULONG64 vmStart, const CHAR* vmbuf) {  // for debug only
+void PatchManager::_outVmbuf(ULONG64 vmStart, const CHAR* vmbuf) {  // unused: for dbg only
 
 	char title[512];
 	time_t t = time(0);

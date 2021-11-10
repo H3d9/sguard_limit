@@ -11,11 +11,11 @@
 extern volatile bool            g_HijackThreadWaiting;
 extern volatile DWORD           g_Mode;
 
-extern win32SystemManager&      systemMgr;
-extern ConfigManager&           configMgr;
-extern LimitManager&            limitMgr;
-extern TraceManager&            traceMgr;
-extern PatchManager&            patchMgr;
+extern win32SystemManager& systemMgr;
+extern ConfigManager& configMgr;
+extern LimitManager& limitMgr;
+extern TraceManager& traceMgr;
+extern PatchManager& patchMgr;
 
 
 // about func: show about dialog box.

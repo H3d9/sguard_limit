@@ -122,7 +122,7 @@ win32SystemManager win32SystemManager::systemManager;
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL),
 	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), trayActiveMsg(), icon{}, iconRcNum(),
-	  profileDir(new CHAR[1024]), profile(new CHAR[1024]), sysfile(new CHAR[1024]), logfile(new CHAR[1024]) {}
+	  profileDir{}, profile{}, sysfile{}, logfile{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -181,41 +181,40 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 
 	// initialize path vars.
 	HANDLE       hToken;
-	DWORD        size    = 1024;
+	CHAR         buffer    [1024];
+	DWORD        size      = 1024;
 
 	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
-	GetUserProfileDirectory(hToken, profileDir.get(), &size);
-	strcat(profileDir.get(), "\\AppData\\Roaming\\sguard_limit");
+	GetUserProfileDirectory(hToken, buffer, &size);
+	profileDir =  buffer;
+	profileDir += "\\AppData\\Roaming\\sguard_limit";
 	CloseHandle(hToken);
 
-	strcpy(profile.get(), profileDir.get());
-	strcpy(sysfile.get(), profileDir.get());
-	strcpy(logfile.get(), profileDir.get());
-	strcat(profile.get(), "\\config.ini");
-	strcat(sysfile.get(), "\\SGuardLimit_VMIO.sys");
-	strcat(logfile.get(), "\\log.txt");
+	profile = profileDir + "\\config.ini";
+	sysfile = profileDir + "\\SGuardLimit_VMIO.sys";
+	logfile = profileDir + "\\log.txt";
 
 
 	// initialize profile directory.
-	DWORD pathAttr = GetFileAttributes(profileDir.get());
+	DWORD pathAttr = GetFileAttributes(profileDir.c_str());
 	if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
-		if (!CreateDirectory(profileDir.get(), NULL)) {
-			panic("%s目录创建失败。", profileDir.get());
+		if (!CreateDirectory(profileDir.c_str(), NULL)) {
+			panic("目录%s创建失败。", profileDir.c_str());
 			return false;
 		}
 	}
 
 
 	// initialize log subsystem.
-	DWORD filesize = GetCompressedFileSize(logfile.get(), NULL);
+	DWORD filesize = GetCompressedFileSize(logfile.c_str(), NULL);
 	if (filesize != INVALID_FILE_SIZE && filesize > (1 << 16)) {
-		DeleteFile(logfile.get());
+		DeleteFile(logfile.c_str());
 	}
 
-	logfp = fopen(logfile.get(), "a+");
+	logfp = fopen(logfile.c_str(), "a+");
 
 	if (!logfp) {
-		panic("打开log文件%s失败。", logfile.get());
+		panic("打开log文件%s失败。", logfile.c_str());
 		return false;
 	}
 
@@ -419,11 +418,11 @@ void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 }
 
 const CHAR* win32SystemManager::sysfilePath() {
-	return sysfile.get();
+	return sysfile.c_str();
 }
 
 const CHAR* win32SystemManager::profilePath() {
-	return profile.get();
+	return profile.c_str();
 }
 
 OSVersion win32SystemManager::getSystemVersion() {

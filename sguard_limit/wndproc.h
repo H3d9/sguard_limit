@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "21.11.3 万圣节特别版"
+#define VERSION             "21.11.5 万圣节特别版"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 
