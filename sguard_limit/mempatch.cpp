@@ -8,8 +8,8 @@
 #include <time.h>
 #include <vector>
 #include <unordered_map>
-#include <algorithm> // std::sort
-#include <memory>    // std::unique_ptr
+#include <algorithm>   // std::sort
+#include <memory>      // std::unique_ptr
 #include "mempatch.h"
 
 // dependencies
