@@ -2,7 +2,7 @@
 // 2021.10.4 雨
 // 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
 // 2021.11.1 万圣节
-// 明天，我在等明天。
+// 明天已经到来了。
 #include <Windows.h>
 #include <stdio.h>
 #include <time.h>
@@ -30,7 +30,7 @@ PatchManager::PatchManager()
 	   { 100, 1000, 1500 },   /* GetAsyncKeyState */
 	   { 1,   10,   200  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 }    /* NtDelayExecution */
-      }, vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
+	  }, vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
 
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
