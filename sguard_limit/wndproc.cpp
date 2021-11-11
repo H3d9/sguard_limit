@@ -11,11 +11,11 @@
 extern volatile bool            g_HijackThreadWaiting;
 extern volatile DWORD           g_Mode;
 
-extern win32SystemManager& systemMgr;
-extern ConfigManager& configMgr;
-extern LimitManager& limitMgr;
-extern TraceManager& traceMgr;
-extern PatchManager& patchMgr;
+extern win32SystemManager&      systemMgr;
+extern ConfigManager&           configMgr;
+extern LimitManager&            limitMgr;
+extern TraceManager&            traceMgr;
+extern PatchManager&            patchMgr;
 
 
 // about func: show about dialog box.
@@ -110,7 +110,7 @@ static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, 
 				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：GetAsyncKeyState");
 			} else if (lParam == 2) {
 				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtWaitForSingleObject\n【注意】不建议设置大于100的数值。");
-			} else { // if lParam == 3
+			} else { // lParam == 3
 				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtDelayExecution");
 			}
 
@@ -155,11 +155,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			
 			CHAR    buf      [128] = {};
 			HMENU   hMenu          = CreatePopupMenu();
-			HMENU   hSubMenu       = CreatePopupMenu();
+			HMENU   hMenuModes     = CreatePopupMenu();
+			HMENU   hMenuOthers    = CreatePopupMenu();
 
-			AppendMenu(hSubMenu, MFT_STRING, IDM_MORE_UPDATEPAGE, "检查更新【当前版本：" VERSION "】");
-			AppendMenu(hSubMenu, MFT_STRING, IDM_ABOUT,           "查看说明");
-			AppendMenu(hSubMenu, MFT_STRING, IDM_MORE_SOURCEPAGE, "查看源代码");
+			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_HIJACK,  "切换到：时间片轮转");
+			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_TRACE,   "切换到：线程追踪");
+			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_PATCH,   "切换到：MemPatch V3");
+			if (g_Mode == 0) {
+				CheckMenuItem(hMenuModes, IDM_MODE_HIJACK, MF_CHECKED);
+			} else if (g_Mode == 1) {
+				CheckMenuItem(hMenuModes, IDM_MODE_TRACE,  MF_CHECKED);
+			} else { // if g_Mode == 2
+				CheckMenuItem(hMenuModes, IDM_MODE_PATCH,  MF_CHECKED);
+			}
+
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_UPDATEPAGE, "检查更新【当前版本：" VERSION "】");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_ABOUT,           "查看说明");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_SOURCEPAGE, "查看源代码");
 
 
 			if (g_Mode == 0) {
@@ -170,27 +182,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				} else {
 					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 侦测到SGuard");
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：时间片轮转  [点击切换]");
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes,  "当前模式：时间片轮转  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT90, "限制资源：90%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT95, "限制资源：95%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT99, "限制资源：99%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT999, "限制资源：99.9%");
+				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT90,       "限制资源：90%");
+				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT95,       "限制资源：95%");
+				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT99,       "限制资源：99%");
+				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT999,      "限制资源：99.9%");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT, "停止限制");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, "其他选项");
-				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
+				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT,       "停止限制");
 				if (limitMgr.limitEnabled) {
 					switch (limitMgr.limitPercent) {
 					case 90:
-						CheckMenuItem(hMenu, IDM_PERCENT90, MF_CHECKED);
+						CheckMenuItem(hMenu, IDM_PERCENT90,  MF_CHECKED);
 						break;
 					case 95:
-						CheckMenuItem(hMenu, IDM_PERCENT95, MF_CHECKED);
+						CheckMenuItem(hMenu, IDM_PERCENT95,  MF_CHECKED);
 						break;
 					case 99:
-						CheckMenuItem(hMenu, IDM_PERCENT99, MF_CHECKED);
+						CheckMenuItem(hMenu, IDM_PERCENT99,  MF_CHECKED);
 						break;
 					case 999:
 						CheckMenuItem(hMenu, IDM_PERCENT999, MF_CHECKED);
@@ -201,9 +210,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 			} else if (g_Mode == 1) {
 				if (!traceMgr.lockEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 用户手动暂停");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuard限制器 - 用户手动暂停");
 				} else if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuard限制器 - 等待游戏运行");
 				} else {
 					if (traceMgr.lockPid == 0) {
 						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 正在分析");
@@ -230,21 +239,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 					}
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：线程追踪  [点击切换]");
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes,  "当前模式：线程追踪  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3, "锁定");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1, "弱锁定");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR, "锁定-rr");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR, "弱锁定-rr");
-				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK, "解除锁定");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3,           "锁定");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1,           "弱锁定");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR,         "锁定-rr");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR,         "弱锁定-rr");
+				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK,          "解除锁定");
 				if (traceMgr.lockMode == 1 || traceMgr.lockMode == 3) {
+					AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 					sprintf(buf, "设置时间切分（当前：%d）", traceMgr.lockRound);
 					AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
 				}
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, "其他选项");
-				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
 				if (traceMgr.lockEnabled) {
 					switch (traceMgr.lockMode) {
 					case 0:
@@ -292,21 +298,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 					}
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_SWITCHMODE, "当前模式：MemPatch V3  [点击切换]");
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes,  "当前模式：MemPatch V3  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_DOPATCH, "自动");
-				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH, "撤销修改");
+				AppendMenu(hMenu, MFT_STRING, IDM_DOPATCH,         "自动");
+				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH,        "撤销修改");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1, "inline Ntdll!NtQueryVirtualMemory");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2, "inline User32!GetAsyncKeyState");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3, "inline Ntdll!NtWaitForSingleObject");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH4, "re-write Ntdll!NtDelayExecution");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1,    "inline Ntdll!NtQueryVirtualMemory");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2,    "inline User32!GetAsyncKeyState");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3,    "inline Ntdll!NtWaitForSingleObject");
+				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH4,    "re-write Ntdll!NtDelayExecution");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				sprintf(buf, "设置延时（当前：%u/%u/%u/%u）", patchMgr.patchDelay[0], patchMgr.patchDelay[1], patchMgr.patchDelay[2], patchMgr.patchDelay[3]);
 				AppendMenu(hMenu, MFT_STRING, IDM_SETDELAY, buf);
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, "其他选项");
-				AppendMenu(hMenu, MFT_STRING, IDM_EXIT, "退出");
+
 				CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH1, MF_CHECKED);
@@ -321,7 +325,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH4, MF_CHECKED);
 				}
 			}
-			
+
+			AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+			AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuOthers, "其他选项");
+			AppendMenu(hMenu, MFT_STRING, IDM_EXIT,            "退出");
+
+
 			POINT pt;
 			GetCursorPos(&pt);
 			SetForegroundWindow(hWnd);
@@ -341,22 +350,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			case IDM_ABOUT:
 				ShowAbout();
 				break;
-			case IDM_SWITCHMODE:
-				if (g_Mode == 0) {
-					limitMgr.disable();
-					traceMgr.enable();
-					g_Mode = 1;
-				} else if (g_Mode == 1) {
-					traceMgr.disable();
-					patchMgr.enable();
-					g_Mode = 2;
-				} else {
-					patchMgr.disable();
-					limitMgr.enable();
-					g_Mode = 0;
-				}
-				configMgr.writeConfig();
-				break;
 			case IDM_EXIT:
 			{
 				if (g_Mode == 0 && limitMgr.limitEnabled) {
@@ -369,6 +362,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				PostMessage(hWnd, WM_CLOSE, 0, 0);
 			}
 			break;
+			
+			// mode command
+			case IDM_MODE_HIJACK:
+			{
+				traceMgr.disable();
+				patchMgr.disable();
+				limitMgr.enable();
+				g_Mode = 0;
+				configMgr.writeConfig();
+			}
+				break;
+			case IDM_MODE_TRACE:
+			{
+				limitMgr.disable();
+				patchMgr.disable();
+				traceMgr.enable();
+				g_Mode = 1;
+				configMgr.writeConfig();
+			}
+				break;
+			case IDM_MODE_PATCH:
+			{
+				limitMgr.disable();
+				traceMgr.disable();
+				patchMgr.enable();
+				g_Mode = 2;
+				configMgr.writeConfig();
+			}
+				break;
 
 			// limit command
 			case IDM_PERCENT90:

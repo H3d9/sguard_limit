@@ -102,9 +102,10 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【首次使用说明】\n\n"
+			"1 增强win7内核态功能的稳定性，修订部分细节。\n\n"
+			"2 修改右键菜单中的模式切换选项。\n\n"
 			"更新模式：MemPatch V3\n\n"
-			"【新特性】在上一版的基础上进一步压缩SGUARD的cpu使用率令其接近0。\n（但必要时SGUARD仍会短暂占用cpu以防游戏出现异常）\n\n"
-			"更新内容：针对win7增强稳定性，修订部分细节。\n\n\n"
+			"【新特性】在上一版的基础上进一步压缩SGUARD的cpu使用率令其接近0。\n（但必要时SGUARD仍会短暂占用cpu以防游戏出现异常）\n\n\n"
 			"【重要提示】若你第一次使用，建议仔细阅读说明（右键菜单->其他选项）。\n",
 			VERSION "  by: @H3d9", MB_OK);	
 		if (IDYES == MessageBox(0, "要查看网页版说明么？", "提示", MB_YESNO)) {

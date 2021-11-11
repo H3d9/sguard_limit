@@ -8,37 +8,41 @@
 
 #define IDM_ABOUT           200
 #define IDM_EXIT            201
-#define IDM_SWITCHMODE      202
+
+#define IDM_MODE_HIJACK     202
+#define IDM_MODE_TRACE      203
+#define IDM_MODE_PATCH      204
 
 
 // limit wndproc button command
-#define IDM_PERCENT90       203
-#define IDM_PERCENT95       204
-#define IDM_PERCENT99       205
-#define IDM_PERCENT999      206
-#define IDM_STOPLIMIT       207
+#define IDM_PERCENT90       205
+#define IDM_PERCENT95       206
+#define IDM_PERCENT99       207
+#define IDM_PERCENT999      208
+#define IDM_STOPLIMIT       209
 
 
 // trace wndproc button command
-#define IDM_LOCK3           208
-#define IDM_LOCK1           209
-#define IDM_LOCK3RR         210
-#define IDM_LOCK1RR         211
-#define IDM_SETRRTIME       212
-#define IDM_UNLOCK          213
+#define IDM_LOCK3           210
+#define IDM_LOCK1           211
+#define IDM_LOCK3RR         212
+#define IDM_LOCK1RR         213
+#define IDM_SETRRTIME       214
+#define IDM_UNLOCK          215
 
 
 // mempatch wndproc button command
-#define IDM_DOPATCH         214
-#define IDM_UNDOPATCH       215
-#define IDM_SETDELAY        216
-#define IDM_PATCHSWITCH1    217
-#define IDM_PATCHSWITCH2    218
-#define IDM_PATCHSWITCH3    219
-#define IDM_PATCHSWITCH4    220
+#define IDM_DOPATCH         216
+#define IDM_UNDOPATCH       217
+#define IDM_SETDELAY        218
+#define IDM_PATCHSWITCH1    219
+#define IDM_PATCHSWITCH2    220
+#define IDM_PATCHSWITCH3    221
+#define IDM_PATCHSWITCH4    222
 
-#define IDM_MORE_UPDATEPAGE 221
-#define IDM_MORE_SOURCEPAGE 222
+
+#define IDM_MORE_UPDATEPAGE 223
+#define IDM_MORE_SOURCEPAGE 224
 
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
