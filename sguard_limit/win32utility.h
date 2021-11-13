@@ -99,22 +99,29 @@ public:
 	void          panic(DWORD errorCode, const char* format, ...);
 				  
 public:			  
-	const CHAR*   profilePath();  // used by config manager
-	const CHAR*   sysfilePath();  // used by mempatch module
-	OSVersion     getSystemVersion();
-	DWORD         getSystemBuildNum();
-				  
+	const CHAR*   profilePath();       // config manager
+	const CHAR*   sysfilePath();       // mempatch module
+	const CHAR*   profileDirPath();    // mempatch module
+	OSVersion     getSystemVersion();  // mempatch module
+	DWORD         getSystemBuildNum(); // mempatch module
+	
+
 private:		  
 	ATOM          _registerMyClass(WNDPROC WndProc);
+	void          _panic(DWORD code, char* showbuf);
 
 private:
 	HANDLE                       hProgram;
+
 	OSVersion                    osVersion;
 	DWORD                        osBuildNum;
+
 	FILE*                        logfp;
+
 	DWORD                        iconRcNum;
-	UINT                         trayActiveMsg;
 	NOTIFYICONDATA               icon;
+	UINT                         trayActiveMsg;
+
 	std::string                  profileDir;
 	std::string                  profile;
 	std::string                  sysfile;

@@ -16,6 +16,7 @@
 #include "win32utility.h"
 #include "kdriver.h"
 
+extern volatile DWORD         g_Mode;      // ref: patch::init()
 extern win32SystemManager&    systemMgr;
 KernelDriver&                 driver       = KernelDriver::getInstance();
 
@@ -41,6 +42,7 @@ void PatchManager::init() {
 	// import certificate key.
 	HKEY       key;
 	DWORD      dwDisposition;
+	LONG       status;
 	const BYTE keyData[] = "\x53\x00\x00\x00\x01\x00\x00\x00\x23\x00\x00\x00\x30\x21\x30\x1f\x06\x09\x60\x86\x48\x01"
 		"\xa4\xa2\x27\x02\x01\x30\x12\x30\x10\x06\x0a\x2b\x06\x01\x04\x01\x82\x37\x3c\x01\x01\x03\x02\x00\xc0"
 		"\x5c\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x00\x10\x00\x00\x03\x00\x00\x00\x01\x00\x00\x00\x14"
@@ -115,56 +117,60 @@ void PatchManager::init() {
 		"\x42\x0d\x7c\xe3\x61\x24\x90\xd4\xd9\x42\x18\x35\xa8\x9a\x05\xf1\x4e\x3c\xa3\xfd\x98\x7c\x51\xcd\x62"
 		"\xf2\x92\x69\x45\xcf\xbf\xf3\x2c\xaa";
 
-	if (ERROR_SUCCESS != RegCreateKeyEx(
-		HKEY_LOCAL_MACHINE,
-		"SOFTWARE\\Microsoft\\SystemCertificates\\ROOT\\Certificates\\E403A1DFC8F377E0F4AA43A83EE9EA079A1F55F2\\",
-		0, 0, 0, KEY_ALL_ACCESS, 0, &key, &dwDisposition)) {
-		systemMgr.panic("RegCreateKeyEx失败，你可能需要手动安装证书");
-	}
+	status = RegCreateKeyEx(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\SystemCertificates\\ROOT\\Certificates\\E403A1DFC8F377E0F4AA43A83EE9EA079A1F55F2\\", 
+		0, 0, 0, KEY_ALL_ACCESS, 0, &key, &dwDisposition);
 
-	if (dwDisposition == REG_CREATED_NEW_KEY) {
-		if (ERROR_SUCCESS != RegSetValueEx(key, "Blob", 0, REG_BINARY, keyData, sizeof(keyData) - 1)) {
-			systemMgr.panic("RegSetValueEx失败，你可能需要手动安装证书");
+	if (status == ERROR_SUCCESS) {
+		if (dwDisposition == REG_CREATED_NEW_KEY) {
+			status = RegSetValueEx(key, "Blob", 0, REG_BINARY, keyData, sizeof(keyData) - 1);
+			if (status == ERROR_SUCCESS) {
+				Sleep(1000);
+			}
 		}
-		Sleep(1000);
+		RegCloseKey(key);
 	}
 
-	RegCloseKey(key);
+	if (status != ERROR_SUCCESS) {
+		if (IDYES == MessageBox(NULL, "创建注册表项失败，你可能需要手动安装证书。\n要打开证书下载页面么？", "注意", MB_YESNO)) {
+			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_SHOW);
+		}
+	}
 
 
 	// copy system file.
-	auto      currentpath   = ".\\SGuardLimit_VMIO.sys";
-	auto      syspath       = systemMgr.sysfilePath();
+	auto      currentPath      = ".\\SGuardLimit_VMIO.sys";
+	auto      sysfilePath      = systemMgr.sysfilePath();
+	auto      profileDirPath   = systemMgr.profileDirPath();
 	FILE*     fp;
 
-	fp = fopen(currentpath, "rb");
+	fp = fopen(currentPath, "rb");
 
 	if (fp != NULL) {
 		fclose(fp);
-		if (!CopyFile(currentpath, syspath, FALSE)) {
-			systemMgr.panic("拷贝文件失败，你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", syspath);
+		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
+			systemMgr.panic("拷贝文件失败，你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", profileDirPath);
 		} else {
-			DeleteFile(currentpath);
+			DeleteFile(currentPath);
 		}
 	}
 
-	fp = fopen(syspath, "rb");
+	fp = fopen(sysfilePath, "rb");
 
 	if (fp == NULL) {
-		systemMgr.panic("找不到文件：SGuardLimit_VMIO.sys，这将导致MemPatch无法使用。\n"
-			            "你可以把附带的“sys文件”手动拷贝到以下路径，并重启限制器：\n\n%s", syspath);
+		systemMgr.panic("找不到文件：SGuardLimit_VMIO.sys。\n"
+			            "你可以把附带的“sys文件”手动拷贝到以下路径，并重启限制器：\n\n%s", profileDirPath);
 	} else {
 		fclose(fp);
 	}
 
 	// examine system version.
 	auto osVersion = systemMgr.getSystemVersion();
-	if (osVersion == OSVersion::OTHERS) {
-		systemMgr.panic("注意：MemPatch模块只支持win7/win10/win11系统。你的系统不受支持。");
+	if (osVersion == OSVersion::OTHERS && g_Mode == 2) {
+		systemMgr.panic("注意：MemPatch模块只支持win7/win10/win11系统，建议你使用其他模式。");
 	}
 
 	// initalize driver submodule.
-	driver.init(systemMgr.sysfilePath());
+	driver.init(sysfilePath);
 }
 
 void PatchManager::patch() {
@@ -176,7 +182,7 @@ void PatchManager::patch() {
 	systemMgr.log("patch(): entering.");
 
 	if (pid != 0         /* target exist */ &&
-	    pid != patchPid  /* target is not current */) {
+		pid != patchPid  /* target is not current */) {
 
 		// reset status.
 		patchPid           = 0;
@@ -197,7 +203,10 @@ void PatchManager::patch() {
 
 
 		// v2 switches (ntdll).
-		if (patchSwitches.NtQueryVirtualMemory || patchSwitches.NtWaitForSingleObject || patchSwitches.NtDelayExecution) {
+		if (patchSwitches.NtQueryVirtualMemory  || 
+			patchSwitches.NtWaitForSingleObject || 
+			patchSwitches.NtDelayExecution
+			) {
 			if (_patch_stage1()) {
 				patchStatus.stage1 = true;
 			} else {
@@ -272,7 +281,6 @@ bool PatchManager::_patch_stage1() {
 	driver.load();
 
 	if (!status) {
-		systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 		systemMgr.panic(driver.errorCode, driver.errorMessage);
 		return false;
 	}
@@ -337,7 +345,7 @@ bool PatchManager::_patch_stage1() {
 						offset0 = offset - 0x10 * syscall_num;
 					}
 
-					systemMgr.log("patch1(): offset0 found here: +0x%x => syscall 0x%x", offset0, syscall_num);
+					systemMgr.log("patch1(): offset0 found here: +0x%x (syscall 0x%x)", offset0, syscall_num);
 					break;
 				}
 			}
@@ -364,7 +372,8 @@ bool PatchManager::_patch_stage1() {
 	// decide whether trait found success in all rounds.
 	if (offset0 < 0) {
 		systemMgr.log("patch1(): trait search failed too many times, abort.");
-		systemMgr.panic(0, "无法获取有效的内存特征，你可以重启游戏后再尝试限制SGUARD。");
+		systemMgr.panic(0, "无法获取有效的内存特征，你可以重启游戏后再尝试限制SGUARD。\n"
+		                   "如果你总是出现该问题，可以尝试其他模式。");
 		driver.unload();
 		return false;
 	}
@@ -452,7 +461,6 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -476,7 +484,6 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -578,7 +585,6 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -602,7 +608,6 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -713,7 +718,6 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -740,7 +744,6 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -756,7 +759,6 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -783,7 +785,6 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -799,7 +800,6 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -826,7 +826,6 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 				systemMgr.panic(driver.errorCode, driver.errorMessage);
 				driver.unload();
 				return false;
@@ -839,7 +838,6 @@ bool PatchManager::_patch_stage1() {
 	status =
 	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
-		systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
 		systemMgr.panic(driver.errorCode, driver.errorMessage);
 		driver.unload();
 		return false;
@@ -856,9 +854,9 @@ bool PatchManager::_patch_stage1() {
 bool PatchManager::_patch_stage2() {
 
 	win32ThreadManager       threadMgr;
-	DWORD                    pid               = threadMgr.getTargetPid();
-	OSVersion                osVersion         = systemMgr.getSystemVersion();
-	DWORD                    osBuildNumber     = systemMgr.getSystemBuildNum();
+	auto                     pid               = threadMgr.getTargetPid();
+	auto                     osVersion         = systemMgr.getSystemVersion();
+	auto                     osBuildNumber     = systemMgr.getSystemBuildNum();
 	auto                     vmbuf             = vmbuf_ptr.get();
 	auto                     vmalloc           = vmalloc_ptr.get();
 	bool                     status;
@@ -932,7 +930,7 @@ bool PatchManager::_patch_stage2() {
 				traits[4] = '\x47';  // win10 1909 and former: 0x1047
 			} else if (osVersion == OSVersion::WIN_10_11 && osBuildNumber >= 22000) {
 				traits[4] = '\x3f';  // win11: 0x103f
-			} // else default to:    // win10 after 1909: 0x1044
+			} // else default to:    // win10 after 1909 || win7: 0x1044
 
 
 			// loop var to search for syscall entry.
@@ -1243,14 +1241,14 @@ PatchManager::_findRip(bool useAll) {
 
 	win32ThreadManager                  threadMgr;
 	auto&                               threadList   = threadMgr.threadList;
-	const DWORD                         sampleSecs   = 5;
+	constexpr auto                      sampleSecs   = 5;
 	std::unordered_map<ULONG64, DWORD>  contextMap;  // rip -> visit times
 	CONTEXT                             context;
 	context.ContextFlags = CONTEXT_ALL;
 
-	char                                infoBuf      [1024];
+	char                                logBuf      [1024];
 	std::vector<ULONG64>                result       = {};
-
+	
 
 	// open thread.
 	if (!threadMgr.getTargetPid()) {
@@ -1291,11 +1289,11 @@ PatchManager::_findRip(bool useAll) {
 	std::sort(threadList.begin(), threadList.end(),
 		[](auto& a, auto& b) { return a.cycleDeltaAvg > b.cycleDeltaAvg; });
 
-	strcpy(infoBuf, "_findRip(): top 3 threads: ");
+	strcpy(logBuf, "_findRip(): top 3 threads: ");
 	for (auto i = 0; i < threadList.size() && i < 3; i++) {
-		sprintf(infoBuf + strlen(infoBuf), " %u(%llu)", threadList[i].tid, threadList[i].cycleDeltaAvg);
+		sprintf(logBuf + strlen(logBuf), " %u(%llu)", threadList[i].tid, threadList[i].cycleDeltaAvg);
 	}
-	systemMgr.log(infoBuf);
+	systemMgr.log(logBuf);
 
 
 	// sample rip in top 3 threads. 
@@ -1341,11 +1339,11 @@ PatchManager::_findRip(bool useAll) {
 	}
 
 
-	strcpy(infoBuf, "_findRip(): result: ");
+	strcpy(logBuf, "_findRip(): result: ");
 	for (auto item : result) {
-		sprintf(infoBuf + strlen(infoBuf), "%llx ", item);
+		sprintf(logBuf + strlen(logBuf), "%llx ", item);
 	}
-	systemMgr.log(infoBuf);
+	systemMgr.log(logBuf);
 	
 	return result;
 }

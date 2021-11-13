@@ -68,7 +68,7 @@ DWORD win32ThreadManager::getTargetPid() {  // ret == 0 if no proc.
 	}
 
 	for (BOOL next = Process32First(hSnapshot, &pe); next; next = Process32Next(hSnapshot, &pe)) {
-		if (lstrcmpi(pe.szExeFile, "SGuard64.exe") == 0) {
+		if (_strcmpi(pe.szExeFile, "SGuard64.exe") == 0) {
 			pid = pe.th32ProcessID;
 			break; // assert: only 1 pinstance.
 		}
@@ -121,7 +121,7 @@ win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL),
-	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), trayActiveMsg(), icon{}, iconRcNum(),
+	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), iconRcNum(), icon{}, trayActiveMsg(),
 	  profileDir{}, profile{}, sysfile{}, logfile{} {}
 
 win32SystemManager::~win32SystemManager() {
@@ -190,19 +190,25 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 	profileDir += "\\AppData\\Roaming\\sguard_limit";
 	CloseHandle(hToken);
 
-	profile = profileDir + "\\config.ini";
-	sysfile = profileDir + "\\SGuardLimit_VMIO.sys";
-	logfile = profileDir + "\\log.txt";
-
-
 	// initialize profile directory.
 	DWORD pathAttr = GetFileAttributes(profileDir.c_str());
 	if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
 		if (!CreateDirectory(profileDir.c_str(), NULL)) {
-			panic("目录%s创建失败。", profileDir.c_str());
-			return false;
+			// if create dir failed (dir contains special chars), redirect to
+			profileDir = "C:\\sguard_limit";
+			pathAttr = GetFileAttributes(profileDir.c_str());
+			if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
+				if (!CreateDirectory(profileDir.c_str(), NULL)) {
+					panic("目录%s创建失败。", profileDir.c_str());
+					return false;
+				}
+			}
 		}
 	}
+
+	profile = profileDir + "\\config.ini";
+	sysfile = profileDir + "\\SGuardLimit_VMIO.sys";
+	logfile = profileDir + "\\log.txt";
 
 
 	// initialize log subsystem.
@@ -369,60 +375,38 @@ void win32SystemManager::log(const char* format, ...) {
 
 void win32SystemManager::panic(const char* format, ...) {
 
-	char buf[2048];
+	CHAR buf[1024];
+
 	va_list arg;
 	va_start(arg, format);
 	vsprintf(buf, format, arg);
 	va_end(arg);
 
-	DWORD error = GetLastError();
-
-	if (error != 0) {
-		char* description = NULL;
-		FormatMessage(
-			FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-			error,
-			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-			(LPSTR)&description,
-			0, NULL);
-
-		sprintf(buf + strlen(buf), "\n\n发生的错误：(0x%x) %s", error, description);
-		LocalFree(description);
-	}
-
-	MessageBox(0, buf, 0, MB_OK);
+	_panic(GetLastError(), buf);
 }
 
 void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 
-	char buf[2048];
+	CHAR buf[1024];
+
 	va_list arg;
 	va_start(arg, format);
 	vsprintf(buf, format, arg);
 	va_end(arg);
-	
-	if (errorCode != 0) {
-		char* description = NULL;
-		FormatMessage(
-			FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-			errorCode,
-			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-			(LPSTR)&description,
-			0, NULL);
 
-		sprintf(buf + strlen(buf), "\n\n发生的错误：(0x%x) %s", errorCode, description);
-		LocalFree(description);
-	}
+	_panic(errorCode, buf);
+}
 
-	MessageBox(0, buf, 0, MB_OK);
+const CHAR* win32SystemManager::profilePath() {
+	return profile.c_str();
 }
 
 const CHAR* win32SystemManager::sysfilePath() {
 	return sysfile.c_str();
 }
 
-const CHAR* win32SystemManager::profilePath() {
-	return profile.c_str();
+const CHAR* win32SystemManager::profileDirPath() {
+	return profileDir.c_str();
 }
 
 OSVersion win32SystemManager::getSystemVersion() {
@@ -449,4 +433,21 @@ ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc) {
 	wc.lpszClassName = "SGuardLimit_WindowClass";
 
 	return RegisterClass(&wc);
+}
+
+void win32SystemManager::_panic(DWORD code, char* showbuf) {
+
+	// assert: showbuf[] is huge enough.
+	if (code != 0) {
+
+		char* description = NULL;
+
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+			          code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&description, 0, NULL);
+
+		sprintf(showbuf + strlen(showbuf), "\n\n发生的错误：(0x%x) %s", code, description);
+		LocalFree(description);
+	}
+
+	MessageBox(0, showbuf, 0, MB_OK);
 }
