@@ -113,6 +113,8 @@ INT WINAPI WinMain(
 			VERSION "  by: @H3d9", MB_OK);
 	}
 
+	limitMgr.init();
+
 	patchMgr.init();
 
 
