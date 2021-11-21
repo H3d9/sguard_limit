@@ -8,14 +8,14 @@
 #include "tracecore.h"
 #include "mempatch.h"
 
-extern volatile bool            g_HijackThreadWaiting;
-extern volatile DWORD           g_Mode;
-
 extern win32SystemManager&      systemMgr;
 extern ConfigManager&           configMgr;
 extern LimitManager&            limitMgr;
 extern TraceManager&            traceMgr;
 extern PatchManager&            patchMgr;
+
+extern volatile bool            g_HijackThreadWaiting;
+extern volatile DWORD           g_Mode;
 
 
 // about func: show about dialog box.
@@ -26,7 +26,10 @@ static void ShowAbout() {
 		"如果你发现无法正常使用，请更换模式或选项；若还不行请停止使用，并将遇到的错误反馈至下方链接。\n\n"
 		"【工作模式说明】\n\n"
 		"1 时间片轮转（21.2.6）：\n"
-		"这是最早的模式，容易出问题，不建议使用。\n\n"
+		"这是最早的模式，其原理与BES相同，容易引起游戏掉线，不建议使用。\n"
+		"若打开内核态调度，则限制器不再持有SGUARD句柄，故游戏掉线的几率相比旧版要低。\n"
+		"因此如果你想用这个模式，建议手动打开内核态调度开关。\n"
+		"【注意】仍建议你先使用模式3。若其他模式用不了，再用这个模式。\n\n"
 		"2 线程追踪（21.7.17）：\n"
 		"【注】建议你优先使用模式3。若模式3不能用再使用该模式。\n"
 		"根据统计反馈，目前该模式中最好用的选项为【弱锁定-rr】。\n"
@@ -34,14 +37,14 @@ static void ShowAbout() {
 		"【时间切分】设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n\n"
 		"3 Memory Patch（21.10.6）：\n"
 		"  >1 NtQueryVirtualMemory: 令SGUARD扫内存的速度变慢。\n"
-		"  （若只开这一项，理论上并不会出现游戏异常。）\n"
+		"    若只开这一项，理论上并不会导致游戏掉线。\n"
 		"  >2 GetAsyncKeyState: 令SGUARD读取键盘按键的速度变慢。\n"
-		"  （虽然我并不知道为何它会频繁读取键盘按键，但该项似乎能有效提升游戏流畅度。）\n"
-		"  （与之相关的引用位于SGUARD使用的动态库ACE-DRV64.dll中。 ）\n"
+		"    虽然我并不知道为何它会频繁读取键盘按键，但该项似乎能有效提升游戏流畅度。\n"
+		"    与之相关的引用位于SGUARD使用的动态库ACE-DRV64.dll中。 \n"
 		"  >3 NtWaitForSingleObject:（旧版增强模式）已知可能导致游戏异常，不建议使用。\n"
-		"  （某些机器可以正常使用该项。如果你想使用，不建议设置太大的数值。）\n"
+		"    某些机器可以正常使用该项。如果你想使用，不建议设置太大的数值。\n"
 		"  >4 NtDelayExecution:（旧版功能）已知可能导致游戏异常和卡顿，不建议使用。\n"
-		"  （如果你想用这个，建议取消勾选其余两项，并且不建议设置太大的数值。）\n\n"
+		"    如果你想用这个，建议取消勾选其余两项，并且不建议设置太大的数值。\n\n"
 		"  Memory Patch需要临时装载一次驱动，提交内存后会立即将之卸载。\n"
 		"  若你使用时出现问题，可以去下方链接下载证书。\n\n\n"
 		"SGUARD讨论群：775176979\n\n"
@@ -51,6 +54,39 @@ static void ShowAbout() {
 		MB_OK);
 }
 
+// dialog: set percent.
+static INT_PTR CALLBACK SetPctDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+
+	switch (message) {
+	case WM_INITDIALOG:
+	{
+		char buf[128];
+		sprintf(buf, "输入整数1~99，或999（代表99.9）\n（当前值：%u）", limitMgr.limitPercent);
+		SetDlgItemText(hDlg, IDC_SETPCTTEXT, buf);
+		return (INT_PTR)TRUE;
+	}
+
+	case WM_COMMAND:
+		if (LOWORD(wParam) == IDC_SETPCTOK) {
+			BOOL translated;
+			UINT res = GetDlgItemInt(hDlg, IDC_SETPCTEDIT, &translated, FALSE);
+			if (!translated || res < 1 || (res > 99 && res != 999)) {
+				MessageBox(0, "输入1~99或999", "错误", MB_OK);
+			} else {
+				limitMgr.setPercent(res);
+				EndDialog(hDlg, LOWORD(wParam));
+				return (INT_PTR)TRUE;
+			}
+		}
+		break;
+
+	case WM_CLOSE:
+		EndDialog(hDlg, LOWORD(wParam));
+		return (INT_PTR)TRUE;
+	}
+
+	return (INT_PTR)FALSE;
+}
 
 // dialog: set time slice.
 static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -59,7 +95,7 @@ static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, L
 	case WM_INITDIALOG:
 	{
 		char buf[128];
-		sprintf(buf, "输入1~99的整数（当前值：%d）", traceMgr.lockRound);
+		sprintf(buf, "输入1~99的整数（当前值：%u）", traceMgr.lockRound);
 		SetDlgItemText(hDlg, IDC_SETTIMETEXT, buf);
 			return (INT_PTR)TRUE;
 	}
@@ -184,29 +220,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes,  "当前模式：时间片轮转  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT90,       "限制资源：90%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT95,       "限制资源：95%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT99,       "限制资源：99%");
-				AppendMenu(hMenu, MFT_STRING, IDM_PERCENT999,      "限制资源：99.9%");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+				if (limitMgr.limitPercent == 999) {
+					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT,  "限制资源：99.9%");
+				} else {
+					sprintf(buf, "限制资源：%u%%", limitMgr.limitPercent);
+					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, buf);
+				}
 				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT,       "停止限制");
+				AppendMenu(hMenu, MFT_STRING, IDM_SETPERCENT,      "设置限制资源的百分比");
+				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+				AppendMenu(hMenu, MFT_STRING, IDM_KERNELLIMIT,     "使用内核态调度器");
 				if (limitMgr.limitEnabled) {
-					switch (limitMgr.limitPercent) {
-					case 90:
-						CheckMenuItem(hMenu, IDM_PERCENT90,  MF_CHECKED);
-						break;
-					case 95:
-						CheckMenuItem(hMenu, IDM_PERCENT95,  MF_CHECKED);
-						break;
-					case 99:
-						CheckMenuItem(hMenu, IDM_PERCENT99,  MF_CHECKED);
-						break;
-					case 999:
-						CheckMenuItem(hMenu, IDM_PERCENT999, MF_CHECKED);
-						break;
-					}
+					CheckMenuItem(hMenu, IDM_STARTLIMIT, MF_CHECKED);
 				} else {
 					CheckMenuItem(hMenu, IDM_STOPLIMIT, MF_CHECKED);
+				}
+				if (limitMgr.useKernelMode) {
+					CheckMenuItem(hMenu, IDM_KERNELLIMIT, MF_CHECKED);
 				}
 			} else if (g_Mode == 1) {
 				if (!traceMgr.lockEnabled) {
@@ -274,7 +304,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
 				} else {
 					DWORD total = 0;
-					if (patchMgr.patchSwitches.NtQueryVirtualMemory  ||
+					if (patchMgr.patchSwitches.NtQueryVirtualMemory ||
 						patchMgr.patchSwitches.NtWaitForSingleObject ||
 						patchMgr.patchSwitches.NtDelayExecution) {
 						total ++;
@@ -393,24 +423,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 
 			// limit command
-			case IDM_PERCENT90:
-				limitMgr.setPercent(90);
-				configMgr.writeConfig();
-				break;
-			case IDM_PERCENT95:
-				limitMgr.setPercent(95);
-				configMgr.writeConfig();
-				break;
-			case IDM_PERCENT99:
-				limitMgr.setPercent(99);
-				configMgr.writeConfig();
-				break;
-			case IDM_PERCENT999:
-				limitMgr.setPercent(999);
-				configMgr.writeConfig();
+			case IDM_STARTLIMIT:
+				limitMgr.enable();
 				break;
 			case IDM_STOPLIMIT:
 				limitMgr.disable();
+				break;
+			case IDM_SETPERCENT:
+				DialogBox(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETPCTDIALOG), hWnd, SetPctDlgProc);
+				configMgr.writeConfig();
+				break;
+			case IDM_KERNELLIMIT:
+				limitMgr.useKernelMode = !limitMgr.useKernelMode;
+				configMgr.writeConfig();
+				MessageBox(0, "切换该选项需要你重启限制器。", "注意", MB_OK);
 				break;
 			
 			// lock command
@@ -445,27 +471,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 1);
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 2);
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 3);
-					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 					configMgr.writeConfig();
+					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				}
 				break;
 			case IDM_PATCHSWITCH1:
-				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
-					patchMgr.patchSwitches.NtQueryVirtualMemory = false;
-				} else {
-					patchMgr.patchSwitches.NtQueryVirtualMemory = true;
-				}
-				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				patchMgr.patchSwitches.NtQueryVirtualMemory = !patchMgr.patchSwitches.NtQueryVirtualMemory;
 				configMgr.writeConfig();
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
 			case IDM_PATCHSWITCH2:
-				if (patchMgr.patchSwitches.GetAsyncKeyState) {
-					patchMgr.patchSwitches.GetAsyncKeyState = false;
-				} else {
-					patchMgr.patchSwitches.GetAsyncKeyState = true;
-				}
-				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				patchMgr.patchSwitches.GetAsyncKeyState = !patchMgr.patchSwitches.GetAsyncKeyState;
 				configMgr.writeConfig();
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
 			case IDM_PATCHSWITCH3:
 				if (patchMgr.patchSwitches.NtWaitForSingleObject) {

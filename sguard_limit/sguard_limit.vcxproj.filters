@@ -13,10 +13,10 @@
     <ClCompile Include="mempatch.cpp">
       <Filter>mempatch</Filter>
     </ClCompile>
-    <ClCompile Include="kdriver.cpp">
-      <Filter>mempatch</Filter>
-    </ClCompile>
     <ClCompile Include="config.cpp" />
+    <ClCompile Include="kdriver.cpp">
+      <Filter>kdriver</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
@@ -31,10 +31,10 @@
     <ClInclude Include="mempatch.h">
       <Filter>mempatch</Filter>
     </ClInclude>
-    <ClInclude Include="kdriver.h">
-      <Filter>mempatch</Filter>
-    </ClInclude>
     <ClInclude Include="config.h" />
+    <ClInclude Include="kdriver.h">
+      <Filter>kdriver</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sguard_limit.rc" />
@@ -51,6 +51,9 @@
     </Filter>
     <Filter Include="mempatch">
       <UniqueIdentifier>{2e573457-381f-4c18-993e-933c86a85d7c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="kdriver">
+      <UniqueIdentifier>{58519027-6ca9-4b31-a87c-e505e4454f22}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

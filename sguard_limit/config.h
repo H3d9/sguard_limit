@@ -20,7 +20,7 @@ public:
 	static ConfigManager&    getInstance();
 
 public:
-	void    init(const CHAR* profilepath);
+	void    init(const CHAR* profilePath);
 	bool    loadConfig();
 	void    writeConfig();
 

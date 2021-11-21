@@ -24,8 +24,8 @@ ConfigManager& ConfigManager::getInstance() {
 	return configManager;
 }
 
-void  ConfigManager::init(const CHAR* profilepath) {
-	this->profile = profilepath;
+void  ConfigManager::init(const CHAR* profilePath) {
+	this->profile = profilePath;
 }
 
 bool ConfigManager::loadConfig() {  // executes only when program is initalizing.
@@ -53,12 +53,21 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 
 	// limit module
 	res = GetPrivateProfileInt("Limit", "Percent", -1, profile);
-	if (res == (UINT)-1 || (res != 90 && res != 95 && res != 99 && res != 999)) {
+	if (res == (UINT)-1 || res < 1 || (res > 99 && res != 999)) {
 		WritePrivateProfileString("Limit", "Percent", "90", profile);
 		limitMgr.limitPercent = 90;
 	} else {
 		limitMgr.limitPercent = res;
 	}
+
+	res = GetPrivateProfileInt("Limit", "useKernelMode", -1, profile);
+	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Limit", "useKernelMode", "0", profile);
+		limitMgr.useKernelMode = false;
+	} else {
+		limitMgr.useKernelMode = res ? true : false;
+	}
+
 
 	// lock module
 	res = GetPrivateProfileInt("Lock", "Mode", -1, profile);
@@ -160,6 +169,9 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, "%u", limitMgr.limitPercent);
 	WritePrivateProfileString("Limit", "Percent", buf, profile);
+
+	sprintf(buf, limitMgr.useKernelMode ? "1" : "0");
+	WritePrivateProfileString("Limit", "useKernelMode", buf, profile);
 
 	sprintf(buf, "%u", traceMgr.lockMode);
 	WritePrivateProfileString("Lock", "Mode", buf, profile);

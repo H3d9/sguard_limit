@@ -4,7 +4,7 @@
 #include <string>
 
 
-// system version (used in patch module)
+// system version (kdriver support)
 enum class OSVersion { 
 	WIN_7       = 1, 
 	WIN_10_11,
@@ -97,13 +97,12 @@ public:
 	void          log(const char* format, ...);
 	void          panic(const char* format, ...);
 	void          panic(DWORD errorCode, const char* format, ...);
-				  
-public:			  
-	const CHAR*   profilePath();       // config manager
-	const CHAR*   sysfilePath();       // mempatch module
-	const CHAR*   profileDirPath();    // mempatch module
-	OSVersion     getSystemVersion();  // mempatch module
-	DWORD         getSystemBuildNum(); // mempatch module
+	
+public:
+	const CHAR*   profilePath();       // xref: config
+	const CHAR*   sysfilePath();       // xref: kdriver
+	OSVersion     getSystemVersion();  // xref: mempatch
+	DWORD         getSystemBuildNum(); // xref: mempatch
 	
 
 private:		  
@@ -122,8 +121,6 @@ private:
 	NOTIFYICONDATA               icon;
 	UINT                         trayActiveMsg;
 
-	std::string                  profileDir;
 	std::string                  profile;
 	std::string                  sysfile;
-	std::string                  logfile;
 };

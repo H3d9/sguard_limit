@@ -55,8 +55,8 @@ win32ThreadManager::win32ThreadManager()
 
 DWORD win32ThreadManager::getTargetPid() {  // ret == 0 if no proc.
 
-	HANDLE            hSnapshot = NULL;
-	PROCESSENTRY32    pe = {};
+	HANDLE            hSnapshot    = NULL;
+	PROCESSENTRY32    pe           = {};
 	pe.dwSize = sizeof(PROCESSENTRY32);
 
 
@@ -81,8 +81,8 @@ DWORD win32ThreadManager::getTargetPid() {  // ret == 0 if no proc.
 
 bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadList & threadCount
 
-	HANDLE            hSnapshot = NULL;
-	THREADENTRY32     te = {};
+	HANDLE            hSnapshot   = NULL;
+	THREADENTRY32     te          = {};
 	te.dwSize = sizeof(THREADENTRY32);
 
 
@@ -121,8 +121,8 @@ win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL),
-	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), iconRcNum(), icon{}, trayActiveMsg(),
-	  profileDir{}, profile{}, sysfile{}, logfile{} {}
+	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043),
+	  logfp(NULL), iconRcNum(), icon{}, trayActiveMsg(), profile{}, sysfile{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -165,6 +165,11 @@ void win32SystemManager::setupProcessDpi() {
 
 bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg) {
 
+	this->hInstance      = hInst;
+	this->iconRcNum      = iconRcNum;
+	this->trayActiveMsg  = trayActiveMsg;
+
+
 	// decide whether it's single instance.
 	hProgram = CreateMutex(NULL, FALSE, "sguard_limit");
 	if (!hProgram || GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -173,22 +178,20 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 	}
 
 
-	// initialize application vars.
-	this->hInstance      = hInst;
-	this->iconRcNum      = iconRcNum;
-	this->trayActiveMsg  = trayActiveMsg;
-
-
 	// initialize path vars.
-	HANDLE       hToken;
-	CHAR         buffer    [1024];
-	DWORD        size      = 1024;
+	HANDLE         hToken;
+	CHAR           buffer        [1024];
+	DWORD          size          = 1024;
+	std::string    profileDir;
 
 	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
 	GetUserProfileDirectory(hToken, buffer, &size);
-	profileDir =  buffer;
-	profileDir += "\\AppData\\Roaming\\sguard_limit";
+	profileDir = std::string(buffer) + "\\AppData\\Roaming\\sguard_limit";
 	CloseHandle(hToken);
+
+	profile = profileDir + "\\config.ini";
+	sysfile = profileDir + "\\SGuardLimit_VMIO.sys";
+
 
 	// initialize profile directory.
 	DWORD pathAttr = GetFileAttributes(profileDir.c_str());
@@ -206,21 +209,19 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 		}
 	}
 
-	profile = profileDir + "\\config.ini";
-	sysfile = profileDir + "\\SGuardLimit_VMIO.sys";
-	logfile = profileDir + "\\log.txt";
-
 
 	// initialize log subsystem.
-	DWORD filesize = GetCompressedFileSize(logfile.c_str(), NULL);
-	if (filesize != INVALID_FILE_SIZE && filesize > (1 << 16)) {
-		DeleteFile(logfile.c_str());
+	auto         logFile      = profileDir + "\\log.txt";
+	DWORD        fileSize     = GetCompressedFileSize(logFile.c_str(), NULL);
+
+	if (fileSize != INVALID_FILE_SIZE && fileSize > (1 << 16)) {
+		DeleteFile(logFile.c_str());
 	}
 
-	logfp = fopen(logfile.c_str(), "a+");
+	logfp = fopen(logFile.c_str(), "a+");
 
 	if (!logfp) {
-		panic("打开log文件%s失败。", logfile.c_str());
+		panic("打开log文件%s失败。", logFile.c_str());
 		return false;
 	}
 
@@ -250,6 +251,32 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 		
 		osBuildNum = osInfo.dwBuildNumber;
 	}
+
+
+	// copy 'SGuardLimit_VMIO.sys' to profile dir (if exists).
+	auto    sysfilePath   = sysfile.c_str();
+	auto    currentPath   = ".\\SGuardLimit_VMIO.sys";
+	FILE*   fp;
+
+	fp = fopen(currentPath, "rb");
+
+	if (fp != NULL) {
+		fclose(fp);
+		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
+			panic("拷贝文件失败，你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", profileDir.c_str());
+		} else {
+			DeleteFile(currentPath);
+		}
+	}
+
+	fp = fopen(sysfilePath, "rb");
+
+	if (fp == NULL) {
+		panic("找不到文件：SGuardLimit_VMIO.sys。\n你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", profileDir.c_str());
+	} else {
+		fclose(fp);
+	}
+
 
 	return true;
 }
@@ -375,6 +402,8 @@ void win32SystemManager::log(const char* format, ...) {
 
 void win32SystemManager::panic(const char* format, ...) {
 
+	DWORD errorCode = GetLastError();
+
 	CHAR buf[1024];
 
 	va_list arg;
@@ -382,7 +411,7 @@ void win32SystemManager::panic(const char* format, ...) {
 	vsprintf(buf, format, arg);
 	va_end(arg);
 
-	_panic(GetLastError(), buf);
+	_panic(errorCode, buf);
 }
 
 void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
@@ -403,10 +432,6 @@ const CHAR* win32SystemManager::profilePath() {
 
 const CHAR* win32SystemManager::sysfilePath() {
 	return sysfile.c_str();
-}
-
-const CHAR* win32SystemManager::profileDirPath() {
-	return profileDir.c_str();
 }
 
 OSVersion win32SystemManager::getSystemVersion() {

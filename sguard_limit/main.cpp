@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include "wndproc.h"
 #include "resource.h"
+#include "kdriver.h"
 #include "win32utility.h"
 #include "config.h"
 #include "limitcore.h"
@@ -10,6 +11,7 @@
 #include "mempatch.h"
 
 
+KernelDriver&           driver                  = KernelDriver::getInstance();
 win32SystemManager&     systemMgr               = win32SystemManager::getInstance();
 ConfigManager&          configMgr               = ConfigManager::getInstance();
 LimitManager&           limitMgr                = LimitManager::getInstance();
@@ -92,9 +94,9 @@ INT WINAPI WinMain(
 
 	systemMgr.createTray();
 
-	configMgr.init(systemMgr.profilePath());
+	driver.init(systemMgr.sysfilePath());
 
-	patchMgr.init();
+	configMgr.init(systemMgr.profilePath());
 
 	status = 
 	configMgr.loadConfig();
@@ -102,17 +104,16 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【首次使用说明】\n\n"
-			"1 增强win7内核态功能的稳定性，修订部分细节。\n"
-			"2 修改右键菜单中的模式切换选项。\n"
-			"3 添加特殊系统用户名支持。\n\n\n"
+			"1 新增旧模式的驱动层支持。\n"
+			"（然而除非默认模式不生效，否则仍不建议使用旧模式）\n"
+			"2 支持系统用户名的特殊字符。\n\n\n"
 			"更新模式：MemPatch V3\n\n"
 			"【新特性】在上一版的基础上进一步压缩SGUARD的cpu使用率令其接近0。\n（但必要时SGUARD仍会短暂占用cpu以防游戏出现异常）\n\n\n"
 			"【重要提示】若你第一次使用，建议仔细阅读说明（右键菜单->其他选项）。\n",
-			VERSION "  by: @H3d9", MB_OK);	
-		if (IDYES == MessageBox(0, "要查看网页版说明么？", "提示", MB_YESNO)) {
-			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_SHOW);
-		}
+			VERSION "  by: @H3d9", MB_OK);
 	}
+
+	patchMgr.init();
 
 
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
