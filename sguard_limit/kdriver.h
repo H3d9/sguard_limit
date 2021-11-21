@@ -21,12 +21,14 @@ public:
 	static KernelDriver& getInstance();
 
 public:
-	void     init(const CHAR* sysfilepath);
+	void     init(const CHAR* sysfilePath);
 	bool     load();
 	void     unload();
 	bool     readVM(DWORD pid, PVOID out, PVOID targetAddress);
 	bool     writeVM(DWORD pid, PVOID in, PVOID targetAddress);
 	bool     allocVM(DWORD pid, PVOID* pAllocatedAddress);
+	bool     suspend(DWORD pid);
+	bool     resume(DWORD pid);
 
 
 private:
@@ -34,18 +36,21 @@ private:
 	void     _endService();
 
 private:
-	typedef struct {
-		CHAR       data[4096];
-		PVOID      address;
-		HANDLE     pid;
+	struct VMIO_REQUEST {
+		HANDLE   pid;
 
-		CHAR       errorFunc[128];
-		ULONG      errorCode;
-	} VMIO_REQUEST;
+		PVOID    address;
+		CHAR     data[0x1000];
+
+		ULONG    errorCode;
+		CHAR     errorFunc[128];
+	};
 
 	static constexpr DWORD   VMIO_READ   = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD   VMIO_WRITE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD   VMIO_ALLOC  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD	 IO_SUSPEND  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0704, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD	 IO_RESUME   = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
 	const CHAR*    sysfile;
 	SC_HANDLE      hSCManager;
