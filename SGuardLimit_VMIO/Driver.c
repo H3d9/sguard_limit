@@ -14,14 +14,17 @@ PDEVICE_OBJECT       pDeviceObject;
 #define VMIO_READ   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_WRITE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_ALLOC  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define IO_SUSPEND  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0704, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define IO_RESUME   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 
 typedef struct {
-	CHAR     data[4096];
-	PVOID    address;
 	HANDLE   pid;
 
-	CHAR     errorFunc[128];
+	PVOID    address;
+	CHAR     data[0x1000];
+
 	ULONG    errorCode;
+	CHAR     errorFunc[128];
 } VMIO_REQUEST;
 
 
@@ -43,6 +46,15 @@ NTSTATUS NTAPI MmCopyVirtualMemory(
 	SIZE_T BufferSize, // @ 1/2/4/8/page only.
 	KPROCESSOR_MODE PreviousMode,
 	PSIZE_T ReturnSize);
+
+// PsSuspend/ResumeProcess (已导出，但未被公开)
+NTKERNELAPI
+NTSTATUS
+PsSuspendProcess(PEPROCESS Process);
+
+NTKERNELAPI
+NTSTATUS
+PsResumeProcess(PEPROCESS Process);
 
 
 // 包装器
@@ -174,10 +186,42 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		}
 		break;
 
+		case IO_SUSPEND:
+		{
+			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("IO_SUSPEND::(process not found)");
+			}
+
+			Status = PsSuspendProcess(pEProcess);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("IO_SUSPEND::PsSuspendProcess");
+			}
+		}
+		break;
+
+		case IO_RESUME:
+		{
+			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("IO_RESUME::(process not found)");
+			}
+
+			Status = PsResumeProcess(pEProcess);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("IO_RESUME::PsResumeProcess");
+			}
+		}
+		break;
+
 		default:
 		{
 			Status = STATUS_UNSUCCESSFUL;
-			IOCTL_LOG_EXIT("IOCTL: Bad IO code");
+			IOCTL_LOG_EXIT("H3d9: Bad IO code");
 		}
 		break;
 	}
