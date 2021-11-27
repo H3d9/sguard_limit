@@ -150,10 +150,12 @@ void win32SystemManager::setupProcessDpi() {
 
 		if (SetProcessDpiAwarenessContext) {
 			SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
+		
 		} else {
-
+			
 			typedef BOOL(WINAPI* fp2)();
 			fp2 SetProcessDPIAware = (fp2)GetProcAddress(hUser32, "SetProcessDPIAware");
+
 			if (SetProcessDPIAware) {
 				SetProcessDPIAware();
 			}
@@ -185,8 +187,9 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 
 	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
 	GetUserProfileDirectory(hToken, buf, &size);
-	profileDir = std::string(buf) + "\\AppData\\Roaming\\sguard_limit";
 	CloseHandle(hToken);
+
+	profileDir = std::string(buf) + "\\AppData\\Roaming\\sguard_limit";
 
 
 	// initialize profile directory.
@@ -231,22 +234,31 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 
 
 	// acquire system version.
-	typedef NTSTATUS(WINAPI* pf)(OSVERSIONINFOEX*);
-	pf RtlGetVersion = (pf)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetVersion");
+	// ntdll is loaded for sure, and we don't need to (neither cannot) free it.
+	HMODULE hNtdll = GetModuleHandle("ntdll.dll");
 
-	if (RtlGetVersion) {
-		OSVERSIONINFOEX osInfo;
-		osInfo.dwOSVersionInfoSize = sizeof(osInfo);
-		RtlGetVersion(&osInfo);
+	if (hNtdll) {
 
-		if (osInfo.dwMajorVersion == 10) {
-			osVersion = OSVersion::WIN_10_11;  // NT 10.0
-		} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 1) {
-			osVersion = OSVersion::WIN_7;      // NT 6.1
-		}  // else default to:  OSVersion::OTHERS
-		
-		osBuildNum = osInfo.dwBuildNumber;
+		typedef NTSTATUS(WINAPI* pf)(OSVERSIONINFOEX*);
+		pf RtlGetVersion = (pf)GetProcAddress(hNtdll, "RtlGetVersion");
+
+		if (RtlGetVersion) {
+
+			OSVERSIONINFOEX osInfo;
+			osInfo.dwOSVersionInfoSize = sizeof(osInfo);
+
+			RtlGetVersion(&osInfo);
+
+			if (osInfo.dwMajorVersion == 10) {
+				osVersion = OSVersion::WIN_10_11;  // NT 10.0
+			} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 1) {
+				osVersion = OSVersion::WIN_7;      // NT 6.1
+			}  // else default to:  OSVersion::OTHERS
+
+			osBuildNum = osInfo.dwBuildNumber;
+		}
 	}
+
 
 	return true;
 }

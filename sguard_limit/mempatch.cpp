@@ -2,7 +2,7 @@
 // 2021.10.4 雨
 // 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
 // 2021.11.1 万圣节
-// 明天已经到来了。
+// 明天已经降临了。
 #include <Windows.h>
 #include <stdio.h>
 #include <time.h>
@@ -37,10 +37,17 @@ PatchManager& PatchManager::getInstance() {
 	return patchManager;
 }
 
-void PatchManager::patch() { // assert: kernel driver initialized.
+void PatchManager::patch() {
 
 	win32ThreadManager     threadMgr;
 	auto                   pid          = threadMgr.getTargetPid();
+
+	
+	// check if kernel driver is initialized.
+	if (!driver.driverReady) {
+		systemMgr.log("patch(): kdriver is not initialized correctly, quit.");
+		return;
+	}
 
 
 	systemMgr.log("patch(): entering.");
@@ -209,7 +216,7 @@ bool PatchManager::_patch_stage1() {
 						offset0 = offset - 0x10 * syscall_num;
 					}
 
-					systemMgr.log("patch1(): offset0 found here: +0x%x (syscall 0x%x)", offset0, syscall_num);
+					systemMgr.log("patch1(): offset0 found here: +0x%x (from: syscall 0x%x)", offset0, syscall_num);
 					break;
 				}
 			}

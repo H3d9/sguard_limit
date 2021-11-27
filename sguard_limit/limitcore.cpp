@@ -25,7 +25,13 @@ LimitManager& LimitManager::getInstance() {
 
 void LimitManager::hijack() {
 
-	if (useKernelMode) { // assert: kernel driver initialized.
+	if (useKernelMode) { 
+		
+		// check if kernel driver is initialized.
+		if (!driver.driverReady) {
+			systemMgr.log("patch(): kdriver is not initialized correctly, quit.");
+			return;
+		}
 
 		if (!driver.load()) {
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
@@ -39,7 +45,7 @@ void LimitManager::hijack() {
 			auto pid = threadMgr.getTargetPid();
 
 			if (pid == 0) {
-				return; // process is no more alive, exit.
+				return; // if process is no more alive, exit.
 			}
 
 
@@ -53,7 +59,7 @@ void LimitManager::hijack() {
 
 				
 				if (!driver.suspend(pid)) {
-					// pssuspend failed if only proc not exist.
+					// nt!pssuspend failed if only proc not exist.
 					// in that case, do not log.
 					if (driver.errorCode != 0x5 /* access denied */) {
 						systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);

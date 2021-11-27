@@ -134,7 +134,8 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	if (fp != NULL) {
 		fclose(fp);
 		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
-			_recordError("拷贝sys文件失败。\n你可以把附带的“sys文件”手动拷贝到以下路径：\n%s", sysfileDir.c_str());
+			_recordError("拷贝sys文件失败，与之相关的模块将无法使用。\n"
+				         "你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", sysfileDir.c_str());
 			return driverReady = false;
 		} else {
 			DeleteFile(currentPath);
@@ -144,7 +145,8 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	fp = fopen(sysfilePath, "rb");
 
 	if (fp == NULL) {
-		_recordError("找不到文件：SGuardLimit_VMIO.sys。\n你可以把附带的“sys文件”手动拷贝到以下路径：\n%s", sysfileDir.c_str());
+		_recordError("找不到文件：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
+			         "你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", sysfileDir.c_str());
 		return driverReady = false;
 	} else {
 		fclose(fp);
