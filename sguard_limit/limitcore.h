@@ -25,7 +25,6 @@ public:
 	volatile bool          useKernelMode;
 
 public:
-	void     init();
 	void     hijack();
 	void     enable();                      // [if & only if] g_Mode choose that mode, enable switch works.
 	void     disable();

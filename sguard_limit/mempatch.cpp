@@ -37,17 +37,7 @@ PatchManager& PatchManager::getInstance() {
 	return patchManager;
 }
 
-void PatchManager::init() {
-
-	// call after config loaded; examine system version.
-	// if it's not supported but selected, show hint.
-	auto osVersion = systemMgr.getSystemVersion();
-	if (osVersion == OSVersion::OTHERS && g_Mode == 2) {
-		systemMgr.panic("注意：MemPatch模块只支持win7/win10/win11系统，建议你使用其他模式。");
-	}
-}
-
-void PatchManager::patch() {
+void PatchManager::patch() { // assert: kernel driver initialized.
 
 	win32ThreadManager     threadMgr;
 	auto                   pid          = threadMgr.getTargetPid();

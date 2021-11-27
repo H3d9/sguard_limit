@@ -45,7 +45,6 @@ public:
 	const patchDelayRange_t       patchDelayRange[4];
 
 public:
-	void      init();
 	void      patch();
 	void      enable(bool forceRecover = false);
 	void      disable(bool forceRecover = false);

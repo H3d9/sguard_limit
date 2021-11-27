@@ -23,22 +23,12 @@ LimitManager& LimitManager::getInstance() {
 	return limitManager;
 }
 
-void LimitManager::init() {
-
-	// call after config loaded; examine system version.
-	// if it's not supported but selected, show hint.
-	auto osVersion = systemMgr.getSystemVersion();
-	if (osVersion == OSVersion::OTHERS && g_Mode == 0 && useKernelMode) {
-		systemMgr.panic("注意：内核态调度器只支持win7/win10/win11系统，建议你关闭该选项。");
-	}
-}
-
 void LimitManager::hijack() {
 
-	if (useKernelMode) {
+	if (useKernelMode) { // assert: kernel driver initialized.
 
 		if (!driver.load()) {
-			systemMgr.panic("由于加载驱动失败，内核态调度器无法使用，建议你关闭该选项。");
+			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 			Sleep(5000);
 			return;
 		}

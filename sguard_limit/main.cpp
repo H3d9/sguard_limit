@@ -99,7 +99,7 @@ INT WINAPI WinMain(
 
 	if (!status) {
 		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-		systemMgr.panic("由于驱动加载失败，以下模块无法使用：\n"
+		systemMgr.panic("由于驱动初始化失败，以下模块无法使用：\n"
 		                "MemPatch V3\n"
 		                "内核态调度器\n");
 	}
