@@ -1,12 +1,13 @@
 #pragma once
 #include <Windows.h>
+#include <string>
 
 
 // config load & write module
 class ConfigManager {
 
 private:
-	static ConfigManager     configManager;
+	static ConfigManager   configManager;
 
 private:
 	ConfigManager();
@@ -17,13 +18,13 @@ private:
 	ConfigManager& operator= (ConfigManager&&)         = delete;
 
 public:
-	static ConfigManager&    getInstance();
+	static ConfigManager&  getInstance();
 
 public:
-	void    init(const CHAR* profilePath);
+	void    init(const std::string& profileDir);
 	bool    loadConfig();
 	void    writeConfig();
 
 private:
-	const CHAR*   profile;
+	std::string   profile;
 };

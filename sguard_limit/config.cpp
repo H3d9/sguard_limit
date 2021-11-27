@@ -18,25 +18,26 @@ extern PatchManager&     patchMgr;
 ConfigManager  ConfigManager::configManager;
 
 ConfigManager::ConfigManager() 
-	: profile(NULL) {}
+	: profile{} {}
 
 ConfigManager& ConfigManager::getInstance() {
 	return configManager;
 }
 
-void  ConfigManager::init(const CHAR* profilePath) {
-	this->profile = profilePath;
+void  ConfigManager::init(const std::string& profileDir) {
+	profile = profileDir + "\\config.ini";
 }
 
 bool ConfigManager::loadConfig() {  // executes only when program is initalizing.
 
-	char          version[128];
-	bool          result = true;
-	char          buf[128];
+	auto     profile    = this->profile.c_str();
+	char     buf        [128];
+	bool     result     = true;
+
 
 	// check version.
-	GetPrivateProfileString("Global", "Version", NULL, version, 128, profile);
-	if (strcmp(version, VERSION) != 0) {
+	GetPrivateProfileString("Global", "Version", NULL, buf, 128, profile);
+	if (strcmp(buf, VERSION) != 0) {
 		WritePrivateProfileString("Global", "Version", VERSION, profile);
 		result = false;
 	}
@@ -162,7 +163,8 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 
 void ConfigManager::writeConfig() {
 
-	char buf[16];
+	auto    profile   = this->profile.c_str();
+	char    buf       [16];
 
 	sprintf(buf, "%u", g_Mode);
 	WritePrivateProfileString("Global", "Mode", buf, profile);

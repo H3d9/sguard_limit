@@ -55,9 +55,9 @@ public:
 	bool   enumTargetThread(DWORD desiredAccess = THREAD_ALL_ACCESS);
 
 public:
-	DWORD                        pid;
-	DWORD                        threadCount;
-	std::vector<win32Thread>     threadList;
+	DWORD                      pid;
+	DWORD                      threadCount;
+	std::vector<win32Thread>   threadList;
 };
 
 
@@ -65,7 +65,7 @@ public:
 class win32SystemManager {
 
 private:
-	static win32SystemManager    systemManager;
+	static win32SystemManager  systemManager;
 
 private:
 	win32SystemManager();
@@ -76,51 +76,50 @@ private:
 	win32SystemManager& operator= (win32SystemManager&&)        = delete;
 
 public:
-	static win32SystemManager&   getInstance();
+	static win32SystemManager&  getInstance();
 
 
 public:
-	HWND                         hWnd;
-	HINSTANCE                    hInstance;
-
-public:
-	bool          init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg);
-	void          setupProcessDpi();
-	void          enableDebugPrivilege();
-	bool          checkDebugPrivilege();
-	bool          createWin32Window(WNDPROC WndProc);
-	void          createTray();
-	void          removeTray();
-	WPARAM        messageLoop();
-				  
-public:			  
-	void          log(const char* format, ...);
-	void          panic(const char* format, ...);
-	void          panic(DWORD errorCode, const char* format, ...);
+	bool       init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg);
+	void       setupProcessDpi();
+	void       enableDebugPrivilege();
+	bool       checkDebugPrivilege();
+	bool       createWin32Window(WNDPROC WndProc);
+	void       createTray();
+	void       removeTray();
+	WPARAM     messageLoop();
+	
+public:	
+	void       log(const char* format, ...);
+	void       panic(const char* format, ...);
+	void       panic(DWORD errorCode, const char* format, ...);
 	
 public:
-	const CHAR*   profilePath();       // xref: config
-	const CHAR*   sysfilePath();       // xref: kdriver
-	OSVersion     getSystemVersion();  // xref: mempatch
-	DWORD         getSystemBuildNum(); // xref: mempatch
-	
+	const std::string&  getProfileDir();     // xref: config, kdriver
+	OSVersion           getSystemVersion();  // xref: mempatch
+	DWORD               getSystemBuildNum(); // xref: mempatch
 
-private:		  
-	ATOM          _registerMyClass(WNDPROC WndProc);
-	void          _panic(DWORD code, char* showbuf);
+
+public:
+	HWND         hWnd;
+	HINSTANCE    hInstance;
+
 
 private:
-	HANDLE                       hProgram;
+	ATOM     _registerMyClass(WNDPROC WndProc);
+	void     _panic(DWORD code, char* showbuf);
 
-	OSVersion                    osVersion;
-	DWORD                        osBuildNum;
-
-	FILE*                        logfp;
-
-	DWORD                        iconRcNum;
-	NOTIFYICONDATA               icon;
-	UINT                         trayActiveMsg;
-
-	std::string                  profile;
-	std::string                  sysfile;
+private:
+	HANDLE              hProgram;
+					    
+	OSVersion           osVersion;
+	DWORD               osBuildNum;
+					    
+	FILE*               logfp;
+					    
+	DWORD               iconRcNum;
+	NOTIFYICONDATA      icon;
+	UINT                trayActiveMsg;
+					    
+	std::string         profileDir;
 };

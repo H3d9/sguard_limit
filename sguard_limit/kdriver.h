@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <string>
 #include <memory>
 
 
@@ -21,7 +22,7 @@ public:
 	static KernelDriver& getInstance();
 
 public:
-	void     init(const CHAR* sysfilePath);
+	bool     init(const std::string& sysfileDir);
 	bool     load();
 	void     unload();
 	bool     readVM(DWORD pid, PVOID out, PVOID targetAddress);
@@ -52,14 +53,14 @@ private:
 	static constexpr DWORD	 IO_SUSPEND  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0704, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD	 IO_RESUME   = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
-	const CHAR*    sysfile;
+	std::string    sysfile;
 	SC_HANDLE      hSCManager;
 	SC_HANDLE      hService;
 	HANDLE         hDriver;
 
 public:
-	DWORD                    errorCode;
-	CHAR*                    errorMessage;
+	DWORD          errorCode;
+	CHAR*          errorMessage;
 
 private:
 	std::unique_ptr<CHAR[]>  errorMessage_ptr;

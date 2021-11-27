@@ -155,7 +155,7 @@ bool PatchManager::_patch_stage1() {
 	driver.load();
 
 	if (!status) {
-		systemMgr.panic(driver.errorCode, driver.errorMessage);
+		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 		return false;
 	}
 
@@ -335,7 +335,7 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -358,7 +358,7 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -459,7 +459,7 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -482,7 +482,7 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -592,7 +592,7 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -618,7 +618,7 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -633,7 +633,7 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -659,7 +659,7 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -674,7 +674,7 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -700,7 +700,7 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.panic(driver.errorCode, driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				driver.unload();
 				return false;
 			}
@@ -712,7 +712,7 @@ bool PatchManager::_patch_stage1() {
 	status =
 	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
-		systemMgr.panic(driver.errorCode, driver.errorMessage);
+		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 		driver.unload();
 		return false;
 	}

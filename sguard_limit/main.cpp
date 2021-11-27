@@ -66,7 +66,7 @@ INT WINAPI WinMain(
 
 	bool status;
 
-
+	
 	systemMgr.setupProcessDpi();
 
 	systemMgr.enableDebugPrivilege();
@@ -85,7 +85,7 @@ INT WINAPI WinMain(
 		return -1;
 	}
 
-	status = 
+	status =
 	systemMgr.createWin32Window(WndProc);
 	
 	if (!status) {
@@ -94,11 +94,19 @@ INT WINAPI WinMain(
 
 	systemMgr.createTray();
 
-	driver.init(systemMgr.sysfilePath());
+	status =
+	driver.init(systemMgr.getProfileDir());
 
-	configMgr.init(systemMgr.profilePath());
+	if (!status) {
+		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+		systemMgr.panic("由于驱动加载失败，以下模块无法使用：\n"
+		                "MemPatch V3\n"
+		                "内核态调度器\n");
+	}
 
-	status = 
+	configMgr.init(systemMgr.getProfileDir());
+
+	status =
 	configMgr.loadConfig();
 
 	if (!status) {
@@ -112,10 +120,6 @@ INT WINAPI WinMain(
 			"【重要提示】若你第一次使用，建议仔细阅读说明（右键菜单->其他选项）。\n",
 			VERSION "  by: @H3d9", MB_OK);
 	}
-
-	limitMgr.init();
-
-	patchMgr.init();
 
 
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
@@ -131,7 +135,7 @@ INT WINAPI WinMain(
 	CloseHandle(hijackThread);
 
 
-	auto result = 
+	auto result =
 	systemMgr.messageLoop();
 
 	systemMgr.removeTray();

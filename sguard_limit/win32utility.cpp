@@ -122,7 +122,7 @@ win32SystemManager win32SystemManager::systemManager;
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL),
 	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043),
-	  logfp(NULL), iconRcNum(), icon{}, trayActiveMsg(), profile{}, sysfile{} {}
+	  logfp(NULL), iconRcNum(), icon{}, trayActiveMsg(), profileDir{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -179,18 +179,14 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 
 
 	// initialize path vars.
-	HANDLE         hToken;
-	CHAR           buffer        [1024];
-	DWORD          size          = 1024;
-	std::string    profileDir;
+	HANDLE       hToken;
+	CHAR         buf         [1024];
+	DWORD        size        = 1024;
 
 	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
-	GetUserProfileDirectory(hToken, buffer, &size);
-	profileDir = std::string(buffer) + "\\AppData\\Roaming\\sguard_limit";
+	GetUserProfileDirectory(hToken, buf, &size);
+	profileDir = std::string(buf) + "\\AppData\\Roaming\\sguard_limit";
 	CloseHandle(hToken);
-
-	profile = profileDir + "\\config.ini";
-	sysfile = profileDir + "\\SGuardLimit_VMIO.sys";
 
 
 	// initialize profile directory.
@@ -211,17 +207,17 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 
 
 	// initialize log subsystem.
-	auto         logFile      = profileDir + "\\log.txt";
-	DWORD        fileSize     = GetCompressedFileSize(logFile.c_str(), NULL);
+	auto      logfile       = profileDir + "\\log.txt";
+	DWORD     logfileSize   = GetCompressedFileSize(logfile.c_str(), NULL);
 
-	if (fileSize != INVALID_FILE_SIZE && fileSize > (1 << 16)) {
-		DeleteFile(logFile.c_str());
+	if (logfileSize != INVALID_FILE_SIZE && logfileSize > (1 << 16)) {
+		DeleteFile(logfile.c_str());
 	}
 
-	logfp = fopen(logFile.c_str(), "a+");
+	logfp = fopen(logfile.c_str(), "a+");
 
 	if (!logfp) {
-		panic("打开log文件%s失败。", logFile.c_str());
+		panic("打开log文件%s失败。", logfile.c_str());
 		return false;
 	}
 
@@ -247,36 +243,10 @@ bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveM
 			osVersion = OSVersion::WIN_10_11;  // NT 10.0
 		} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 1) {
 			osVersion = OSVersion::WIN_7;      // NT 6.1
-		}  // else default to OSVersion::OTHERS
+		}  // else default to:  OSVersion::OTHERS
 		
 		osBuildNum = osInfo.dwBuildNumber;
 	}
-
-
-	// copy 'SGuardLimit_VMIO.sys' to profile dir (if exists).
-	auto    sysfilePath   = sysfile.c_str();
-	auto    currentPath   = ".\\SGuardLimit_VMIO.sys";
-	FILE*   fp;
-
-	fp = fopen(currentPath, "rb");
-
-	if (fp != NULL) {
-		fclose(fp);
-		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
-			panic("拷贝文件失败，你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", profileDir.c_str());
-		} else {
-			DeleteFile(currentPath);
-		}
-	}
-
-	fp = fopen(sysfilePath, "rb");
-
-	if (fp == NULL) {
-		panic("找不到文件：SGuardLimit_VMIO.sys。\n你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", profileDir.c_str());
-	} else {
-		fclose(fp);
-	}
-
 
 	return true;
 }
@@ -298,6 +268,14 @@ void win32SystemManager::enableDebugPrivilege() {
 	AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL);
 
 	CloseHandle(hToken);
+
+	// 
+	// 也可以用RtlAdjustPrivilege来提权：
+	// 
+	// typedef NTSTATUS (WINAPI* pf)(ULONG Privilege, BOOLEAN Enable, BOOLEAN CurrentThread, PBOOLEAN Enabled);
+	// pf RtlAdjustPrivilege = (pf)GetProcAddress(GetModuleHandle("Ntdll.dll"), "RtlAdjustPrivilege");
+	// BOOLEAN prev;
+	// int ret = RtlAdjustPrivilege(0x14, 1, 0, &prev);
 }
 
 bool win32SystemManager::checkDebugPrivilege() {
@@ -326,14 +304,6 @@ bool win32SystemManager::checkDebugPrivilege() {
 
 	return (bool)bResult;
 }
-
-// 另一种提权方法（使用未公开接口）
-//static void Enable_se_debug() { // stdcall convention declaration can be omitted if use x64.
-//	typedef int(__stdcall* pf)(ULONG Privilege, BOOLEAN Enable, BOOLEAN CurrentThread, PBOOLEAN Enabled);
-//	pf RtlAdjustPrivilege = (pf)GetProcAddress(GetModuleHandle("Ntdll.dll"), "RtlAdjustPrivilege");
-//	BOOLEAN prev;
-//	int ret = RtlAdjustPrivilege(0x14, 1, 0, &prev);
-//}
 
 bool win32SystemManager::createWin32Window(WNDPROC WndProc) {
 	
@@ -426,12 +396,8 @@ void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 	_panic(errorCode, buf);
 }
 
-const CHAR* win32SystemManager::profilePath() {
-	return profile.c_str();
-}
-
-const CHAR* win32SystemManager::sysfilePath() {
-	return sysfile.c_str();
+const std::string& win32SystemManager::getProfileDir() {
+	return profileDir;
 }
 
 OSVersion win32SystemManager::getSystemVersion() {

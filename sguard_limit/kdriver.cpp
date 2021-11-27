@@ -8,7 +8,7 @@
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
-	: sysfile(NULL), hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE), 
+	: sysfile{}, hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
 	  errorMessage_ptr(new CHAR[1024]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
 }
@@ -21,9 +21,9 @@ KernelDriver& KernelDriver::getInstance() {
 	return kernelDriver;
 }
 
-void KernelDriver::init(const CHAR* sysfilePath) {
+bool KernelDriver::init(const std::string& sysfileDir) {
 
-	this->sysfile = sysfilePath;
+	sysfile = sysfileDir + "\\SGuardLimit_VMIO.sys";
 
 
 	// import certificate key.
@@ -122,6 +122,35 @@ void KernelDriver::init(const CHAR* sysfilePath) {
 			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_SHOW);
 		}
 	}
+
+
+	// copy sys file to profileDir (if file exists).
+	auto     sysfilePath    = sysfile.c_str();
+	auto     currentPath    = ".\\SGuardLimit_VMIO.sys";
+	FILE*    fp;
+
+	fp = fopen(currentPath, "rb");
+
+	if (fp != NULL) {
+		fclose(fp);
+		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
+			_recordError("拷贝sys文件失败。\n你可以把附带的“sys文件”手动拷贝到以下路径：\n%s", sysfileDir.c_str());
+			return false;
+		} else {
+			DeleteFile(currentPath);
+		}
+	}
+
+	fp = fopen(sysfilePath, "rb");
+
+	if (fp == NULL) {
+		_recordError("找不到文件：SGuardLimit_VMIO.sys。\n你可以把附带的“sys文件”手动拷贝到以下路径：\n%s", sysfileDir.c_str());
+		return false;
+	} else {
+		fclose(fp);
+	}
+
+	return true;
 }
 
 bool KernelDriver::load() {
@@ -308,7 +337,7 @@ bool KernelDriver::_startService() {
 		hService = 
 		CreateService(hSCManager, "SGuardLimit_VMIO", "SGuardLimit_VMIO",
 			SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
-			sysfile,  /* no quote here, msdn e.g. is wrong */ /* assert path is valid */
+			sysfile.c_str(),  /* no quote here, msdn e.g. is wrong */ /* assert path is valid */
 			NULL, NULL, NULL, NULL, NULL);
 
 		if (!hService) {
@@ -316,8 +345,8 @@ bool KernelDriver::_startService() {
 		}
 	}
 
-	// check service status.
-	QueryServiceStatus(hService, &svcStatus);
+	// check service status. (return val is ignored here)
+	(void)QueryServiceStatus(hService, &svcStatus);
 
 	// if service is running, stop it.
 	if (svcStatus.dwCurrentState != SERVICE_STOPPED && svcStatus.dwCurrentState != SERVICE_STOP_PENDING) {
@@ -332,7 +361,7 @@ bool KernelDriver::_startService() {
 	if (svcStatus.dwCurrentState == SERVICE_STOP_PENDING) {
 		for (auto time = 0; time < 50; time++) {
 			Sleep(100);
-			QueryServiceStatus(hService, &svcStatus);
+			(void)QueryServiceStatus(hService, &svcStatus);
 			if (svcStatus.dwCurrentState == SERVICE_STOPPED) {
 				break;
 			}
