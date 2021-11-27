@@ -314,7 +314,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					if (driver.driverReady) {
 						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
 					} else {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 模式无效");
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 模式无效（驱动初始化失败）");
 					}
 				} else {
 					DWORD total = 0;
