@@ -22,7 +22,7 @@ public:
 
 public:
 	void    init(const std::string& profileDir);
-	bool    loadConfig();
+	bool    loadConfig(bool driverReady);
 	void    writeConfig();
 
 private:

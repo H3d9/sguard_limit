@@ -31,6 +31,10 @@ public:
 	bool     suspend(DWORD pid);
 	bool     resume(DWORD pid);
 
+public:
+	bool     driverReady;  // driver ready if init() success. load() & unload() is still required.
+	                       // this switch is used for decide usability of some menu options.
+
 
 private:
 	bool     _startService();

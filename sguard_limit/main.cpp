@@ -107,7 +107,7 @@ INT WINAPI WinMain(
 	configMgr.init(systemMgr.getProfileDir());
 
 	status =
-	configMgr.loadConfig();
+	configMgr.loadConfig(driver.driverReady);
 
 	if (!status) {
 		MessageBox(0,

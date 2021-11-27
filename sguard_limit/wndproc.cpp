@@ -2,12 +2,15 @@
 #include <stdio.h>
 #include "wndproc.h"
 #include "resource.h"
+#include "kdriver.h"
 #include "win32utility.h"
 #include "config.h"
 #include "limitcore.h"
 #include "tracecore.h"
 #include "mempatch.h"
 
+
+extern KernelDriver&            driver;
 extern win32SystemManager&      systemMgr;
 extern ConfigManager&           configMgr;
 extern LimitManager&            limitMgr;
@@ -122,7 +125,6 @@ static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, L
 	return (INT_PTR)FALSE;
 }
 
-
 // dialog: set syscall delay.
 static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
@@ -188,7 +190,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	case WM_TRAYACTIVATE:
 	{
 		if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
-			
+
+			// for driver-depending options: 
+			// auto select MFT_STRING or MF_GRAYED.
+			auto   drvMenuString_t = driver.driverReady ? MFT_STRING : MF_GRAYED;
+
+
 			CHAR    buf      [128] = {};
 			HMENU   hMenu          = CreatePopupMenu();
 			HMENU   hMenuModes     = CreatePopupMenu();
@@ -226,10 +233,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					sprintf(buf, "限制资源：%u%%", limitMgr.limitPercent);
 					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, buf);
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT,       "停止限制");
-				AppendMenu(hMenu, MFT_STRING, IDM_SETPERCENT,      "设置限制资源的百分比");
+				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT,        "停止限制");
+				AppendMenu(hMenu, MFT_STRING, IDM_SETPERCENT,       "设置限制资源的百分比");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_KERNELLIMIT,     "使用内核态调度器");
+				AppendMenu(hMenu, drvMenuString_t, IDM_KERNELLIMIT, "使用内核态调度器");
 				if (limitMgr.limitEnabled) {
 					CheckMenuItem(hMenu, IDM_STARTLIMIT, MF_CHECKED);
 				} else {
@@ -328,18 +335,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 					}
 				}
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes,  "当前模式：MemPatch V3  [点击切换]");
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes,     "当前模式：MemPatch V3  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_DOPATCH,         "自动");
-				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH,        "撤销修改");
+				AppendMenu(hMenu, drvMenuString_t, IDM_DOPATCH,       "自动");
+				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH,           "撤销修改");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH1,    "inline Ntdll!NtQueryVirtualMemory");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH2,    "inline User32!GetAsyncKeyState");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH3,    "inline Ntdll!NtWaitForSingleObject");
-				AppendMenu(hMenu, MFT_STRING, IDM_PATCHSWITCH4,    "re-write Ntdll!NtDelayExecution");
+				AppendMenu(hMenu, drvMenuString_t, IDM_PATCHSWITCH1,  "inline Ntdll!NtQueryVirtualMemory");
+				AppendMenu(hMenu, drvMenuString_t, IDM_PATCHSWITCH2,  "inline User32!GetAsyncKeyState");
+				AppendMenu(hMenu, drvMenuString_t, IDM_PATCHSWITCH3,  "inline Ntdll!NtWaitForSingleObject");
+				AppendMenu(hMenu, drvMenuString_t, IDM_PATCHSWITCH4,  "re-write Ntdll!NtDelayExecution");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				sprintf(buf, "设置延时（当前：%u/%u/%u/%u）", patchMgr.patchDelay[0], patchMgr.patchDelay[1], patchMgr.patchDelay[2], patchMgr.patchDelay[3]);
-				AppendMenu(hMenu, MFT_STRING, IDM_SETDELAY, buf);
+				AppendMenu(hMenu, drvMenuString_t, IDM_SETDELAY, buf);
 
 				CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {

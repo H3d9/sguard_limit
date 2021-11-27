@@ -8,7 +8,7 @@
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
-	: sysfile{}, hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
+	: driverReady(false), sysfile{}, hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
 	  errorMessage_ptr(new CHAR[1024]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
 }
@@ -124,7 +124,7 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	}
 
 
-	// copy sys file to profileDir (if file exists).
+	// copy sys file to profile dir (if file exists).
 	auto     sysfilePath    = sysfile.c_str();
 	auto     currentPath    = ".\\SGuardLimit_VMIO.sys";
 	FILE*    fp;
@@ -135,7 +135,7 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 		fclose(fp);
 		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
 			_recordError("拷贝sys文件失败。\n你可以把附带的“sys文件”手动拷贝到以下路径：\n%s", sysfileDir.c_str());
-			return false;
+			return driverReady = false;
 		} else {
 			DeleteFile(currentPath);
 		}
@@ -145,12 +145,12 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 
 	if (fp == NULL) {
 		_recordError("找不到文件：SGuardLimit_VMIO.sys。\n你可以把附带的“sys文件”手动拷贝到以下路径：\n%s", sysfileDir.c_str());
-		return false;
+		return driverReady = false;
 	} else {
 		fclose(fp);
 	}
 
-	return true;
+	return driverReady = true;
 }
 
 bool KernelDriver::load() {
