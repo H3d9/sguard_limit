@@ -99,9 +99,9 @@ INT WINAPI WinMain(
 
 	if (!status) {
 		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-		systemMgr.panic("由于驱动初始化失败，以下模块无法使用：\n\n"
-		                "MemPatch V3\n"
-		                "内核态调度器\n");
+		systemMgr.panic(0, "由于驱动初始化失败，以下模块无法使用：\n\n"
+		                   "MemPatch V3\n"
+		                   "内核态调度器\n");
 	}
 
 	configMgr.init(systemMgr.getProfileDir());
@@ -112,9 +112,8 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【首次使用说明】\n\n"
-			"1 新增旧模式的驱动层支持。\n"
-			"（然而除非默认模式不生效，否则仍不建议使用旧模式）\n"
-			"2 修订细节以增加稳定性。\n\n\n"
+			"1 修订细节以增加稳定性。\n"
+			"2 修改部分说明。\n\n\n"
 			"更新模式：MemPatch V3\n\n"
 			"【新特性】在上一版的基础上进一步压缩SGUARD的cpu使用率令其接近0。\n（但必要时SGUARD仍会短暂占用cpu以防游戏出现异常）\n\n\n"
 			"【重要提示】若你第一次使用，建议仔细阅读说明（右键菜单->其他选项）。\n",

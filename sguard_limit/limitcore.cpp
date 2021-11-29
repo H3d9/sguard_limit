@@ -29,13 +29,12 @@ void LimitManager::hijack() {
 		
 		// check if kernel driver is initialized.
 		if (!driver.driverReady) {
-			systemMgr.log("patch(): kdriver is not initialized correctly, quit.");
+			systemMgr.log("hijack(kmode): kdriver is not initialized correctly, quit.");
 			return;
 		}
 
 		if (!driver.load()) {
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-			Sleep(5000);
 			return;
 		}
 
@@ -78,7 +77,6 @@ void LimitManager::hijack() {
 				Sleep(TimeGreen);
 				msElapsed += TimeGreen;
 			}
-
 		}
 
 		driver.unload();
