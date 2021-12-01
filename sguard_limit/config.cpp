@@ -28,7 +28,7 @@ void  ConfigManager::init(const std::string& profileDir) {
 	profile = profileDir + "\\config.ini";
 }
 
-bool ConfigManager::loadConfig(bool driverReady) {  // executes only when program is initalizing.
+bool ConfigManager::loadConfig() {  // executes only when program is initalizing.
 
 	auto     profile    = this->profile.c_str();
 	char     buf        [128];
@@ -156,11 +156,6 @@ bool ConfigManager::loadConfig(bool driverReady) {  // executes only when progra
 		patchMgr.patchSwitches.NtDelayExecution = false;
 	} else {
 		patchMgr.patchSwitches.NtDelayExecution = res ? true : false;
-	}
-
-	// if driver load failed, turn off some menu options.
-	if (!driverReady) {
-		limitMgr.useKernelMode = false;
 	}
 
 	return result;

@@ -1,8 +1,8 @@
 // Memory Patch（用户态模块）
 // 2021.10.4 雨
 // 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
-// 2021.11.1 万圣节
-// 明天已经降临了。
+// 2021.11.27 24:00
+// 大城市的郊区有着明亮的月亮。明天的露水在墙上凝结。
 #include <Windows.h>
 #include <stdio.h>
 #include <time.h>
@@ -21,7 +21,7 @@ extern win32SystemManager&    systemMgr;
 extern volatile DWORD         g_Mode;      // xref: patch::init()
 
 
-// patch module
+// mempatch module
 PatchManager  PatchManager::patchManager;
 
 PatchManager::PatchManager()
@@ -164,7 +164,7 @@ bool PatchManager::_patch_stage1() {
 	LONG offset0 = -1;
 
 	// try multi-times to find target offset.
-	for (auto try_times = 1; try_times <= 5; try_times++) {
+	for (auto try_times = 1; try_times <= 3; try_times++) {
 
 		// get potential rip in top 3 threads.
 		auto rips = _findRip();
@@ -764,7 +764,7 @@ bool PatchManager::_patch_stage2() {
 	LONG target_offset = -1;
 
 	// try multi-times to find target offset.
-	for (auto try_times = 1; try_times <= 5; try_times++) {
+	for (auto try_times = 1; try_times <= 3; try_times++) {
 		
 		// get potential rip in top 3 threads.
 		auto rips = _findRip(true);
@@ -1024,7 +1024,7 @@ bool PatchManager::_patch_stage2() {
 			working_bytes[0x4] = '\x47';
 		} else if(osBuildNumber < 22000) {  // win10 after 1909: 0x1044
 			working_bytes[0x4] = '\x44';
-		} else { // osBuildNumber >= 22000  // win11
+		} else { // osBuildNumber >= 22000  // win11: 0x103f
 			working_bytes[0x4] = '\x3f';
 		}
 

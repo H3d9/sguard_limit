@@ -31,6 +31,9 @@ void TraceManager::chase() {   // trace maybe, but i like that word.
 		map threadMap;
 		mapIt m1, m2, m3;
 
+		// note: see limit::hijack().
+		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
 		// reset interface.
 		for (auto i = 0; i < 3; i++) {
 			lockedThreads[i].tid = 0;

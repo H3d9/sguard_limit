@@ -3,6 +3,10 @@
 #include <stdarg.h>
 #include "kdriver.h"
 
+// dependency
+#include "win32utility.h" // OSVersion <- xref: driver::init
+extern    win32SystemManager&   systemMgr;
+
 
 // driver io
 KernelDriver  KernelDriver::kernelDriver;
@@ -24,6 +28,14 @@ KernelDriver& KernelDriver::getInstance() {
 bool KernelDriver::init(const std::string& sysfileDir) {
 
 	sysfile = sysfileDir + "\\SGuardLimit_VMIO.sys";
+
+
+	// check OS kernel support.
+	if (systemMgr.getSystemVersion() == OSVersion::OTHERS) {
+		_recordError("内核驱动模块在你的操作系统上不受支持。\n"
+		             "【注】内核驱动仅支持win7/10/11系统。");
+		return driverReady = false;
+	}
 
 
 	// import certificate key.

@@ -25,6 +25,11 @@ LimitManager& LimitManager::getInstance() {
 
 void LimitManager::hijack() {
 
+	// entering hijack() (and chase()) we'll set time_critical permanantly,
+	// even if user switch to mempatch which don't need that feature.
+	// user is expected to get non-time_critical thread at next start-up.
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
 	if (useKernelMode) { 
 		
 		// check if kernel driver is initialized.

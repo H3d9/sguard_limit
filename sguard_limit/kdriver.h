@@ -63,8 +63,8 @@ private:
 	HANDLE         hDriver;
 
 public:
-	DWORD          errorCode;
-	CHAR*          errorMessage;
+	DWORD          errorCode;     // module's errors recorded here (if method returns false).
+	CHAR*          errorMessage;  // caller can decide to log, panic, or ignore.
 
 private:
 	std::unique_ptr<CHAR[]>  errorMessage_ptr;

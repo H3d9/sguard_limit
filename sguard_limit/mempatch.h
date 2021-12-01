@@ -3,7 +3,7 @@
 #include <memory> // std::unique_ptr
 
 
-// patch module (sington)
+// mempatch module (sington)
 class PatchManager {
 
 private:

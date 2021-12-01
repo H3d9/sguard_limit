@@ -3,7 +3,7 @@
 #include <string>
 
 
-// config load & write module
+// config load & write module (sington)
 class ConfigManager {
 
 private:
@@ -22,7 +22,7 @@ public:
 
 public:
 	void    init(const std::string& profileDir);
-	bool    loadConfig(bool driverReady);
+	bool    loadConfig();
 	void    writeConfig();
 
 private:

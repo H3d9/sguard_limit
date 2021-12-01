@@ -13,9 +13,11 @@
     <ClCompile Include="mempatch.cpp">
       <Filter>mempatch</Filter>
     </ClCompile>
-    <ClCompile Include="config.cpp" />
     <ClCompile Include="kdriver.cpp">
       <Filter>kdriver</Filter>
+    </ClCompile>
+    <ClCompile Include="config.cpp">
+      <Filter>config</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -31,9 +33,11 @@
     <ClInclude Include="mempatch.h">
       <Filter>mempatch</Filter>
     </ClInclude>
-    <ClInclude Include="config.h" />
     <ClInclude Include="kdriver.h">
       <Filter>kdriver</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>config</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -54,6 +58,9 @@
     </Filter>
     <Filter Include="kdriver">
       <UniqueIdentifier>{58519027-6ca9-4b31-a87c-e505e4454f22}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="config">
+      <UniqueIdentifier>{7d144aca-161b-44a8-8939-147c36048763}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
