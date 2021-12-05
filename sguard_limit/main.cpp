@@ -70,7 +70,9 @@ INT WINAPI WinMain(
 
 
 	// initialize system module: 
-	// raise privilege, generate paths, and init win32 gui.
+	// setup dpi and raise privilege (must do first)
+	// init system manager (check sington, get path and os version, init log subsystem)
+	// init win32 gui (create window for callback, create tray)
 
 	systemMgr.setupProcessDpi();
 
@@ -84,20 +86,20 @@ INT WINAPI WinMain(
 	}
 
 	status =
-	systemMgr.init(hInstance, IDI_ICON1, WM_TRAYACTIVATE);
+	systemMgr.systemInit(hInstance);
 
 	if (!status) {
 		return -1;
 	}
 
 	status =
-	systemMgr.createWin32Window(WndProc);
+	systemMgr.createWindow(WndProc, IDI_ICON1);
 	
 	if (!status) {
 		return -1;
 	}
 
-	systemMgr.createTray();
+	systemMgr.createTray(WM_TRAYACTIVATE);
 
 
 	// initialize configuration module:
@@ -144,7 +146,8 @@ INT WINAPI WinMain(
 
 
 	// create working thread:
-	// using std::thread is more safe than winapi CreateThread, caus we use crt functions in it.
+	// using std::thread (_beginthreadex) is more safe than winapi CreateThread;
+	// because we use crt functions in working thread.
 
 	auto HijackThreadCaller = [] () {
 		std::thread hijackThread(HijackThreadWorker);

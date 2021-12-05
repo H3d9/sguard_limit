@@ -78,14 +78,13 @@ private:
 public:
 	static win32SystemManager&  getInstance();
 
-
 public:
-	bool       init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg);
+	bool       systemInit(HINSTANCE hInstance);
 	void       setupProcessDpi();
 	void       enableDebugPrivilege();
 	bool       checkDebugPrivilege();
-	bool       createWin32Window(WNDPROC WndProc);
-	void       createTray();
+	bool       createWindow(WNDPROC WndProc, DWORD WndIcon);
+	void       createTray(UINT trayActiveMsg);
 	void       removeTray();
 	WPARAM     messageLoop();
 	
@@ -99,27 +98,24 @@ public:
 	OSVersion           getSystemVersion();  // xref: mempatch
 	DWORD               getSystemBuildNum(); // xref: mempatch
 
+private:
+	ATOM     _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);
+	void     _panic(DWORD code, char* showbuf);
+
 
 public:
-	HWND         hWnd;
-	HINSTANCE    hInstance;
-
-
-private:
-	ATOM     _registerMyClass(WNDPROC WndProc);
-	void     _panic(DWORD code, char* showbuf);
+	HINSTANCE           hInstance;
 
 private:
 	HANDLE              hProgram;
-					    
+	HWND                hWnd;
+
 	OSVersion           osVersion;
 	DWORD               osBuildNum;
-					    
+	
 	FILE*               logfp;
-					    
-	DWORD               iconRcNum;
+	
 	NOTIFYICONDATA      icon;
-	UINT                trayActiveMsg;
-					    
+	
 	std::string         profileDir;
 };

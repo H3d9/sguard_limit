@@ -121,8 +121,7 @@ win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL),
-	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043),
-	  logfp(NULL), iconRcNum(), icon{}, trayActiveMsg(), profileDir{} {}
+	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), icon{}, profileDir{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -165,11 +164,9 @@ void win32SystemManager::setupProcessDpi() {
 	}
 }
 
-bool win32SystemManager::init(HINSTANCE hInst, DWORD iconRcNum, UINT trayActiveMsg) {
+bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
-	this->hInstance      = hInst;
-	this->iconRcNum      = iconRcNum;
-	this->trayActiveMsg  = trayActiveMsg;
+	this->hInstance      = hInstance;
 
 
 	// decide whether it's single instance.
@@ -317,9 +314,9 @@ bool win32SystemManager::checkDebugPrivilege() {
 	return (bool)bResult;
 }
 
-bool win32SystemManager::createWin32Window(WNDPROC WndProc) {
+bool win32SystemManager::createWindow(WNDPROC WndProc, DWORD WndIcon) {
 	
-	if (!_registerMyClass(WndProc)) {
+	if (!_registerMyClass(WndProc, WndIcon)) {
 		panic("创建窗口类失败。");
 		return false;
 	}
@@ -350,7 +347,7 @@ WPARAM win32SystemManager::messageLoop() {
 	return msg.wParam;
 }
 
-void win32SystemManager::createTray() {
+void win32SystemManager::createTray(UINT trayActiveMsg) {
 
 	icon.cbSize = sizeof(icon);
 	icon.hWnd = hWnd;
@@ -420,7 +417,7 @@ DWORD win32SystemManager::getSystemBuildNum() {
 	return osBuildNum;
 }
 
-ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc) {
+ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc, DWORD iconRcNum) {
 
 	WNDCLASS wc = { 0 };
 
