@@ -203,6 +203,11 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 	VMIO_REQUEST  request;
 	DWORD         Bytes;
 
+	if ((ULONG64)targetAddress & ((ULONG64)0xffff << 48)) {
+		_recordError("driver::readVM(): 无效的虚拟地址：0x%llx。", targetAddress);
+		return false;
+	}
+
 	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
 	request.errorCode = 0;
 
@@ -232,6 +237,11 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 	// assert: "in" is a 16K buffer.
 	VMIO_REQUEST  request;
 	DWORD         Bytes;
+
+	if ((ULONG64)targetAddress & ((ULONG64)0xffff << 48)) {
+		_recordError("driver::writeVM(): 无效的虚拟地址：0x%llx。", targetAddress);
+		return false;
+	}
 
 	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
 	request.errorCode = 0;
