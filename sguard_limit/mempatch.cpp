@@ -25,7 +25,8 @@ extern volatile DWORD         g_Mode;      // xref: patch::init()
 PatchManager  PatchManager::patchManager;
 
 PatchManager::PatchManager()
-	: patchEnabled(true), patchPid(0), patchSwitches{}, patchStatus{}, patchDelay{},
+	: patchEnabled(true), patchPid(0), patchFailCount(), 
+	  patchSwitches{}, patchStatus{}, patchDelay{},
 	  patchDelayRange{
 	   { 200, 1500, 2500 },   /* NtQueryVirtualMemory */
 	   { 100, 1000, 1500 },   /* GetAsyncKeyState */
@@ -180,9 +181,7 @@ bool PatchManager::_patch_stage1() {
 		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
 
 			// round up page.
-			vmStartAddress = *rip;
-			vmStartAddress &= ~0xfff;
-			vmStartAddress -= 0x1000;
+			vmStartAddress = (*rip & ~0xfff) - 0x1000;
 
 
 			// read memory.
@@ -240,13 +239,16 @@ bool PatchManager::_patch_stage1() {
 		}
 	}
 
+
 	// decide whether trait found success in all rounds.
+	// in case patch_stage1() success / fail, inc failcount / xor failcount.
 	if (offset0 < 0) {
-		systemMgr.log("patch1(): trait search failed too many times, abort.");
-		systemMgr.panic(0, "无法获取有效的内存特征，你可以重启游戏后再尝试限制SGUARD。\n"
-		                   "如果你总是出现该问题，可以尝试其他模式。");
+		patchFailCount ++;
+		systemMgr.log("patch1(): search failed too many times, abort. (retry: %d)", patchFailCount);
 		driver.unload();
 		return false;
+	} else {
+		patchFailCount = 0;
 	}
 
 
@@ -716,7 +718,7 @@ bool PatchManager::_patch_stage1() {
 
 
 	// stage1 complete.
-	systemMgr.log("patch1(): complete.");
+	systemMgr.log("patch1(): patch complete.");
 
 	driver.unload();
 	return true;
@@ -780,9 +782,7 @@ bool PatchManager::_patch_stage2() {
 		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
 
 			// round page.
-			vmStartAddress = *rip;
-			vmStartAddress &= ~0xfff;
-			vmStartAddress -= 0x1000;
+			vmStartAddress = (*rip & ~0xfff) - 0x1000;
 
 
 			// read memory.
@@ -1101,7 +1101,7 @@ bool PatchManager::_patch_stage2() {
 	}
 
 	// stage2 complete.
-	systemMgr.log("patch2(): complete.");
+	systemMgr.log("patch2(): patch complete.");
 
 	driver.unload();
 	return true;

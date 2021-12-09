@@ -195,7 +195,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	switch (msg) {
 	case WM_TRAYACTIVATE:
 	{
-		if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
+		if (lParam == WM_LBUTTONUP ||
+			lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
 
 			// for driver-depending options: 
 			// auto select MFT_STRING or MF_GRAYED.
@@ -224,6 +225,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 
 			if (g_Mode == 0) {
+
 				if (!limitMgr.limitEnabled) {
 					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 用户手动暂停");
 				} else if (g_HijackThreadWaiting) {
@@ -251,7 +253,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (limitMgr.useKernelMode) {
 					CheckMenuItem(hMenu, IDM_KERNELLIMIT, MF_CHECKED);
 				}
+
 			} else if (g_Mode == 1) {
+
 				if (!traceMgr.lockEnabled) {
 					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuard限制器 - 用户手动暂停");
 				} else if (g_HijackThreadWaiting) {
@@ -312,37 +316,38 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				} else {
 					CheckMenuItem(hMenu, IDM_UNLOCK, MF_CHECKED);
 				}
-			} else {
-				if (g_HijackThreadWaiting) {
-					if (driver.driverReady) {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
-					} else {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 模式无效（驱动初始化失败）");
-					}
+
+			} else { // if (g_Mode == 2) 
+
+				if (!driver.driverReady) {
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,      "SGuard限制器 - 模式无效（驱动初始化失败）");
 				} else {
-					DWORD total = 0;
-					if (patchMgr.patchSwitches.NtQueryVirtualMemory  ||
-						patchMgr.patchSwitches.NtWaitForSingleObject ||
-						patchMgr.patchSwitches.NtDelayExecution) {
-						total ++;
-					}
-					if (patchMgr.patchSwitches.GetAsyncKeyState) {
-						total ++;
-					}
-
-					DWORD finished = 0;
-					if (patchMgr.patchStatus.stage1) {
-						finished ++;
-					}
-					if (patchMgr.patchStatus.stage2) {
-						finished ++;
-					}
-
-					if (finished == 0) {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
+					if (g_HijackThreadWaiting) {
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,  "SGuard限制器 - 等待游戏运行");
 					} else {
-						sprintf(buf, "SGuard限制器 - 已提交  [%u/%u]", finished, total);
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
+						int total = (
+							patchMgr.patchSwitches.NtQueryVirtualMemory  ||
+							patchMgr.patchSwitches.NtWaitForSingleObject ||
+							patchMgr.patchSwitches.NtDelayExecution
+						) + (
+							patchMgr.patchSwitches.GetAsyncKeyState
+						);
+
+						int finished = 
+							patchMgr.patchStatus.stage1 + 
+							patchMgr.patchStatus.stage2;
+
+						if (finished == 0) {
+							if (patchMgr.patchFailCount == 0) {
+								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
+							} else {
+								sprintf(buf, "SGuard限制器 - 正在重试（第%d次）... << [点击查看详细信息]", patchMgr.patchFailCount);
+								AppendMenu(hMenu, MFT_STRING, IDM_SHOWFAILRESN, buf);
+							}
+						} else {
+							sprintf(buf, "SGuard限制器 - 已提交  [%d/%d]", finished, total);
+							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
+						}
 					}
 				}
 				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "当前模式：MemPatch V3  [点击切换]");
@@ -383,9 +388,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			SetForegroundWindow(hWnd);
 			TrackPopupMenu(hMenu, TPM_LEFTALIGN, pt.x, pt.y, 0, hWnd, NULL);
 			DestroyMenu(hMenu);
-
-		} else if (lParam == WM_LBUTTONDBLCLK) {
-			ShowAbout();
 		}
 	}
 	break;
@@ -517,6 +519,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				configMgr.writeConfig();
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				break;
+			case IDM_SHOWFAILRESN:
+				MessageBox(0, 
+					"出现“正在重试”字样表示限制器无法找到SGUARD扫内存的指令。\n"
+					"这一般由于SGUARD在最近的时间并没有扫内存导致。\n"
+					"建议的解决方法：\n\n"
+					"1 直接等待限制器自动重试。\n"
+					"2 重启游戏或重启电脑。\n"
+					"3 过一会儿再使用限制器。\n"
+					"4 偶尔出现是正常的。但若每次启动游戏都出现且均长时间重试无效，应停止使用限制器"
+					, "信息", MB_OK);
 				break;
 
 			// more options

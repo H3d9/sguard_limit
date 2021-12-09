@@ -225,9 +225,8 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 	time_t t = time(0);
 	tm* local = localtime(&t);
-	fprintf(logfp, "============ session start: [%d-%02d-%02d %02d:%02d:%02d] =============",
+	fprintf(logfp, "============ session start: [%d-%02d-%02d %02d:%02d:%02d] =============\n",
 		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
-	fprintf(logfp, "\n");
 
 
 	// acquire system version.
@@ -368,8 +367,8 @@ void win32SystemManager::log(const char* format, ...) {
 
 	time_t t = time(0);
 	tm* local = localtime(&t);
-	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] ", 1900 + local->tm_year, local->tm_mon + 1, local->tm_mday,
-		local->tm_hour, local->tm_min, local->tm_sec);
+	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] ", 
+		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
 
 	va_list arg;
 	va_start(arg, format);

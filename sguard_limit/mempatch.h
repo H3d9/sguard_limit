@@ -39,6 +39,7 @@ public:
 
 	volatile DWORD                patchPid;
 	volatile patchStatus_t        patchStatus;
+	volatile int                  patchFailCount;
 
 	volatile patchSwitches_t      patchSwitches;
 	volatile DWORD                patchDelay[4];
