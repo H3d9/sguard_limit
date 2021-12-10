@@ -29,11 +29,13 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 
 	sysfile = sysfileDir + "\\SGuardLimit_VMIO.sys";
 
+	_resetError();
+
 
 	// check OS kernel support.
 	if (systemMgr.getSystemVersion() == OSVersion::OTHERS) {
-		_recordError("内核驱动模块在你的操作系统上不受支持。\n"
-		             "【注】内核驱动仅支持win7/10/11系统。");
+		_recordError(0, "内核驱动模块在你的操作系统上不受支持。\n"
+		                "【注】内核驱动仅支持win7/10/11系统。");
 		return driverReady = false;
 	}
 
@@ -146,8 +148,8 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	if (fp != NULL) {
 		fclose(fp);
 		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
-			_recordError("拷贝sys文件失败，与之相关的模块将无法使用。\n"
-				         "你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", sysfileDir.c_str());
+			_recordError(0, "拷贝sys文件失败，与之相关的模块将无法使用。\n"
+				            "你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", sysfileDir.c_str());
 			return driverReady = false;
 		} else {
 			DeleteFile(currentPath);
@@ -157,8 +159,8 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	fp = fopen(sysfilePath, "rb");
 
 	if (fp == NULL) {
-		_recordError("找不到文件：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
-			         "你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", sysfileDir.c_str());
+		_recordError(0, "找不到文件：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
+			            "你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", sysfileDir.c_str());
 		return driverReady = false;
 	} else {
 		fclose(fp);
@@ -169,6 +171,8 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 
 bool KernelDriver::load() {
 
+	_resetError();
+
 	if (hDriver == INVALID_HANDLE_VALUE) {
 
 		if (!_startService()) {
@@ -178,7 +182,7 @@ bool KernelDriver::load() {
 		hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
 		
 		if (hDriver == INVALID_HANDLE_VALUE) {
-			_recordError("CreateFile失败。");
+			_recordError(GetLastError(), "CreateFile失败。");
 			return false;
 		}
 	}
@@ -187,6 +191,8 @@ bool KernelDriver::load() {
 }
 
 void KernelDriver::unload() {
+
+	_resetError();
 
 	if (hDriver != INVALID_HANDLE_VALUE) {
 
@@ -200,16 +206,16 @@ void KernelDriver::unload() {
 bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 
 	// assert: "out" is a 16K buffer.
-	VMIO_REQUEST  request;
+	VMIO_REQUEST  request(pid);
 	DWORD         Bytes;
 
-	if ((ULONG64)targetAddress & ((ULONG64)0xffff << 48)) {
-		_recordError("driver::readVM(): 无效的虚拟地址：0x%llx。", targetAddress);
+	_resetError();
+
+
+	if ((ULONG64)targetAddress & ((ULONG64)0xffff << 48)) { // mask: 0xFFFF...is kernel space. (win7=0xfffff...)
+		_recordError(0, "driver::readVM(): 无效的虚拟地址：0x%llx。", targetAddress);
 		return false;
 	}
-
-	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
-	request.errorCode = 0;
 
 
 	for (auto page = 0; page < 4; page++) {
@@ -217,12 +223,11 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 		request.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
 
 		if (!DeviceIoControl(hDriver, VMIO_READ, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-			_recordError("driver::readVM(): DeviceIoControl失败。");
+			_recordError(GetLastError(), "driver::readVM(): DeviceIoControl失败。");
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError("driver::readVM(): 驱动内部错误：%s。", request.errorFunc);
-			this->errorCode = request.errorCode;
+			_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
 			return false;
 		}
 
@@ -235,16 +240,16 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 
 	// assert: "in" is a 16K buffer.
-	VMIO_REQUEST  request;
+	VMIO_REQUEST  request(pid);
 	DWORD         Bytes;
 
+	_resetError();
+
+
 	if ((ULONG64)targetAddress & ((ULONG64)0xffff << 48)) {
-		_recordError("driver::writeVM(): 无效的虚拟地址：0x%llx。", targetAddress);
+		_recordError(0, "driver::writeVM(): 无效的虚拟地址：0x%llx。", targetAddress);
 		return false;
 	}
-
-	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
-	request.errorCode = 0;
 
 
 	for (auto page = 0; page < 4; page++) {
@@ -254,12 +259,11 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 		memcpy(request.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
 
 		if (!DeviceIoControl(hDriver, VMIO_WRITE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-			_recordError("driver::writeVM(): DeviceIoControl失败。");
+			_recordError(GetLastError(), "driver::writeVM(): DeviceIoControl失败。");
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError("driver::writeVM(): 驱动内部错误：%s。", request.errorFunc);
-			this->errorCode = request.errorCode;
+			_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
 			return false;
 		}
 	}
@@ -269,21 +273,18 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 
 bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 
-	VMIO_REQUEST  request;
+	VMIO_REQUEST  request(pid);
 	DWORD         Bytes;
 
-	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
-	request.address = NULL;
-	request.errorCode = 0;
+	_resetError();
 
 
 	if (!DeviceIoControl(hDriver, VMIO_ALLOC, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError("driver::allocVM(): DeviceIoControl失败。");
+		_recordError(GetLastError(), "driver::allocVM(): DeviceIoControl失败。");
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError("driver::allocVM(): 驱动内部错误：%s。", request.errorFunc);
-		this->errorCode = request.errorCode;
+		_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
 		return false;
 	}
 
@@ -294,20 +295,18 @@ bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 
 bool KernelDriver::suspend(DWORD pid) {
 
-	VMIO_REQUEST  request;
+	VMIO_REQUEST  request(pid);
 	DWORD         Bytes;
 
-	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
-	request.errorCode = 0;
+	_resetError();
 
 
 	if (!DeviceIoControl(hDriver, IO_SUSPEND, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError("driver::suspend(): DeviceIoControl失败。");
+		_recordError(GetLastError(), "driver::suspend(): DeviceIoControl失败。");
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError("driver::suspend(): 驱动内部错误：%s。", request.errorFunc);
-		this->errorCode = request.errorCode;
+		_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
 		return false;
 	}
 
@@ -316,32 +315,30 @@ bool KernelDriver::suspend(DWORD pid) {
 
 bool KernelDriver::resume(DWORD pid) {
 
-	VMIO_REQUEST  request;
+	VMIO_REQUEST  request(pid);
 	DWORD         Bytes;
 
-	request.pid = reinterpret_cast<HANDLE>(static_cast<LONG64>(pid));
-	request.errorCode = 0;
+	_resetError();
 
 
 	if (!DeviceIoControl(hDriver, IO_RESUME, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError("driver::resume(): DeviceIoControl失败。");
+		_recordError(GetLastError(), "driver::resume(): DeviceIoControl失败。");
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError("driver::resume(): 驱动内部错误：%s。", request.errorFunc);
-		this->errorCode = request.errorCode;
+		_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
 		return false;
 	}
 
 	return true;
 }
 
-#define SVC_ERROR_EXIT(errorMsg)   _recordError(errorMsg); \
-                                   if (hService) CloseServiceHandle(hService); \
-                                   if (hSCManager) CloseServiceHandle(hSCManager); \
-                                   hService = NULL; \
-                                   hSCManager = NULL; \
-                                   return false;
+#define SVC_ERROR_EXIT(errorCode, errorMsg)   _recordError(errorCode, errorMsg); \
+                                              if (hService) CloseServiceHandle(hService); \
+                                              if (hSCManager) CloseServiceHandle(hSCManager); \
+                                              hService = NULL; \
+                                              hSCManager = NULL; \
+                                              return false;
 
 bool KernelDriver::_startService() {
 
@@ -351,7 +348,7 @@ bool KernelDriver::_startService() {
 	hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 
 	if (!hSCManager) {
-		SVC_ERROR_EXIT("OpenSCManager失败。");
+		SVC_ERROR_EXIT(GetLastError(), "OpenSCManager失败。");
 	}
 
 	// open Service.
@@ -365,7 +362,7 @@ bool KernelDriver::_startService() {
 			NULL, NULL, NULL, NULL, NULL);
 
 		if (!hService) {
-			SVC_ERROR_EXIT("CreateService失败。");
+			SVC_ERROR_EXIT(GetLastError(), "CreateService失败。");
 		}
 	}
 
@@ -375,8 +372,9 @@ bool KernelDriver::_startService() {
 	// if service is running, stop it.
 	if (svcStatus.dwCurrentState != SERVICE_STOPPED && svcStatus.dwCurrentState != SERVICE_STOP_PENDING) {
 		if (!ControlService(hService, SERVICE_CONTROL_STOP, &svcStatus)) {
+			DWORD errorCode = GetLastError();
 			DeleteService(hService);
-			SVC_ERROR_EXIT("无法停止当前服务。重启电脑应该能解决该问题。");
+			SVC_ERROR_EXIT(errorCode, "无法停止当前服务。重启电脑应该能解决该问题。");
 		}
 	}
 
@@ -393,15 +391,16 @@ bool KernelDriver::_startService() {
 
 		if (svcStatus.dwCurrentState == SERVICE_STOP_PENDING) {
 			DeleteService(hService);
-			SVC_ERROR_EXIT("停止当前服务时的等待时间过长。重启电脑应该能解决该问题。");
+			SVC_ERROR_EXIT(0, "停止当前服务时的等待时间过长。重启电脑应该能解决该问题。");
 		}
 	}
 
 	// start service.
 	// if start failed, delete old one (cause old service may have wrong params)
 	if (!StartService(hService, 0, NULL)) {
+		DWORD errorCode = GetLastError();
 		DeleteService(hService);
-		SVC_ERROR_EXIT("StartService失败。重启电脑应该能解决该问题。");
+		SVC_ERROR_EXIT(errorCode, "StartService失败。重启电脑应该能解决该问题。");
 	}
 
 	return true;
@@ -424,12 +423,17 @@ void KernelDriver::_endService() {
 	hSCManager = NULL;
 }
 
-void KernelDriver::_recordError(const CHAR* msg, ...) {
+void KernelDriver::_resetError() {
+	errorCode = 0;
+	errorMessage_ptr.get()[0] = '\0';
+}
 
+void KernelDriver::_recordError(DWORD errorCode, const CHAR* msg, ...) {
+	
+	this->errorCode = errorCode;
+	
 	va_list arg;
 	va_start(arg, msg);
-	vsprintf(errorMessage, msg, arg);
+	vsprintf(errorMessage_ptr.get(), msg, arg);
 	va_end(arg);
-
-	errorCode = GetLastError();
 }
