@@ -342,7 +342,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
 							} else {
 								sprintf(buf, "SGuard限制器 - 正在重试（第%d次）... << [点击查看详细信息]", patchMgr.patchFailCount);
-								AppendMenu(hMenu, MFT_STRING, IDM_SHOWFAILRESN, buf);
+								AppendMenu(hMenu, MFT_STRING, IDM_PATCHFAILHINT, buf);
 							}
 						} else {
 							sprintf(buf, "SGuard限制器 - 已提交  [%d/%d]", finished, total);
@@ -520,7 +520,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				configMgr.writeConfig();
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
-			case IDM_SHOWFAILRESN:
+			case IDM_PATCHFAILHINT:
 				MessageBox(0, 
 					"出现“正在重试”字样表示限制器无法找到SGUARD扫内存的指令。\n"
 					"这一般由于SGUARD在最近的时间并没有扫内存导致。\n"

@@ -113,11 +113,9 @@ INT WINAPI WinMain(
 
 	if (!status) {
 		MessageBox(0,
-			"【首次使用说明】\n\n"
-			"1 由于“找不到特征”错误仅与SGUARD是否正在扫内存有关，修改相应的处理方式：\n"
-			"  > 出现该错误时，MemPatch模块将主动重试；\n"
-			"  > 出现该错误时，不再主动弹窗，而是点击右键菜单时显示提示。\n"
-			"2 修订细节以增加稳定性。\n\n\n"
+			"【更新说明】\n\n"
+			"1 增强V3搜索模块使其可以从User32的任意位置快速定位内存特征。\n"
+			"2 增强驱动模块的稳定性并修正部分问题。\n\n\n"
 			"新模式：MemPatch V3\n\n"
 			"【特性】在V2的基础上进一步压缩SGUARD的cpu使用率令其接近0。\n"
 			"（但必要时SGUARD仍会短暂占用cpu以防游戏出现异常）\n\n\n"
@@ -149,7 +147,7 @@ INT WINAPI WinMain(
 
 	// create working thread:
 	// using std::thread (_beginthreadex) is more safe than winapi CreateThread;
-	// because we use crt functions in working thread.
+	// because we use heap and crt functions in working thread.
 
 	auto HijackThreadCaller = [] () {
 		std::thread hijackThread(HijackThreadWorker);

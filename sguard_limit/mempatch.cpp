@@ -74,14 +74,24 @@ void PatchManager::patch() {
 		}
 
 
+		// start driver.
+		if (!driver.load()) {
+			systemMgr.log(driver.errorCode, "patch().driver.load(): %s", driver.errorMessage);
+			systemMgr.panic(driver.errorCode, "patch().driver.load(): %s", driver.errorMessage);
+			return;
+		}
+
+
 		// v2 switches (ntdll).
 		if (patchSwitches.NtQueryVirtualMemory  || 
 			patchSwitches.NtWaitForSingleObject || 
 			patchSwitches.NtDelayExecution
 			) {
-			if (_patch_stage1()) {
+			if (_patch_stage1(pid)) {
 				patchStatus.stage1 = true;
 			} else {
+				// if v2 fails, stop driver and quit (to retry).
+				driver.unload();
 				return;
 			}
 		}
@@ -89,10 +99,14 @@ void PatchManager::patch() {
 
 		// v3 switches (user32).
 		if (patchSwitches.GetAsyncKeyState) {
-			if (_patch_stage2()) {
+			if (_patch_stage2(pid)) {
 				patchStatus.stage2 = true;
 			}
 		}
+
+
+		// stop driver.
+		driver.unload();
 
 		patchPid = pid;
 		systemMgr.log("patch(): operation complete.");
@@ -124,22 +138,22 @@ void PatchManager::disable(bool forceRecover) {
 	patchEnabled = false;
 }
 
-bool PatchManager::_patch_stage1() {
+bool PatchManager::_patch_stage1(DWORD pid) {
 
 	win32ThreadManager     threadMgr;
-	auto                   pid               = threadMgr.getTargetPid();
 	auto                   osVersion         = systemMgr.getSystemVersion();
 	auto                   vmbuf             = vmbuf_ptr.get();
 	auto                   vmalloc           = vmalloc_ptr.get();
 	bool                   status;
 
 
+	// assert: driver loaded.
 	systemMgr.log("patch1(): entering.");
 
 	// before stable, wait a second.
 	for (auto time = 0; time < 5; time++) {
 
-		if (!patchEnabled || pid == 0 || pid != threadMgr.getTargetPid()) {
+		if (!patchEnabled || pid != threadMgr.getTargetPid()) {
 			systemMgr.log("patch1(): primary wait: pid not match or patch disabled, quit.");
 			return false;
 		}
@@ -148,20 +162,8 @@ bool PatchManager::_patch_stage1() {
 	}
 
 
-	// start driver.
-	status =
-	driver.load();
-
-	if (!status) {
-		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-		return false;
-	}
-
-
-	// find ntdll target offset.
-
-	// offset0: syscall 0 entry,
-	// offset from vmbuf:0.
+	// find ntdll syscall 0 offset.
+	// offset0: syscall entry rva from vmbuf:0.
 	LONG offset0 = -1;
 
 	// try multi-times to find target offset.
@@ -172,7 +174,6 @@ bool PatchManager::_patch_stage1() {
 
 		if (rips.empty()) {
 			systemMgr.log("patch1(): rips empty, quit.");
-			driver.unload();
 			return false;
 		}
 
@@ -189,8 +190,7 @@ bool PatchManager::_patch_stage1() {
 			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 
 			if (!status) {
-				systemMgr.log("patch1(): warning: load memory failed at: %llx", vmStartAddress);
-				systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+				systemMgr.log(driver.errorCode, "patch1() warning: load memory failed at 0x%llx : %s", vmStartAddress, driver.errorMessage);
 				continue;
 			}
 
@@ -215,7 +215,7 @@ bool PatchManager::_patch_stage1() {
 						offset0 = offset - 0x10 * syscall_num;
 					}
 
-					systemMgr.log("patch1(): offset0 found here: +0x%x (from: syscall 0x%x)", offset0, syscall_num);
+					systemMgr.log("patch1(): offset0 found at +0x%x (from: syscall 0x%x)", offset0, syscall_num);
 					break;
 				}
 			}
@@ -224,14 +224,14 @@ bool PatchManager::_patch_stage1() {
 				systemMgr.log("patch1(): trait not found at %%rip = %llx", *rip);
 				continue;
 			} else {
-				systemMgr.log("patch1(): trait found here: %%rip = %llx", *rip);
+				systemMgr.log("patch1(): trait found at %%rip = %llx", *rip);
 				break;
 			}
 		}
 
 		// check if offset0 found in all result in _findRip().
 		if (offset0 < 0) {
-			systemMgr.log("patch1(): round %u: trait not found in all result in _findRip().", try_times);
+			systemMgr.log("patch1(): round %u: trait not found in all rips.", try_times);
 			Sleep(15000);
 			continue;
 		} else {
@@ -245,7 +245,6 @@ bool PatchManager::_patch_stage1() {
 	if (offset0 < 0) {
 		patchFailCount ++;
 		systemMgr.log("patch1(): search failed too many times, abort. (retry: %d)", patchFailCount);
-		driver.unload();
 		return false;
 	} else {
 		patchFailCount = 0;
@@ -255,7 +254,6 @@ bool PatchManager::_patch_stage1() {
 	// before manip memory, check process status.
 	if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
 		systemMgr.log("patch1(): usr switched mode or process terminated, quit.");
-		driver.unload();
 		return false;
 	}
 
@@ -334,8 +332,8 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 
@@ -357,8 +355,8 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 
@@ -458,8 +456,8 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 
@@ -481,8 +479,8 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 		}
@@ -591,8 +589,8 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 
@@ -617,8 +615,8 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 		}
@@ -632,8 +630,8 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 
@@ -658,8 +656,8 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 		}
@@ -673,8 +671,8 @@ bool PatchManager::_patch_stage1() {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 
@@ -699,8 +697,8 @@ bool PatchManager::_patch_stage1() {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				driver.unload();
 				return false;
 			}
 		}
@@ -711,23 +709,20 @@ bool PatchManager::_patch_stage1() {
 	status =
 	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
+		systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-		driver.unload();
 		return false;
 	}
 
 
 	// stage1 complete.
 	systemMgr.log("patch1(): patch complete.");
-
-	driver.unload();
 	return true;
 }
 
-bool PatchManager::_patch_stage2() {
+bool PatchManager::_patch_stage2(DWORD pid) {
 
 	win32ThreadManager       threadMgr;
-	auto                     pid               = threadMgr.getTargetPid();
 	auto                     osVersion         = systemMgr.getSystemVersion();
 	auto                     osBuildNumber     = systemMgr.getSystemBuildNum();
 	auto                     vmbuf             = vmbuf_ptr.get();
@@ -735,12 +730,13 @@ bool PatchManager::_patch_stage2() {
 	bool                     status;
 
 
+	// assert: driver loaded.
 	systemMgr.log("patch2(): entering.");
 
 	// wait for stable.
 	for (auto time = 0; time < 5; time++) {
 
-		if (!patchEnabled || pid == 0 || pid != threadMgr.getTargetPid()) {
+		if (!patchEnabled || pid != threadMgr.getTargetPid()) {
 			systemMgr.log("patch2(): primary wait: pid not match or patch disabled, quit.");
 			return false;
 		}
@@ -749,31 +745,18 @@ bool PatchManager::_patch_stage2() {
 	}
 
 
-	// start driver.
-	status =
-	driver.load();
-
-	if (!status) {
-		systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-		return false;
-	}
-
-
-	// find win32k / user32 target offset.
-	
-	// target_offset: target syscall entry,
-	// offset from vmbuf:0.
+	// find win32u / user32 target offset.
+	// target_offset: target syscall entry, from vmbuf:0.
 	LONG target_offset = -1;
 
 	// try multi-times to find target offset.
-	for (auto try_times = 1; try_times <= 3; try_times++) {
+	for (auto try_times = 1; try_times <= 10; try_times++) {
 		
 		// get potential rip in top 3 threads.
 		auto rips = _findRip(true);
 
 		if (rips.empty()) {
 			systemMgr.log("patch2(): rips empty, quit.");
-			driver.unload();
 			return false;
 		}
 
@@ -790,7 +773,7 @@ bool PatchManager::_patch_stage2() {
 			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 
 			if (!status) {
-				systemMgr.log("patch2(): trait search warning: load memory failed at: %llx", vmStartAddress);
+				systemMgr.log(driver.errorCode, "patch2() warning: load memory failed at 0x%llx : %s", vmStartAddress, driver.errorMessage);
 				continue;
 			}
 
@@ -814,7 +797,7 @@ bool PatchManager::_patch_stage2() {
 
 					target_offset = offset;
 
-					systemMgr.log("patch2(): strict search found here: +0x%x (syscall 0x%x)", target_offset, *(LONG*)(traits + 4));
+					systemMgr.log("patch2(): strict search: target_offset found at +0x%x (syscall 0x%x)", target_offset, *(LONG*)(traits + 4));
 					break;
 				}
 			}
@@ -834,7 +817,7 @@ bool PatchManager::_patch_stage2() {
 						LONG real_call_num = *(LONG*)(traits + 4);
 						target_offset = offset - (found_call_num - 0x1000) * 0x20 + (real_call_num - 0x1000) * 0x20;
 
-						systemMgr.log("patch2(): fuzzy search found here: +0x%x (syscall 0x%x)", target_offset, found_call_num);
+						systemMgr.log("patch2(): fuzzy search: target_offset found at +0x%x (from syscall 0x%x)", target_offset, found_call_num);
 						break;
 					}
 				}
@@ -842,56 +825,74 @@ bool PatchManager::_patch_stage2() {
 
 			// search round 3: if not found, find relative in user32 and jump over. (WIN_10_11 only)
 			// [remark] WIN_7 do NOT use rex.W call to enter syscall part.
+			// however, WIN_10_11 use them to enter win32u.dll. In other case, this prefix is less likely to use.
+			// (21.12.10) enhanced: search is capable for any reference to user32.dll.
 			if (target_offset == -1 && osVersion == OSVersion::WIN_10_11) {
 
-				char user32_traits[] = "\x8B\xCB\x48\xFF\x15\x00\x00\x00\x00\x0F\x1F\x44\x00\x00\x0F\xB7\xF8\x0F\xB7\xC7";
+				char user32_traits[] = "\x48\xFF\x15\x00\x00\x00\x00";
 				/*
-					traits: user32.dll!GetAsyncKeyState+0xb4:
-					0:  8b cb                   mov    ecx,ebx
-					2:  48 ff 15 ?? ?? ?? ??    rex.W call QWORD PTR [rip+<imm32>]  ;<__imp_NtUserGetAsyncKeyState>
-					9:  0f 1f 44 00 00          nop    DWORD PTR [rax+rax*1+0x0]
-					e:  0f b7 f8                movzx  edi,ax
-					11: 0f b7 c7                movzx  eax,di
+					traits: user32.dll!AnyTrapFunction+0x??:
+					0:  48 ff 15 ?? ?? ?? ??    rex.W call qword ptr [rip+<imm32>]  ; <__imp_NtUserXxx...> 
+					7:  ??                      (possibly) nop dword ptr ...        ; if it was a trap entry
 				*/
 
+				int fake_entries = 0;
+
 				for (offset = 0x0; offset < 0x4000 - 0x20; offset++) {
-					if (0 == memcmp(vmbuf + offset, user32_traits, 5) &&
-						0 == memcmp(vmbuf + offset + 0x9, user32_traits + 0x9, 11)) {
+
+					if (0 == memcmp(vmbuf + offset, user32_traits, 3)) {
+
+						std::unique_ptr<CHAR[]> vmrelate_ptr(new CHAR[0x4000]);
+						auto vmrelate = vmrelate_ptr.get();
+
+						// parse instruction.
+						// finally, vaddress_entry -> win32u!__imp_NtUserXxx... .
+						LONG    relative_shift   = *(LONG*)(vmbuf + offset + 0x3);
+						ULONG64 vaddress_ptr     = vmStartAddress + offset + 0x7 + relative_shift;
+
+						if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_ptr & ~0xfff) - 0x1000))) {
+							systemMgr.log(driver.errorCode, "patch2(): read *vaddress_ptr (%llx) failed.", vaddress_ptr);
+							systemMgr.log("  note: %s", driver.errorMessage);
+							continue;
+						}
 						
-						std::unique_ptr<CHAR[]> vmrel_ptr(new CHAR[0x4000]);
-						auto vmrel = vmrel_ptr.get();
+						ULONG64 vaddress_entry = *(ULONG64*)(vmrelate + 0x1000 + vaddress_ptr % 0x1000);
 
-						// parse rex.W call qword ptr [rip+<dword>].
-						// entry_virtual = <__imp_NtUserGetAsyncKeyState>.
-						LONG    relative_shift    = *(LONG*)(vmbuf + offset + 0x5);
-						ULONG64 relative_virtual  = vmStartAddress + offset + 0x9 + relative_shift;
-
-						if (!driver.readVM(pid, vmrel, (PVOID)((relative_virtual & ~0xfff) - 0x1000))) {
-							systemMgr.log("patch2(): search round 3 warning: read relative_virtual failed.");
+						if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_entry & ~0xfff) - 0x1000))) {
+							systemMgr.log(driver.errorCode, "patch2(): load pages at vaddress_entry = 0x%llx failed.", vaddress_entry);
+							systemMgr.log("  note: %s", driver.errorMessage);
 							continue;
 						}
 
-						ULONG64 entry_virtual = *(ULONG64*)(vmrel + 0x1000 + relative_virtual % 0x1000);
-
-						if (!driver.readVM(pid, vmrel, (PVOID)((entry_virtual & ~0xfff) - 0x1000))) {
-							systemMgr.log("patch2(): search round 3 warning: read entry_virtual failed.");
+						if (!(0 == memcmp(vmrelate + 0x1000 + vaddress_entry % 0x1000, traits, 4) &&
+							  0 == memcmp(vmrelate + 0x1000 + vaddress_entry % 0x1000 + 6, traits + 6, 2))) {
+							fake_entries ++;
 							continue;
 						}
 
-						if (0 != memcmp(vmrel + 0x1000 + entry_virtual % 0x1000, traits, 8)) {
-							systemMgr.log("patch2(): search round 3 warning: entry found do not match traits.");
-							systemMgr.log("patch2():   note: maybe fake traits.");
+						// now vaddress_entry -> __imp_NtUserXxx... is ensured.
+						// shift vaddress_entry to target entry,
+						LONG call_number_found   = *(LONG*)(vmrelate + 0x1000 + vaddress_entry % 0x1000 + 4);
+						LONG call_number_target  = *(LONG*)(traits + 4);
+						ULONG64 target_entry     = vaddress_entry - (call_number_found * 0x20) + (call_number_target * 0x20);
+						
+						// switch vmbuf to target entry pages,
+						if (!driver.readVM(pid, vmbuf, (PVOID)((target_entry & ~0xfff) - 0x1000))) {
+							systemMgr.log(driver.errorCode, "patch2(): switch win32u pages to vaddress_entry = 0x%llx failed.", vaddress_entry);
+							systemMgr.log("  note: %s", driver.errorMessage);
 							continue;
-						} else {
-							vmStartAddress  = (entry_virtual & ~0xfff) - 0x1000;
-							target_offset   = 0x1000 + entry_virtual % 0x1000;
-							memcpy(vmbuf, vmrel, 0x4000);
-
-							systemMgr.log("patch2(): relative search found here: 0x%llx", entry_virtual);
-							systemMgr.log("patch2():   >> search path: [rip+0x%x] => 0x%llx => 0x%llx (syscall 0x%x)",
-								relative_shift, relative_virtual, entry_virtual, *(LONG*)(vmbuf + target_offset + 4));
-							break;
 						}
+
+						// and modify final result.
+						target_offset   = 0x1000 + target_entry % 0x1000;
+						vmStartAddress  = (target_entry & ~0xfff) - 0x1000;
+
+
+						systemMgr.log("patch2(): relative search: target_offset found at +0x%llx, after %d fake traps.", target_offset, fake_entries);
+						systemMgr.log("patch2():   >> search path: [rip+0x%x] => 0x%llx => 0x%llx (syscall 0x%x) => 0x%llx (syscall 0x%x)",
+							relative_shift, vaddress_ptr, vaddress_entry, call_number_found, target_entry, call_number_target);
+						
+						break;
 					}
 				}
 			}
@@ -900,14 +901,14 @@ bool PatchManager::_patch_stage2() {
 				systemMgr.log("patch2(): trait not found at %%rip = %llx.", *rip);
 				continue;
 			} else {
-				systemMgr.log("patch2(): trait found here: %%rip = %llx.", *rip);
+				systemMgr.log("patch2(): trait found at %%rip = %llx.", *rip);
 				break;
 			}
 		}
 
 		// check if target_offset found in all result in _findRip().
 		if (target_offset == -1) {
-			systemMgr.log("patch2(): round %u: trait not found in all result in _findRip().", try_times);
+			systemMgr.log("patch2(): round %u: trait not found in all rips.", try_times);
 			Sleep(15000);
 			continue;
 		} else {
@@ -917,8 +918,7 @@ bool PatchManager::_patch_stage2() {
 
 	// decide whether trait found success in all rounds.
 	if (target_offset == -1) {
-		systemMgr.log("patch2(): no memory trait found in win32k / user32, abort.");
-		driver.unload();
+		systemMgr.log("patch2(): no memory trait found in user32, abort.");
 		return false;
 	}
 
@@ -926,7 +926,6 @@ bool PatchManager::_patch_stage2() {
 	// before manip memory, check process status.
 	if (!(patchEnabled && pid == threadMgr.getTargetPid())) {
 		systemMgr.log("patch2(): usr switched mode or process terminated, quit.");
-		driver.unload();
 		return false;
 	}
 
@@ -1011,8 +1010,7 @@ bool PatchManager::_patch_stage2() {
 		PVOID allocAddress = NULL;
 		status = driver.allocVM(pid, &allocAddress);
 		if (!status) {
-			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-			driver.unload();
+			systemMgr.log(driver.errorCode, "patch2(): allocVM() failed : %s", driver.errorMessage);
 			return false;
 		}
 
@@ -1039,8 +1037,7 @@ bool PatchManager::_patch_stage2() {
 		memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 		status = driver.writeVM(pid, vmalloc, allocAddress);
 		if (!status) {
-			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-			driver.unload();
+			systemMgr.log(driver.errorCode, "patch2(): writeVM() failed : %s", driver.errorMessage);
 			return false;
 		}
 
@@ -1063,8 +1060,7 @@ bool PatchManager::_patch_stage2() {
 		PVOID allocAddress = NULL;
 		status = driver.allocVM(pid, &allocAddress);
 		if (!status) {
-			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-			driver.unload();
+			systemMgr.log(driver.errorCode, "patch2(): allocVM() failed : %s", driver.errorMessage);
 			return false;
 		}
 
@@ -1085,8 +1081,7 @@ bool PatchManager::_patch_stage2() {
 		memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 		status = driver.writeVM(pid, vmalloc, allocAddress);
 		if (!status) {
-			systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-			driver.unload();
+			systemMgr.log(driver.errorCode, "patch2(): writeVM() failed : %s", driver.errorMessage);
 			return false;
 		}
 	}
@@ -1095,15 +1090,12 @@ bool PatchManager::_patch_stage2() {
 	status =
 	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
-		systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
-		driver.unload();
+		systemMgr.log(driver.errorCode, "patch2(): writeVM() failed : %s", driver.errorMessage);
 		return false;
 	}
 
 	// stage2 complete.
 	systemMgr.log("patch2(): patch complete.");
-
-	driver.unload();
 	return true;
 }
 
@@ -1124,12 +1116,12 @@ PatchManager::_findRip(bool useAll) {
 	// open thread.
 	if (!threadMgr.getTargetPid()) {
 		systemMgr.log("_findRip(): pid not found, quit.");
-		return {};
+		return result;
 	}
 
 	if (!threadMgr.enumTargetThread()) {
 		systemMgr.log("_findRip(): open thread failed, quit.");
-		return {};
+		return result;
 	}
 
 

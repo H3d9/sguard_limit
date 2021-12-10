@@ -365,21 +365,31 @@ void win32SystemManager::removeTray() {
 
 void win32SystemManager::log(const char* format, ...) {
 
-	time_t t = time(0);
-	tm* local = localtime(&t);
-	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] ", 
-		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
+	char logbuf[1024];
 
 	va_list arg;
 	va_start(arg, format);
-	vfprintf(logfp, format, arg);
+	vsprintf(logbuf, format, arg);
 	va_end(arg);
 
-	fprintf(logfp, "\n");
+	_log(0, logbuf);
+}
+
+void win32SystemManager::log(DWORD errorCode, const char* format, ...) {
+	
+	char logbuf[1024];
+
+	va_list arg;
+	va_start(arg, format);
+	vsprintf(logbuf, format, arg);
+	va_end(arg);
+
+	_log(errorCode, logbuf);
 }
 
 void win32SystemManager::panic(const char* format, ...) {
-
+	
+	// call GetLastError first; to avoid errors in current function.
 	DWORD errorCode = GetLastError();
 
 	CHAR buf[1024];
@@ -432,6 +442,46 @@ ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc, DWORD iconRcNum) {
 	wc.lpszClassName = "SGuardLimit_WindowClass";
 
 	return RegisterClass(&wc);
+}
+
+void win32SystemManager::_log(DWORD code, char* logbuf) {
+
+	char result[2048];
+
+	// put timestamp to result.
+	time_t t = time(0);
+	tm* local = localtime(&t);
+	sprintf(result, "[%d-%02d-%02d %02d:%02d:%02d] ",
+		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
+
+	// put log format to result.
+	strcat(result, logbuf);
+	strcat(result, "\n");
+
+	// write result to file.
+	fprintf(logfp, "%s", result);
+
+	// if code != 0, write [note] in another line. 
+	if (code != 0) {
+
+		// put timestamp to result.
+		time_t t = time(0);
+		tm* local = localtime(&t);
+		sprintf(result, "[%d-%02d-%02d %02d:%02d:%02d]   note: error ",
+			1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
+
+		// put description to result.
+		char* description = NULL;
+
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK, NULL,
+			code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&description, 0, NULL);
+
+		sprintf(result + strlen(result), "(0x%x) %s\n", code, description);
+		LocalFree(description);
+
+		// write result to file.
+		fprintf(logfp, "%s", result);
+	}
 }
 
 void win32SystemManager::_panic(DWORD code, char* showbuf) {

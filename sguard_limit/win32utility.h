@@ -90,6 +90,7 @@ public:
 	
 public:	
 	void       log(const char* format, ...);
+	void       log(DWORD errorCode, const char* format, ...);
 	void       panic(const char* format, ...);
 	void       panic(DWORD errorCode, const char* format, ...);
 	
@@ -100,6 +101,7 @@ public:
 
 private:
 	ATOM     _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);
+	void     _log(DWORD code, char* logbuf);
 	void     _panic(DWORD code, char* showbuf);
 
 
