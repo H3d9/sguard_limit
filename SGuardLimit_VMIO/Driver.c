@@ -59,12 +59,32 @@ PsResumeProcess(PEPROCESS Process);
 
 // 包装器
 NTSTATUS KeReadVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID TargetAddress, SIZE_T Size) {
+	
+	// 此处MmCopyVirtualMemory仅用于拷贝用户态虚拟内存。
+	// 尽管MmCopyVirtualMemory也可以拷贝内核态的分页虚拟内存，但若触碰到内核态非分页区域或无页表映射区域，
+	// 由于不存在对应的内核页表项，触发内核态page fault后无法解决缺页，此时kernel会将之判定为严重错误，这将引发BSOD。
+	// 相应的，若触发了用户态page fault，即使无法解决缺页，也只是MmCopyVirtualMemory返回失败而已。
+	ULONG64 mask = (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) ? 
+		(ULONG64)0xfffff << 44 : (ULONG64)0xffff << 48;
+
+	if ((ULONG64)SourceAddress & mask) {
+		return STATUS_ACCESS_DENIED;
+	}
+	
 	SIZE_T Bytes;
 	return MmCopyVirtualMemory(Process, SourceAddress, PsGetCurrentProcess(), TargetAddress,
 		Size, KernelMode, &Bytes);
 }
 
 NTSTATUS KeWriteVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID TargetAddress, SIZE_T Size) {
+	
+	ULONG64 mask = (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) ?
+		(ULONG64)0xfffff << 44 : (ULONG64)0xffff << 48;
+
+	if ((ULONG64)SourceAddress & mask) {
+		return STATUS_ACCESS_DENIED;
+	}
+	
 	SIZE_T Bytes;
 	return MmCopyVirtualMemory(PsGetCurrentProcess(), SourceAddress, Process, TargetAddress,
 		Size, KernelMode, &Bytes);
@@ -129,6 +149,8 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				IOCTL_LOG_EXIT("VMIO_WRITE::(process not found)");
 			}
 
+			// [批注] 由于私有句柄表可以索引到eprocess结构体，故前一个调用可以省略。
+			// 但该函数调用并不密集，耗时也并不大，故省略此优化。
 			Status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &clientId);
 
 			if (!NT_SUCCESS(Status)) {
