@@ -845,10 +845,9 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 						std::unique_ptr<CHAR[]> vmrelate_ptr(new CHAR[0x4000]);
 						auto vmrelate = vmrelate_ptr.get();
 
-						// parse instruction.
-						// finally, vaddress_entry -> win32u!__imp_NtUserXxx... .
-						LONG    relative_shift   = *(LONG*)(vmbuf + offset + 0x3);
-						ULONG64 vaddress_ptr     = vmStartAddress + offset + 0x7 + relative_shift;
+						// parse instruction: rex.w call.
+						auto relative_shift  = *(LONG*)(vmbuf + offset + 0x3);
+						auto vaddress_ptr    = vmStartAddress + offset + 0x7 + relative_shift;
 
 						if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_ptr & ~0xfff) - 0x1000))) {
 							systemMgr.log(driver.errorCode, "patch2(): read *vaddress_ptr (%llx) failed.", vaddress_ptr);
@@ -856,7 +855,8 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 							continue;
 						}
 						
-						ULONG64 vaddress_entry = *(ULONG64*)(vmrelate + 0x1000 + vaddress_ptr % 0x1000);
+						// since rex.w call -> vaddress_entry, load memory vaddress_entry points to.
+						auto vaddress_entry = *(ULONG64*)(vmrelate + 0x1000 + vaddress_ptr % 0x1000);
 
 						if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_entry & ~0xfff) - 0x1000))) {
 							systemMgr.log(driver.errorCode, "patch2(): load pages at vaddress_entry = 0x%llx failed.", vaddress_entry);
@@ -864,32 +864,43 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 							continue;
 						}
 
+						// check if vaddress_entry points to valid related system call:
+						// traits should match and call_number_found should be in range [0x1000, 0x1fff].
+						auto call_number_found = *(ULONG*)(vmrelate + 0x1000 + vaddress_entry % 0x1000 + 4);
+
 						if (!(0 == memcmp(vmrelate + 0x1000 + vaddress_entry % 0x1000, traits, 4) &&
-							  0 == memcmp(vmrelate + 0x1000 + vaddress_entry % 0x1000 + 6, traits + 6, 2))) {
+							call_number_found >= 0x1000 && call_number_found <= 0x1fff)) {
 							fake_entries ++;
 							continue;
 						}
 
-						// now vaddress_entry -> __imp_NtUserXxx... is ensured.
-						// shift vaddress_entry to target entry,
-						LONG call_number_found   = *(LONG*)(vmrelate + 0x1000 + vaddress_entry % 0x1000 + 4);
-						LONG call_number_target  = *(LONG*)(traits + 4);
-						ULONG64 target_entry     = vaddress_entry - (call_number_found * 0x20) + (call_number_target * 0x20);
+						// now we have ensured vaddress_entry -> __imp_NtUserXxx... .
+						// use call_number_target to shift vaddress_entry to target_entry,
+						auto call_number_target = *(ULONG*)(traits + 4);
+						auto target_entry       = vaddress_entry - (call_number_found * 0x20) + (call_number_target * 0x20);
 						
-						// switch vmbuf to target entry pages,
-						if (!driver.readVM(pid, vmbuf, (PVOID)((target_entry & ~0xfff) - 0x1000))) {
+						// switch to target_entry memory, 
+						if (!driver.readVM(pid, vmrelate, (PVOID)((target_entry & ~0xfff) - 0x1000))) {
 							systemMgr.log(driver.errorCode, "patch2(): switch win32u pages to vaddress_entry = 0x%llx failed.", vaddress_entry);
 							systemMgr.log("  note: %s", driver.errorMessage);
 							continue;
 						}
+						
+						// (and check memory to find if it's real target)
+						if (!(0 == memcmp(vmrelate + 0x1000 + target_entry % 0x1000, traits, sizeof(traits) - 1))) {
+							systemMgr.log(driver.errorCode, "patch2(): it seems that vaddress_entry 0x%llx is inlined, ignored.", vaddress_entry);
+							fake_entries++;
+							continue;
+						}
 
-						// and modify final result.
+						// then modify final result.
 						target_offset   = 0x1000 + target_entry % 0x1000;
 						vmStartAddress  = (target_entry & ~0xfff) - 0x1000;
+						memcpy(vmbuf, vmrelate, 0x4000);
 
 
 						systemMgr.log("patch2(): relative search: target_offset found at +0x%llx, after %d fake traps.", target_offset, fake_entries);
-						systemMgr.log("patch2():   >> search path: [rip+0x%x] => 0x%llx => 0x%llx (syscall 0x%x) => 0x%llx (syscall 0x%x)",
+						systemMgr.log("patch2():   >> search path: [rip+0x%x] ~ 0x%llx => 0x%llx (syscall 0x%x) => 0x%llx (syscall 0x%x)",
 							relative_shift, vaddress_ptr, vaddress_entry, call_number_found, target_entry, call_number_target);
 						
 						break;
