@@ -365,7 +365,7 @@ void win32SystemManager::removeTray() {
 
 void win32SystemManager::log(const char* format, ...) {
 
-	char logbuf[1024];
+	char logbuf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
@@ -377,7 +377,7 @@ void win32SystemManager::log(const char* format, ...) {
 
 void win32SystemManager::log(DWORD errorCode, const char* format, ...) {
 	
-	char logbuf[1024];
+	CHAR logbuf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
@@ -392,7 +392,7 @@ void win32SystemManager::panic(const char* format, ...) {
 	// call GetLastError first; to avoid errors in current function.
 	DWORD errorCode = GetLastError();
 
-	CHAR buf[1024];
+	CHAR buf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
@@ -404,7 +404,7 @@ void win32SystemManager::panic(const char* format, ...) {
 
 void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 
-	CHAR buf[1024];
+	CHAR buf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
@@ -444,9 +444,13 @@ ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc, DWORD iconRcNum) {
 	return RegisterClass(&wc);
 }
 
-void win32SystemManager::_log(DWORD code, char* logbuf) {
+void win32SystemManager::_log(DWORD code, const char* logbuf) {
 
-	char result[2048];
+	if (!logfp) {
+		return;
+	}
+
+	char result[0x1000];
 
 	// put timestamp to result.
 	time_t t = time(0);
@@ -460,7 +464,7 @@ void win32SystemManager::_log(DWORD code, char* logbuf) {
 
 	// write result to file.
 	fprintf(logfp, "%s", result);
-
+	
 	// if code != 0, write [note] in another line. 
 	if (code != 0) {
 
@@ -484,9 +488,17 @@ void win32SystemManager::_log(DWORD code, char* logbuf) {
 	}
 }
 
-void win32SystemManager::_panic(DWORD code, char* showbuf) {
+void win32SystemManager::_panic(DWORD code, const char* showbuf) {
 
-	// assert: showbuf[] is huge enough.
+	char result[0x1000];
+
+	// before panic, log first.
+	_log(code, showbuf);
+
+	// put message to result.
+	strcpy(result, showbuf);
+
+	// if code != 0, add details in another line.
 	if (code != 0) {
 
 		char* description = NULL;
@@ -494,9 +506,9 @@ void win32SystemManager::_panic(DWORD code, char* showbuf) {
 		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
 			          code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&description, 0, NULL);
 
-		sprintf(showbuf + strlen(showbuf), "\n\n发生的错误：(0x%x) %s", code, description);
+		sprintf(result + strlen(result), "\n\n发生的错误：(0x%x) %s", code, description);
 		LocalFree(description);
 	}
 
-	MessageBox(0, showbuf, 0, MB_OK);
+	MessageBox(0, result, 0, MB_OK);
 }

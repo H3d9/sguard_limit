@@ -114,12 +114,12 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			"1 （修复问题）增强V3搜索模块使其可以从User32的任意位置定位内存特征。\n"
-			"2 增强驱动模块的稳定性。\n\n\n"
-			"新模式：MemPatch V3\n\n"
-			"【特性】在V2的基础上进一步压缩SGUARD的cpu使用率令其接近0。\n"
-			"（但必要时SGUARD仍会短暂占用cpu以防游戏出现异常）\n\n\n"
-			"【重要提示】若你第一次使用，建议仔细阅读说明（右键菜单→其他选项）。\n",
+			"1. 修复可能出现的闪退/停止工作问题。\n\n\n"
+			"【重要提示】\n\n"
+			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦\n\n"
+			"2. 默认是MemPatch模式，如果LOL不好用，可以切换模式“时间转轮”\n"
+			"   但DNF不建议使用时间转轮（可能掉线）。\n\n"
+			"3. 若你第一次使用，请【务必】仔细阅读说明（右键菜单→其他选项）。\n\n",
 			VERSION "  by: @H3d9", MB_OK);
 	}
 
@@ -128,20 +128,26 @@ INT WINAPI WinMain(
 	// make preparations for load kernel driver from given path.
 	// however, if (driver init fails && user selected related options), modify config and panic.
 
-	status =
-	driver.init(systemMgr.getProfileDir());
+	if (systemMgr.getSystemVersion() == OSVersion::OTHERS) {
+		systemMgr.panic(0, "内核驱动模块在你的操作系统上不受支持。\n"
+			               "【注】内核驱动仅支持win7/10/11系统。");
+	} else {
 
-	if (!status && (g_Mode == 2 || (g_Mode == 0 && limitMgr.useKernelMode))) {
+		status =
+		driver.init(systemMgr.getProfileDir());
 
-		// turn off related config flags.
-		limitMgr.useKernelMode = false;
-		configMgr.writeConfig();
+		if (!status && (g_Mode == 2 || (g_Mode == 0 && limitMgr.useKernelMode))) {
 
-		// show panic: alert usr to switch options manually.
-		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-		systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
-			               "MemPatch V3\n"
-			               "内核态调度器\n");
+			// turn off related config flags.
+			limitMgr.useKernelMode = false;
+			configMgr.writeConfig();
+
+			// show panic: alert usr to switch options manually.
+			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+			systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
+							   "MemPatch V3\n"
+							   "内核态调度器\n");
+		}
 	}
 
 

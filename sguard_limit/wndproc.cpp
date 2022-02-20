@@ -23,44 +23,58 @@ extern volatile DWORD           g_Mode;
 
 // about func: show about dialog box.
 static void ShowAbout() {
-	MessageBox(0,
-		"本工具用于约束TX游戏后台扫盘插件（ACE-Guard Client EXE，即SGUARD）的CPU使用率。"
-		"一般情况下，你无须进行任何设置；默认选项基本上适用于所有情况。\n"
+
+	if (IDOK == MessageBox(0,
+		"本工具专用于约束TX游戏扫盘插件ACE-Guard Client EXE的CPU使用率。\n"
 		"该工具仅供研究交流游戏优化使用，将来可能失效，不保证稳定性。\n"
 		"如果你发现无法正常使用，请更换模式或选项；若还不行请停止使用并等待更新。\n\n"
-		"【注】不要直接关闭该扫盘插件，这会导致游戏掉线。\n\n\n"
-
-		"【工作模式说明】\n\n"
-
-		"MemPatch V3（21.10.6）：\n"
-		">1 NtQueryVirtualMemory: 令SGUARD扫内存的速度变慢。\n"
-		"  若只开这一项，理论上并不会导致游戏掉线。\n"
-		">2 GetAsyncKeyState: 令SGUARD读取键盘按键的速度变慢。\n"
-		"  虽然我并不知道为何它会频繁读取键盘按键，但该项似乎能有效提升游戏流畅度。\n"
-		"  与之相关的引用位于SGUARD使用的动态库ACE-DRV64.dll中。\n"
-		">3 NtWaitForSingleObject:（旧版增强模式）已知可能导致游戏异常，不建议使用。\n"
-		">4 NtDelayExecution:（旧版功能）已知可能导致游戏异常和卡顿，不建议使用。\n\n"
-
-		"【注意】Memory Patch需要临时装载一次驱动，提交内存后会立即将之卸载。若你使用时出现问题，可以去下方链接下载证书。\n\n\n"
-		
-		"====================================\n"
-		"以下旧模式建议仅限上述新模式无法使用时再尝试\n"
-		"====================================\n\n"
-
-		"线程追踪（21.7.17）：\n"
-		"根据统计反馈，目前该模式中最好用的选项为【弱锁定-rr】。\n"
-		"如果出现问题，可以点击【设置时间切分】，并尝试90，85，80...直到合适即可。\n"
-		"【时间切分】设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n\n"
-
-		"时间片轮转（21.2.6）：\n"
-		"这是最早的模式，其原理与BES相同，容易引起游戏掉线，不建议使用。\n"
-		"若打开内核态调度，则限制器不再持有SGUARD句柄，故游戏掉线的几率相比不开要低。\n"
-		"因此在你想用这个模式的前提下，建议手动打开内核态调度开关。\n\n\n"
-
-		"SGUARD讨论群：775176979\n\n"
-		"更新链接/源代码：见右键菜单→其他选项。",
+		"【使用方法】双击打开，右下角出现托盘即可。一般情况无需进行任何设置。\n\n\n"
+		"【提示】 不要强行关闭上述扫盘插件，这会导致游戏掉线。\n\n"
+		"【提示】 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n\n"
+		"SGUARD讨论群：775176979\n"
+		"更新链接/源代码：见右键菜单→其他选项。\n\n"
+		"点击“确定”翻到下一页；点击“取消”结束查看说明。",
 		"SGuard限制器 " VERSION "  by: @H3d9",
-		MB_OK);
+		MB_OKCANCEL)) 
+	{
+		if (IDOK == MessageBox(0,
+			"【工作模式说明 P1】\n\n"
+			"时间片轮转（21.2.6）：\n\n"
+			"该模式原理与BES相同，不建议DNF使用（但是LOL可以用）。\n\n"
+			"【注】如果LOL经常掉线连不上，可以切换到这个模式；且【不要打开】内核态调度器。\n"
+			"【注】对于DNF，如果你仍然想用这个模式，建议打开内核态调度器。\n\n"
+			"点击“确定”翻到下一页；点击“取消”结束查看说明。",
+			"SGuard限制器 " VERSION "  by: @H3d9",
+			MB_OKCANCEL)) 
+		{
+			if (IDOK == MessageBox(0,
+				"【工作模式说明 P2】\n\n"
+				"线程追踪（21.7.17）：\n\n"
+				"该模式仅针对DNF，且仅推荐使用-rr后缀的功能。\n"
+				"你可以点击“设置时间切分”并尝试诸如90，85，80...直到合适即可。\n\n"
+				"【注】“时间切分”设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n"
+				"【注】根据统计反馈，目前该模式中最好用的选项为【弱锁定-rr】。\n\n"
+				"点击“确定”翻到下一页；点击“取消”结束查看说明。",
+				"SGuard限制器 " VERSION "  by: @H3d9",
+				MB_OKCANCEL))
+			{
+				MessageBox(0,
+					"【工作模式说明 P3】\n\n"
+					"MemPatch V3（21.10.6）：\n\n"
+					"这是默认模式，建议优先使用，如果不好用再换其他模式。\n\n"
+					">1 NtQueryVirtualMemory: 令SGUARD扫内存的速度变慢。\n\n"
+					">2 GetAsyncKeyState: 令SGUARD读取键盘按键的速度变慢。\n"
+					"【注】启用该选项似乎能有效提升游戏流畅度，但特殊情况下可能导致游戏掉线。\n"
+					"【注】若出现问题，关闭该选项即可。相关的引用位于动态库ACE-DRV64.dll中。\n\n"
+					">3 NtWaitForSingleObject: 不建议使用：已知可能导致游戏异常。\n\n"
+					">4 NtDelayExecution: 不建议使用：已知可能导致游戏异常和卡顿。\n\n\n"
+					"【说明】内存补丁V3需要临时装载一次驱动，提交内存后会立即将之卸载。\n"
+					"若你使用时出现问题，可以去更新链接下载证书。",
+					"SGuard限制器 " VERSION "  by: @H3d9",
+					MB_OK);
+			}
+		}
+	}
 }
 
 // dialog: set percent.
@@ -69,7 +83,7 @@ static INT_PTR CALLBACK SetPctDlgProc(HWND hDlg, UINT message, WPARAM wParam, LP
 	switch (message) {
 	case WM_INITDIALOG:
 	{
-		char buf[128];
+		char buf[0x1000];
 		sprintf(buf, "输入整数1~99，或999（代表99.9）\n（当前值：%u）", limitMgr.limitPercent);
 		SetDlgItemText(hDlg, IDC_SETPCTTEXT, buf);
 		return (INT_PTR)TRUE;
@@ -103,7 +117,7 @@ static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, L
 	switch (message) {
 	case WM_INITDIALOG:
 	{
-		char buf[128];
+		char buf[0x1000];
 		sprintf(buf, "输入1~99的整数（当前值：%u）", traceMgr.lockRound);
 		SetDlgItemText(hDlg, IDC_SETTIMETEXT, buf);
 			return (INT_PTR)TRUE;
@@ -144,7 +158,7 @@ static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, 
 		{
 			id = (DWORD)lParam;
 
-			char buf[128];
+			char buf[0x1000];
 			sprintf(buf, "输入%u~%u的整数（当前值：%u）", delayRange[id].low, delayRange[id].high, delay[id]);
 			SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
 
@@ -203,7 +217,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			auto    drvMenuType    = driver.driverReady ? MFT_STRING : MF_GRAYED;
 
 
-			CHAR    buf      [128] = {};
+			CHAR    buf   [0x1000] = {};
 			HMENU   hMenu          = CreatePopupMenu();
 			HMENU   hMenuModes     = CreatePopupMenu();
 			HMENU   hMenuOthers    = CreatePopupMenu();

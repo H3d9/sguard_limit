@@ -10,7 +10,6 @@
 extern KernelDriver&          driver;
 extern win32SystemManager&    systemMgr;
 extern volatile bool          g_HijackThreadWaiting;  // xref: limit::disable()
-extern volatile DWORD         g_Mode;                 // xref: limit::init()
 
 
 // Limit Manager

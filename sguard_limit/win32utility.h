@@ -101,8 +101,8 @@ public:
 
 private:
 	ATOM     _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);
-	void     _log(DWORD code, char* logbuf);
-	void     _panic(DWORD code, char* showbuf);
+	void     _log(DWORD code, const char* logbuf);
+	void     _panic(DWORD code, const char* showbuf);
 
 
 public:

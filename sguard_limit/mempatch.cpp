@@ -18,7 +18,6 @@
 
 extern KernelDriver&          driver;
 extern win32SystemManager&    systemMgr;
-extern volatile DWORD         g_Mode;      // xref: patch::init()
 
 
 // mempatch module
@@ -76,7 +75,6 @@ void PatchManager::patch() {
 
 		// start driver.
 		if (!driver.load()) {
-			systemMgr.log(driver.errorCode, "patch().driver.load(): %s", driver.errorMessage);
 			systemMgr.panic(driver.errorCode, "patch().driver.load(): %s", driver.errorMessage);
 			return;
 		}
@@ -332,7 +330,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -355,7 +352,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -456,7 +452,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -479,7 +474,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -589,7 +583,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -615,7 +608,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -630,7 +622,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -656,7 +647,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -671,7 +661,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): allocVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -697,7 +686,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				return false;
 			}
@@ -709,7 +697,6 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 	status =
 	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
-		systemMgr.log(driver.errorCode, "patch1(): writeVM() failed : %s", driver.errorMessage);
 		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 		return false;
 	}
@@ -750,7 +737,7 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 	LONG target_offset = -1;
 
 	// try multi-times to find target offset.
-	for (auto try_times = 1; try_times <= 10; try_times++) {
+	for (auto try_times = 1; try_times <= 5; try_times++) {
 		
 		// get potential rip in top 3 threads.
 		auto rips = _findRip(true);
@@ -803,7 +790,7 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 			}
 
 			// search round 2: if not found, find fuzzy value. (WIN_10_11 only)
-			// [remark] WIN_7 do NOT map continuous memory for syscall 0x10xx by a single library (win32u.dll).
+			// [remark] WIN_7 do NOT map continuous memory for syscall 0x1xxx by a single library (win32u.dll).
 			// syscalls are simply inlined in user32.dll's function implementation.
 			// just like ntdll, win32u are all aligned to 0x20 Bytes in WIN_10_11.
 			if (target_offset == -1 && osVersion == OSVersion::WIN_10_11) {
@@ -842,7 +829,7 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 
 					if (0 == memcmp(vmbuf + offset, user32_traits, 3)) {
 
-						std::unique_ptr<CHAR[]> vmrelate_ptr(new CHAR[0x4000]);
+						auto vmrelate_ptr = std::make_unique<CHAR[]>(0x4000);
 						auto vmrelate = vmrelate_ptr.get();
 
 						// parse instruction: rex.w call.
@@ -1120,7 +1107,7 @@ PatchManager::_findRip(bool useAll) {
 	CONTEXT                             context;
 	context.ContextFlags = CONTEXT_ALL;
 
-	char                                logBuf      [1024];
+	char                                logBuf      [0x1000];
 	std::vector<ULONG64>                result       = {};
 	
 
@@ -1212,19 +1199,14 @@ PatchManager::_findRip(bool useAll) {
 		}
 	}
 
-
-	strcpy(logBuf, "_findRip(): result: ");
-	for (auto item : result) {
-		sprintf(logBuf + strlen(logBuf), "%llx ", item);
-	}
-	systemMgr.log(logBuf);
+	systemMgr.log("_findRip(): find result: vector to be returned contains %u elements.", result.size());
 	
 	return result;
 }
 
 void PatchManager::_outVmbuf(ULONG64 vmStart, const CHAR* vmbuf) {  // unused: for dbg only
 
-	char title[512];
+	char title[0x1000];
 	time_t t = time(0);
 	tm* local = localtime(&t);
 	sprintf(title, "[%d-%02d-%02d %02d.%02d.%02d] ",

@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <vector>
 #include <memory> // std::unique_ptr
 
 

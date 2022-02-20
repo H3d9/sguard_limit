@@ -3,12 +3,8 @@
 #include <stdarg.h>
 #include "kdriver.h"
 
-// dependency
-#include "win32utility.h" // OSVersion <- xref: driver::init
-extern    win32SystemManager&   systemMgr;
 
-
-// driver io
+// kernel-mode memory io
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
@@ -27,17 +23,9 @@ KernelDriver& KernelDriver::getInstance() {
 
 bool KernelDriver::init(const std::string& sysfileDir) {
 
-	sysfile = sysfileDir + "\\SGuardLimit_VMIO.sys";
-
 	_resetError();
 
-
-	// check OS kernel support.
-	if (systemMgr.getSystemVersion() == OSVersion::OTHERS) {
-		_recordError(0, "内核驱动模块在你的操作系统上不受支持。\n"
-		                "【注】内核驱动仅支持win7/10/11系统。");
-		return driverReady = false;
-	}
+	sysfile = sysfileDir + "\\SGuardLimit_VMIO.sys";
 
 
 	// import certificate key.
@@ -148,8 +136,8 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	if (fp != NULL) {
 		fclose(fp);
 		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
-			_recordError(0, "拷贝sys文件失败，与之相关的模块将无法使用。\n"
-				            "你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", sysfileDir.c_str());
+			_recordError(0, "拷贝文件失败：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
+				            "你可以把附带的sys文件“剪切”到以下路径：\n\n%s", sysfileDir.c_str());
 			return driverReady = false;
 		} else {
 			DeleteFile(currentPath);
@@ -160,7 +148,7 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 
 	if (fp == NULL) {
 		_recordError(0, "找不到文件：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
-			            "你可以把附带的“sys文件”手动拷贝到以下路径：\n\n%s", sysfileDir.c_str());
+			            "你可以把附带的sys文件“剪切”到以下路径：\n\n%s", sysfileDir.c_str());
 		return driverReady = false;
 	} else {
 		fclose(fp);

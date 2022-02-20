@@ -31,7 +31,7 @@ void  ConfigManager::init(const std::string& profileDir) {
 bool ConfigManager::loadConfig() {  // executes only when program is initalizing.
 
 	auto     profile    = this->profile.c_str();
-	char     buf        [128];
+	char     buf        [0x1000];
 	bool     result     = true;
 
 
@@ -164,7 +164,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 void ConfigManager::writeConfig() {
 
 	auto    profile   = this->profile.c_str();
-	char    buf       [16];
+	char    buf       [128];
 
 	sprintf(buf, "%u", g_Mode);
 	WritePrivateProfileString("Global", "Mode", buf, profile);
