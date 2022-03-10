@@ -1,21 +1,26 @@
 // Memory Patch（内核态模块）
-// 特别感谢: Zer0Mem0ry 提供的声明
+// 特别感谢: Zer0Mem0ry BlackBone
 #include <ntdef.h>
 #include <ntifs.h>
+
+#include "Vad.h"
 
 
 // 全局对象
 RTL_OSVERSIONINFOW   OSVersion;
 UNICODE_STRING       dev, dos;
 PDEVICE_OBJECT       pDeviceObject;
+ULONG                VadRoot;
+wchar_t              TargetImageName[256];
 
 
 // I/O接口事件和缓冲区结构
-#define VMIO_READ   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
-#define VMIO_WRITE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
-#define VMIO_ALLOC  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
-#define IO_SUSPEND  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0704, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
-#define IO_RESUME   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define VMIO_READ      CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define VMIO_WRITE     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define VMIO_ALLOC     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define IO_SUSPEND     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0704, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define IO_RESUME      CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define VM_VADSEARCH   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0706, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 
 typedef struct {
 	HANDLE   pid;
@@ -28,7 +33,7 @@ typedef struct {
 } VMIO_REQUEST;
 
 
-// ZwProtectVirtualMemory（在win7中未导出，但在win10中导出。为保证系统兼容性，需要动态获取地址）
+// ZwProtectVirtualMemory（win7未导出符号）
 NTSTATUS (NTAPI* ZwProtectVirtualMemory)(
 	__in HANDLE ProcessHandle,
 	__inout PVOID* BaseAddress,
@@ -37,7 +42,7 @@ NTSTATUS (NTAPI* ZwProtectVirtualMemory)(
 	__out PULONG OldProtect
 ) = NULL;
 
-// MmCopyVirtualMemory (在ntoskrnl.lib中存在，但未被微软公开)
+// MmCopyVirtualMemory (可链接符号)
 NTSTATUS NTAPI MmCopyVirtualMemory(
 	PEPROCESS SourceProcess,
 	PVOID SourceAddress,
@@ -47,7 +52,7 @@ NTSTATUS NTAPI MmCopyVirtualMemory(
 	KPROCESSOR_MODE PreviousMode,
 	PSIZE_T ReturnSize);
 
-// PsSuspend/ResumeProcess (已导出，但未被公开)
+// PsSuspend/ResumeProcess (已导出符号)
 NTKERNELAPI
 NTSTATUS
 PsSuspendProcess(PEPROCESS Process);
@@ -91,6 +96,143 @@ NTSTATUS KeWriteVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID Targ
 }
 
 
+// 内核态模块搜索
+typedef struct {
+	BOOLEAN          Found;
+	ULONG64          VirtualAddress[2];
+} SEARCH_RESULT, *PSEARCH_RESULT;
+
+void SearchVad_NT61(PSEARCH_RESULT result, PMMVAD_7 pVad) { // assert: pVad != NULL
+
+	result->Found = FALSE;
+
+
+	// 若当前Vad节点类型为ImageMap
+	if (pVad->u.VadFlags.VadType == VadImageMap) {
+
+		// 若当前节点的FileObject存在
+		if (pVad->Subsection && pVad->Subsection->ControlArea && pVad->Subsection->ControlArea->FilePointer.Object) {
+
+			// 取得当前节点对应的映像路径
+			PFILE_OBJECT pFileObj = (PFILE_OBJECT)(pVad->Subsection->ControlArea->FilePointer.Value & ~0xf);
+			PUNICODE_STRING pImagePath = &pFileObj->FileName;
+
+			// 从路径中获取映像名称
+			USHORT imageIndex = -1;
+			for (USHORT i = 0; i < pImagePath->Length / 2; i++) {
+				if (pImagePath->Buffer[i] == L'\\') {
+					imageIndex = i;
+				}
+			}
+			imageIndex++;
+
+			if (imageIndex == 0) {
+				return;
+			}
+
+			wchar_t* pImageName = ExAllocatePoolWithTag(NonPagedPool, 512, '9d3H');
+
+			if (!pImageName) {
+				return;
+			}
+
+			RtlZeroMemory(pImageName, 512);
+			for (USHORT i = 0; i < 255 && imageIndex < pImagePath->Length / 2; i++, imageIndex++) {
+				pImageName[i] = pImagePath->Buffer[imageIndex];
+			}
+
+			// 对比映像名称是否与待查询的一致
+			if (0 == _wcsicmp(pImageName, TargetImageName)) {
+
+				// 若一致，则取该内存镜像的虚拟地址范围为结果
+				result->Found = TRUE;
+				result->VirtualAddress[0] = pVad->StartingVpn << 12;
+				result->VirtualAddress[1] = pVad->EndingVpn << 12;
+			}
+
+			ExFreePoolWithTag(pImageName, '9d3H');
+		}
+	}
+
+
+	if (!result->Found && pVad->LeftChild) {
+		SearchVad_NT61(result, pVad->LeftChild);
+	}
+
+	if (!result->Found && pVad->RightChild) {
+		SearchVad_NT61(result, pVad->RightChild);
+	}
+}
+
+void SearchVad_NT10(PSEARCH_RESULT result, PMMVAD_10 pVad) { // assert: pVad != NULL
+
+	result->Found = FALSE;
+
+
+	// [note] NT10需要依据BuildNumber区分VadType的偏移
+	ULONG VadType;
+	if (OSVersion.dwBuildNumber <= 17763) {
+		VadType = pVad->Core.u.VadFlags._17763.VadType;
+	} else {
+		VadType = pVad->Core.u.VadFlags._18362.VadType;
+	}
+
+	if (VadType == VadImageMap) {
+
+		if (pVad->Subsection && pVad->Subsection->ControlArea && pVad->Subsection->ControlArea->FilePointer.Object) {
+
+			PFILE_OBJECT pFileObj = (PFILE_OBJECT)(pVad->Subsection->ControlArea->FilePointer.Value & ~0xf);
+			PUNICODE_STRING pImagePath = &pFileObj->FileName;
+
+			USHORT imageIndex = -1;
+			for (USHORT i = 0; i < pImagePath->Length / 2; i++) {
+				if (pImagePath->Buffer[i] == L'\\') {
+					imageIndex = i;
+				}
+			}
+			imageIndex++;
+
+			if (imageIndex == 0) {
+				DbgPrint("\nimageIndex invalid\n");
+				return;
+			}
+
+			wchar_t* pImageName = ExAllocatePoolWithTag(NonPagedPool, 512, '9d3H');
+
+			if (!pImageName) {
+				DbgPrint("\nalloc mem failed\n");
+				return;
+			}
+
+			RtlZeroMemory(pImageName, 512);
+			for (USHORT i = 0; i < 255 && imageIndex < pImagePath->Length / 2; i++, imageIndex++) {
+				pImageName[i] = pImagePath->Buffer[imageIndex];
+			}
+
+			if (0 == _wcsicmp(pImageName, TargetImageName)) {
+
+				result->Found = TRUE;
+				// [note] NT10(以及NT6.2, win8.1)使用额外的字节表示第44~47位虚拟地址，且Vpn字段为32位。
+				// 而NT6.1的Vpn字段为64位，但仅使用了低32位，它的44~47位虚拟地址从未被使用。
+				result->VirtualAddress[0] = ((ULONG64)pVad->Core.StartingVpnHigh << 44) | ((ULONG64)pVad->Core.StartingVpn << 12);
+				result->VirtualAddress[1] = ((ULONG64)pVad->Core.EndingVpnHigh << 44) | ((ULONG64)pVad->Core.EndingVpn << 12);
+			}
+
+			ExFreePoolWithTag(pImageName, '9d3H');
+		}
+	}
+
+	if (!result->Found && pVad->Core.VadNode.Left) {
+		SearchVad_NT10(result, (PMMVAD_10)pVad->Core.VadNode.Left);
+	}
+
+	if (!result->Found && pVad->Core.VadNode.Right) {
+		SearchVad_NT10(result, (PMMVAD_10)pVad->Core.VadNode.Right);
+	}
+}
+
+
+
 // 各种回调函数
 NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp) {
 
@@ -100,6 +242,7 @@ NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp) {
 
 	return STATUS_SUCCESS;
 }
+
 
 #define IOCTL_LOG_EXIT(errorName)  if (hProcess) ZwClose(hProcess); \
                                    if (pEProcess) ObDereferenceObject(pEProcess); \
@@ -113,9 +256,9 @@ NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp) {
 NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 	ULONG                controlCode  = IoGetCurrentIrpStackLocation(Irp)->Parameters.DeviceIoControl.IoControlCode;
-	VMIO_REQUEST*        Input        = Irp->AssociatedIrp.SystemBuffer;  /* 缓冲区从用户空间拷贝而来 */
+	VMIO_REQUEST*        Input        = Irp->AssociatedIrp.SystemBuffer;  /* 用户缓冲区在构造时已清0 */
 	PEPROCESS            pEProcess    = NULL;
-	SIZE_T               rwSize       = 0x1000;      /* 每次io事件操作的byte数，数值上等于 sizeof(request->data) */
+	SIZE_T               rwSize       = 0x1000;      /* 每次io事件操作的byte数，即sizeof(request->data) */
 	SIZE_T               allocSize    = 0x1000 * 4;  /* 若io事件为alloc，则一次性分配4个页面。*/
 	HANDLE               hProcess     = NULL;
 	OBJECT_ATTRIBUTES    objAttr      = { 0 };
@@ -149,7 +292,6 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				IOCTL_LOG_EXIT("VMIO_WRITE::(process not found)");
 			}
 
-			// [批注] 由于私有句柄表可以索引到eprocess结构体，故前一个调用可以省略。但这并没有必要。
 			Status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &clientId);
 
 			if (!NT_SUCCESS(Status)) {
@@ -241,6 +383,86 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		}
 		break;
 
+		case VM_VADSEARCH:
+		{
+			Status = PsLookupProcessByProcessId(Input->pid, &pEProcess);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("VM_VADSEARCH::(process not found)");
+			}
+
+			Status = ZwOpenProcess(&hProcess, PROCESS_ALL_ACCESS, &objAttr, &clientId);
+
+			if (!NT_SUCCESS(Status)) {
+				IOCTL_LOG_EXIT("VM_VADSEARCH::(process not found)");
+			}
+
+
+			// 从(wchar_t*)Input->data中取目标模块名称
+			RtlZeroMemory(TargetImageName, sizeof(TargetImageName));
+			wcscpy_s(TargetImageName, 256, (wchar_t*)Input->data);
+
+
+			// 使用Vad搜索内存模块（依据不同操作系统版本，使用的结构偏移有区别）
+			SEARCH_RESULT result;
+			RtlZeroMemory(&result, sizeof(result));
+
+			if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) { // if win7
+
+				PMM_AVL_TABLE pAvlEntry = (PMM_AVL_TABLE)((ULONG64)pEProcess + VadRoot);
+				PMMVAD_7 root = (PMMVAD_7)(&pAvlEntry->BalancedRoot);
+
+				if (root) {
+					SearchVad_NT61(&result, root);
+				}
+
+			} else { // else win10, 11
+
+				PRTL_AVL_TREE pAvlEntry = (PRTL_AVL_TREE)((ULONG64)pEProcess + VadRoot);
+				PMMVAD_10 root = (PMMVAD_10)(pAvlEntry->Root);
+
+				if (root) {
+					SearchVad_NT10(&result, root);
+				}
+			}
+
+
+			if (result.Found) {
+
+				// 如果找到，则记录目标镜像中所有可执行模块的虚拟地址范围到Input->data，以{0,0}结尾
+				// [note] typeof (Input->data) => struct { __int64[2]; } * ;
+				ULONG addressCount = 0;
+				RtlZeroMemory(Input->data, sizeof(Input->data));
+
+				// 搜索目标镜像中可执行模块的位置
+				PVOID virtualStart = (PVOID)result.VirtualAddress[0];
+				while (virtualStart < (PVOID)result.VirtualAddress[1]) {
+
+					MEMORY_BASIC_INFORMATION memInfo;
+					Status = ZwQueryVirtualMemory(hProcess, virtualStart, MemoryBasicInformation, &memInfo, sizeof(memInfo), NULL);
+					
+					// 如果查询失败，则认为已经结束
+					if (!NT_SUCCESS(Status)) {
+						break;
+					}
+
+					if (memInfo.Protect & PAGE_EXECUTE ||
+						memInfo.Protect & PAGE_EXECUTE_READ ||
+						memInfo.Protect & PAGE_EXECUTE_READWRITE ||
+						memInfo.Protect & PAGE_EXECUTE_WRITECOPY) {
+
+						// 如果是可执行模块，则记录虚拟地址
+						((PULONG64)Input->data) [ addressCount++ ] = (ULONG64)memInfo.BaseAddress;
+						((PULONG64)Input->data) [ addressCount++ ] = (ULONG64)memInfo.BaseAddress + memInfo.RegionSize;
+					}
+
+					virtualStart = (PVOID)((ULONG64)virtualStart + memInfo.RegionSize);
+				}
+
+			} // else: 若搜索模块失败，则Input->data为空。
+		}
+		break;
+
 		default:
 		{
 			Status = STATUS_UNSUCCESSFUL;
@@ -275,7 +497,7 @@ NTSTATUS UnloadDriver(PDRIVER_OBJECT pDriverObject) {
 }
 
 
-// 驱动程序的入口点
+// 入口点
 NTSTATUS DriverEntry(
 	PDRIVER_OBJECT pDriverObject, 
 	PUNICODE_STRING pRegistryPath) {
@@ -293,9 +515,35 @@ NTSTATUS DriverEntry(
 	RtlGetVersion(&OSVersion);
 
 
-	// win7x64的ntoskrnl.exe并没有导出ZwProtectVirtualMemory，无法直接引用。
-	// 若直接（隐式）动态链接，则win7的PEloader将找不到该函数入口导致驱动加载失败，故此处手动获取地址。
+	// 获取VadRoot在_EPROCESS中的偏移
+	if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) {
+		VadRoot = 0x448;
+	} else if (OSVersion.dwMajorVersion == 10 && OSVersion.dwMinorVersion == 0) {
+		switch (OSVersion.dwBuildNumber) {
+		case 10586:
+			VadRoot = 0x610;
+			break;
+		case 14393:
+			VadRoot = 0x620;
+			break;
+		case 15063: case 16299: case 17134: case 17763:
+			VadRoot = 0x628;
+			break;
+		case 18362: case 18363:
+			VadRoot = 0x658;
+			break;
+		case 19041: case 19042: case 19043: case 19044: case 22000:
+			VadRoot = 0x7D8;
+			break;
+		}
+	}
 
+	if (!VadRoot) {
+		return STATUS_UNSUCCESSFUL;
+	}
+
+
+	// 手动获取ZwProtectVirtualMemory的位置（NT6.1没有导出）
 	UNICODE_STRING ZwProtectVirtualMemoryName;
 	RtlInitUnicodeString(&ZwProtectVirtualMemoryName, L"ZwProtectVirtualMemory");
 	ZwProtectVirtualMemory = MmGetSystemRoutineAddress(&ZwProtectVirtualMemoryName);

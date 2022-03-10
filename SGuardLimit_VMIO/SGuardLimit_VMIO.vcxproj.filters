@@ -14,4 +14,7 @@
   <ItemGroup>
     <ClCompile Include="Driver.c" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Vad.h" />
+  </ItemGroup>
 </Project>
