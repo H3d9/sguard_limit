@@ -321,6 +321,39 @@ bool KernelDriver::resume(DWORD pid) {
 	return true;
 }
 
+bool KernelDriver::searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t* moduleName) {
+
+	VMIO_REQUEST  request(pid);
+	DWORD         Bytes;
+
+	_resetError();
+
+
+	wcscpy((wchar_t*)request.data, moduleName);  // [io param] moduleName => (wchar_t*)request.data
+
+	if (!DeviceIoControl(hDriver, VM_VADSEARCH, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
+		_recordError(GetLastError(), "driver::searchVad(): DeviceIoControl ß∞‹°£");
+		return false;
+	}
+	if (request.errorCode != 0) {
+		_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
+		return false;
+	}
+
+	out.clear();
+	auto addressArray = (ULONG64*)request.data;
+
+	while ( *addressArray ) {
+
+		out.push_back(*addressArray);
+		out.push_back(*(addressArray + 1));
+
+		addressArray += 2;
+	}
+
+	return true;
+}
+
 #define SVC_ERROR_EXIT(errorCode, errorMsg)   _recordError(errorCode, errorMsg); \
                                               if (hService) CloseServiceHandle(hService); \
                                               if (hSCManager) CloseServiceHandle(hSCManager); \

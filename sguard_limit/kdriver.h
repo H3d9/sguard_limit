@@ -1,6 +1,7 @@
 #pragma once
 #include <Windows.h>
 #include <string>
+#include <vector>
 #include <memory>
 
 
@@ -30,6 +31,7 @@ public:
 	bool     allocVM(DWORD pid, PVOID* pAllocatedAddress);
 	bool     suspend(DWORD pid);
 	bool     resume(DWORD pid);
+	bool     searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t* moduleName);
 
 public:
 	bool     driverReady;  // driver ready if init() success. load() & unload() is still required.
@@ -53,11 +55,12 @@ private:
 		VMIO_REQUEST(DWORD pid) : pid(reinterpret_cast<HANDLE>(static_cast<LONG64>(pid))) {}
 	};
 
-	static constexpr DWORD   VMIO_READ   = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
-	static constexpr DWORD   VMIO_WRITE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
-	static constexpr DWORD   VMIO_ALLOC  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
-	static constexpr DWORD	 IO_SUSPEND  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0704, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
-	static constexpr DWORD	 IO_RESUME   = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD   VMIO_READ     = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD   VMIO_WRITE    = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD   VMIO_ALLOC    = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD	 IO_SUSPEND    = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0704, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD	 IO_RESUME     = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD	 VM_VADSEARCH  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0706, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
 	std::string     sysfile;
 	SC_HANDLE       hSCManager;

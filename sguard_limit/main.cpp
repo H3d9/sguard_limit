@@ -114,11 +114,13 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			"1. 修复可能出现的闪退/停止工作问题。\n\n\n"
+			" 内存补丁 V4：新增“高级内存搜索”功能。\n\n"
+			"1. 加快限制器的内存提交速度。\n"
+			"2. 解决一些机器上只提交【1/2】的问题。\n\n\n"
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦\n\n"
-			"2. 默认是MemPatch模式，如果LOL不好用，可以切换模式“时间转轮”\n"
-			"   但DNF不建议使用时间转轮（可能掉线）。\n\n"
+			"2. 默认模式为内存补丁，如果LOL不好用，可以切换模式“时间转轮”\n"
+			"   但DNF不建议使用时间转轮（可能掉线）。注意：时间转轮可能无法约束扫硬盘\n\n"
 			"3. 若你第一次使用，请【务必】仔细阅读说明（右键菜单→其他选项）。\n\n",
 			VERSION "  by: @H3d9", MB_OK);
 	}
@@ -145,7 +147,7 @@ INT WINAPI WinMain(
 			// show panic: alert usr to switch options manually.
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 			systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
-							   "MemPatch V3\n"
+							   "内存补丁 V4\n"
 							   "内核态调度器\n");
 		}
 	}

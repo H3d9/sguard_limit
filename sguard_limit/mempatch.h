@@ -46,6 +46,8 @@ public:
 	volatile DWORD                patchDelay[4];
 	const patchDelayRange_t       patchDelayRange[4];
 
+	volatile bool                 useAdvancedSearch;
+
 public:
 	void      patch();
 	void      enable(bool forceRecover = false);

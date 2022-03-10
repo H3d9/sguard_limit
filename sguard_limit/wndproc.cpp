@@ -60,15 +60,17 @@ static void ShowAbout() {
 			{
 				MessageBox(0,
 					"【工作模式说明 P3】\n\n"
-					"MemPatch V3（21.10.6）：\n\n"
+					"内存补丁 V4（21.10.6）：\n\n"
 					"这是默认模式，建议优先使用，如果不好用再换其他模式。\n\n"
-					">1 NtQueryVirtualMemory: 令SGUARD扫内存的速度变慢。\n\n"
-					">2 GetAsyncKeyState: 令SGUARD读取键盘按键的速度变慢。\n"
+					">1 NtQueryVirtualMemory(V2新增): 令SGUARD扫内存的速度变慢。\n\n"
+					">2 GetAsyncKeyState(V3新增): 令SGUARD读取键盘按键的速度变慢。\n"
 					"【注】启用该选项似乎能有效提升游戏流畅度，但特殊情况下可能导致游戏掉线。\n"
 					"【注】若出现问题，关闭该选项即可。相关的引用位于动态库ACE-DRV64.dll中。\n\n"
-					">3 NtWaitForSingleObject: 不建议使用：已知可能导致游戏异常。\n\n"
-					">4 NtDelayExecution: 不建议使用：已知可能导致游戏异常和卡顿。\n\n\n"
-					"【说明】内存补丁V3需要临时装载一次驱动，提交内存后会立即将之卸载。\n"
+					">3 NtWaitForSingleObject(V1新增): 不建议使用：已知可能导致游戏异常。\n\n"
+					">4 NtDelayExecution(V1新增): 不建议使用：已知可能导致游戏异常和卡顿。\n\n"
+					"> 高级内存搜索(V4新增)：该功能主要用于解决[1/2]到不了[2/2]的问题，\n"
+					"> 此外，启用该功能不再需要对指令指针采样，故提交内存的速度会快一些。\n\n"
+					"【说明】内存补丁V4需要临时装载一次驱动，提交内存后会立即将之卸载。\n"
 					"若你使用时出现问题，可以去更新链接下载证书。",
 					"SGuard限制器 " VERSION "  by: @H3d9",
 					MB_OK);
@@ -224,7 +226,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_HIJACK,  "切换到：时间片轮转");
 			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_TRACE,   "切换到：线程追踪");
-			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_PATCH,   "切换到：MemPatch V3");
+			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_PATCH,   "切换到：内存补丁 V4");
 			if (g_Mode == 0) {
 				CheckMenuItem(hMenuModes, IDM_MODE_HIJACK, MF_CHECKED);
 			} else if (g_Mode == 1) {
@@ -364,7 +366,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 						}
 					}
 				}
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "当前模式：MemPatch V3  [点击切换]");
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "当前模式：内存补丁 V4  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_DOPATCH,       "自动");
 				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH,       "撤销修改");
@@ -374,6 +376,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH3,  "inline Ntdll!NtWaitForSingleObject");
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH4,  "re-write Ntdll!NtDelayExecution");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索功能");
 				sprintf(buf, "设置延时（当前：%u/%u/%u/%u）", patchMgr.patchDelay[0], patchMgr.patchDelay[1], patchMgr.patchDelay[2], patchMgr.patchDelay[3]);
 				AppendMenu(hMenu, drvMenuType, IDM_SETDELAY, buf);
 
@@ -389,6 +392,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				if (patchMgr.patchSwitches.NtDelayExecution) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH4, MF_CHECKED);
+				}
+				if (patchMgr.useAdvancedSearch) {
+					CheckMenuItem(hMenu, IDM_ADVMEMSEARCH, MF_CHECKED);
 				}
 			}
 
@@ -544,6 +550,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					"3 过一会儿再使用限制器。\n"
 					"4 偶尔出现是正常的。但若每次启动游戏都出现且均长时间重试无效，应停止使用限制器"
 					, "信息", MB_OK);
+				break;
+			case IDM_ADVMEMSEARCH:
+				patchMgr.useAdvancedSearch = !patchMgr.useAdvancedSearch;
+				configMgr.writeConfig();
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
 
 			// more options

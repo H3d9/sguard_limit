@@ -31,7 +31,8 @@ PatchManager::PatchManager()
 	   { 100, 1000, 1500 },   /* GetAsyncKeyState */
 	   { 1,   10,   200  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 }    /* NtDelayExecution */
-	  }, vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
+	  }, useAdvancedSearch(true),
+	  vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
 
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
@@ -62,7 +63,7 @@ void PatchManager::patch() {
 
 
 		// wait for stable as target just start up.
-		for (auto time = 0; time < 10; time++) {
+		for (auto time = 0; !useAdvancedSearch && time < 10; time++) {
 
 			if (!patchEnabled || pid != threadMgr.getTargetPid()) {
 				systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
@@ -148,8 +149,8 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 	// assert: driver loaded.
 	systemMgr.log("patch1(): entering.");
 
-	// before stable, wait a second.
-	for (auto time = 0; time < 5; time++) {
+	// if use normal search, before stable, wait a second.
+	for (auto time = 0; !useAdvancedSearch && time < 5; time++) {
 
 		if (!patchEnabled || pid != threadMgr.getTargetPid()) {
 			systemMgr.log("patch1(): primary wait: pid not match or patch disabled, quit.");
@@ -167,11 +168,49 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 	// try multi-times to find target offset.
 	for (auto try_times = 1; try_times <= 3; try_times++) {
 
-		// get potential rip in top 3 threads.
-		auto rips = _findRip();
+		std::vector<ULONG64> rips;
+		rips.clear();
+
+		if (useAdvancedSearch) {
+			systemMgr.log("patch1(): [Caution] using Advanced memory search.");
+
+			// search memory executable modules in given image from kernel structs.
+			std::vector<ULONG64> executeRange;
+
+			status =
+			driver.searchVad(pid, executeRange, L"Ntdll.dll");
+
+			if (!status) {
+				systemMgr.log(driver.errorCode, "patch1() warning: Advanced memory search failed: %s.", driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "patch1(): 内存扫描失败: %s\n建议你把问题反馈到群里。", driver.errorMessage);
+			}
+
+			// check if result exists.
+			if (executeRange.empty()) {
+				systemMgr.log("patch1() warning: Advanced memory search get 0 result.");
+				systemMgr.panic("patch1(): 内存扫描失败: 找不到目标模块的虚拟地址\n建议你把问题反馈到群里。");
+			}
+
+			// split executable range to pieces to read.
+			for (auto i = 0; i < executeRange.size(); i += 2) {
+
+				auto moduleVABegin = executeRange[i];
+				auto moduleVAEnd = executeRange[i + 1];
+
+				for (auto moduleVA = moduleVABegin + 0x1000; moduleVA < moduleVAEnd; moduleVA += 0x1000) {
+					rips.push_back(moduleVA);
+				}
+			}
+
+		} else {
+			systemMgr.log("patch1(): using normal rip search.");
+
+			// get potential rip in top 3 threads like before.
+			rips = _findRip();
+		}
 
 		if (rips.empty()) {
-			systemMgr.log("patch1(): rips empty, quit.");
+			systemMgr.log("patch1(): rips/blocks empty, quit.");
 			return false;
 		}
 
@@ -192,45 +231,92 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 				continue;
 			}
 
+			if (useAdvancedSearch) {
 
-			// syscall traits: 4c 8b d1 b8 ?? 00 00 00
-			for (LONG offset = (0x1000 + *rip % 0x1000) - 0x14; /* rva from current syscall begin */
-				offset < 0x4000 - 0x20 /* buf sz - bytes to write */; offset++) {
-				if (vmbuf[offset] == '\x4c' &&
-					vmbuf[offset + 1] == '\x8b' &&
-					vmbuf[offset + 2] == '\xd1' &&
-					vmbuf[offset + 3] == '\xb8' &&
-					/* vmbuf[offset + 4] == ?? && */
-					vmbuf[offset + 5] == '\x00' &&
-					vmbuf[offset + 6] == '\x00' &&
-					vmbuf[offset + 7] == '\x00') {
+				// pattern: 
+				// 4c 8b d1 b8 00   00 00 00 ...  << call 0           ---
+				// ...                                                 |
+				// 4c 8b d1 b8 ??+0 00 00 00 ...  << found here        4
+				// ...                                                 |
+				// 4c 8b d1 b8 ??+x 00 00 00 ...  << to be patch     pages
+				// ...                                                 |
+				// 4c 8b d1 b8 34   00 00 00 ...  << call 34          ---
+				
+				char pattern[] = "\x4c\x8b\xd1\xb8\x00\x00\x00\x00";
+				for (LONG offset = 0; offset < 0x4000; offset++) {
 
-					// locate offset0 to syscall 0.
-					LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
-					if (osVersion == OSVersion::WIN_10_11) {
-						offset0 = offset - 0x20 * syscall_num;
-					} else {
-						offset0 = offset - 0x10 * syscall_num;
+					if (0 == memcmp(pattern, vmbuf + offset, 4) && 
+						0 == memcmp(pattern + 5, vmbuf + offset + 5, 3)) {
+
+						// possible call page, find call 0x34 to ensure pages not too short to patch.
+						// [caution 1] win7 map 0x10 bytes for each syscall stub.
+						// [caution 2] win7 at 0x34 is not delay.
+
+						LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
+						LONG syscall_34_num = 0;
+
+						if (osVersion == OSVersion::WIN_10_11) {
+							syscall_34_num = *(LONG*)((ULONG64)vmbuf + offset - 0x20 * syscall_num + 0x20 * 0x34 + 0x4);
+						} else {
+							syscall_34_num = *(LONG*)((ULONG64)vmbuf + offset - 0x10 * syscall_num + 0x10 * 0x34 + 0x4);
+						}
+
+						if (syscall_34_num == 0x34) {
+
+							// now page is ensured. locate offset0 to syscall 0.
+							if (osVersion == OSVersion::WIN_10_11) {
+								offset0 = offset - 0x20 * syscall_num;
+							} else {
+								offset0 = offset - 0x10 * syscall_num;
+							}
+
+							systemMgr.log("patch1(): offset0 found at +0x%x (from: syscall 0x%x)", offset0, syscall_num);
+							break;
+						}
 					}
+				}
 
-					systemMgr.log("patch1(): offset0 found at +0x%x (from: syscall 0x%x)", offset0, syscall_num);
-					break;
+			} else {
+
+				// syscall traits: 4c 8b d1 b8 ?? 00 00 00
+				for (LONG offset = (0x1000 + *rip % 0x1000) - 0x14; /* rva from current syscall begin */
+					offset < 0x4000 - 0x20 /* buf sz - bytes to write */; offset++) {
+					if (vmbuf[offset] == '\x4c' &&
+						vmbuf[offset + 1] == '\x8b' &&
+						vmbuf[offset + 2] == '\xd1' &&
+						vmbuf[offset + 3] == '\xb8' &&
+						/* vmbuf[offset + 4] == ?? && */
+						vmbuf[offset + 5] == '\x00' &&
+						vmbuf[offset + 6] == '\x00' &&
+						vmbuf[offset + 7] == '\x00') {
+
+						// locate offset0 to syscall 0.
+						LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
+						if (osVersion == OSVersion::WIN_10_11) {
+							offset0 = offset - 0x20 * syscall_num;
+						} else {
+							offset0 = offset - 0x10 * syscall_num;
+						}
+
+						systemMgr.log("patch1(): offset0 found at +0x%x (from: syscall 0x%x)", offset0, syscall_num);
+						break;
+					}
 				}
 			}
 
 			if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
-				systemMgr.log("patch1(): trait not found at %%rip = %llx", *rip);
+				systemMgr.log("patch1(): trait not found from %%rip/block = %llx", *rip);
 				continue;
 			} else {
-				systemMgr.log("patch1(): trait found at %%rip = %llx", *rip);
+				systemMgr.log("patch1(): trait found from %%rip/block = %llx", *rip);
 				break;
 			}
 		}
 
-		// check if offset0 found in all result in _findRip().
+		// check if offset0 found in all results.
 		if (offset0 < 0) {
-			systemMgr.log("patch1(): round %u: trait not found in all rips.", try_times);
-			Sleep(15000);
+			systemMgr.log("patch1(): round %u: trait not found in all rips/blocks.", try_times);
+			Sleep(5000);
 			continue;
 		} else {
 			break;
@@ -720,8 +806,8 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 	// assert: driver loaded.
 	systemMgr.log("patch2(): entering.");
 
-	// wait for stable.
-	for (auto time = 0; time < 5; time++) {
+	// if using normal search, wait for stable.
+	for (auto time = 0; !useAdvancedSearch && time < 5; time++) {
 
 		if (!patchEnabled || pid != threadMgr.getTargetPid()) {
 			systemMgr.log("patch2(): primary wait: pid not match or patch disabled, quit.");
@@ -739,8 +825,46 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 	// try multi-times to find target offset.
 	for (auto try_times = 1; try_times <= 5; try_times++) {
 		
-		// get potential rip in top 3 threads.
-		auto rips = _findRip(true);
+		std::vector<ULONG64> rips;
+		rips.clear();
+
+		if (useAdvancedSearch) {
+			systemMgr.log("patch2(): [Caution] using Advanced memory search.");
+
+			// search memory executable modules in given image from kernel structs.
+			std::vector<ULONG64> executeRange;
+			
+			status = 
+			driver.searchVad(pid, executeRange, L"User32.dll");
+			
+			if (!status) {
+				systemMgr.log(driver.errorCode, "patch2() warning: Advanced memory search failed: %s.", driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "patch2(): 内存扫描失败: %s\n建议你把问题反馈到群里。", driver.errorMessage);
+			}
+
+			// check if result exists.
+			if (executeRange.empty()) {
+				systemMgr.log("patch2() warning: Advanced memory search get 0 result.");
+				systemMgr.panic("patch2(): 内存扫描失败: 找不到目标模块的虚拟地址\n建议你把问题反馈到群里。");
+			}
+
+			// split executable range to pieces to read.
+			for (auto i = 0; i < executeRange.size(); i += 2) {
+
+				auto moduleVABegin  = executeRange[i];
+				auto moduleVAEnd    = executeRange[i + 1];
+
+				for (auto moduleVA = moduleVABegin + 0x1000; moduleVA < moduleVAEnd; moduleVA += 0x4000) {
+					rips.push_back(moduleVA);
+				}
+			}
+
+		} else {
+			systemMgr.log("patch2(): using normal rip search.");
+			
+			// get potential rip in top 3 threads like before.
+			rips = _findRip(true);
+		}
 
 		if (rips.empty()) {
 			systemMgr.log("patch2(): rips empty, quit.");
@@ -886,7 +1010,7 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 						memcpy(vmbuf, vmrelate, 0x4000);
 
 
-						systemMgr.log("patch2(): relative search: target_offset found at +0x%llx, after %d fake traps.", target_offset, fake_entries);
+						systemMgr.log("patch2(): relative search: catched target_offset at +0x%llx, after %d fake traps.", target_offset, fake_entries);
 						systemMgr.log("patch2():   >> search path: [rip+0x%x] ~ 0x%llx => 0x%llx (syscall 0x%x) => 0x%llx (syscall 0x%x)",
 							relative_shift, vaddress_ptr, vaddress_entry, call_number_found, target_entry, call_number_target);
 						
@@ -896,18 +1020,18 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 			}
 
 			if (target_offset == -1) {
-				systemMgr.log("patch2(): trait not found at %%rip = %llx.", *rip);
+				systemMgr.log("patch2(): trait not found from %%rip/block = %llx.", *rip);
 				continue;
 			} else {
-				systemMgr.log("patch2(): trait found at %%rip = %llx.", *rip);
+				systemMgr.log("patch2(): trait found from %%rip/block = %llx.", *rip);
 				break;
 			}
 		}
 
 		// check if target_offset found in all result in _findRip().
 		if (target_offset == -1) {
-			systemMgr.log("patch2(): round %u: trait not found in all rips.", try_times);
-			Sleep(15000);
+			systemMgr.log("patch2(): round %u: trait not found in all rips/blocks.", try_times);
+			Sleep(5000);
 			continue;
 		} else {
 			break;
@@ -928,7 +1052,7 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 	}
 
 
-	// MEMORY PATCH V3
+	// V3 feature
 
 	CHAR working_bytes[] =
 		"\x49\x89\xCA\xB8\x44\x10\x00\x00\x0F\x05"
@@ -1209,9 +1333,9 @@ void PatchManager::_outVmbuf(ULONG64 vmStart, const CHAR* vmbuf) {  // unused: f
 	char title[0x1000];
 	time_t t = time(0);
 	tm* local = localtime(&t);
-	sprintf(title, "[%d-%02d-%02d %02d.%02d.%02d] ",
+	sprintf(title, "[%d-%02d-%02d %02d.%02d.%02d]",
 		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
-	sprintf(title + strlen(title), "vmstart_%llx.txt", vmStart);
+	sprintf(title + strlen(title), "at_%llx.txt", vmStart);
 
 	FILE* fp = fopen(title, "w");
 	if (fp) {

@@ -277,9 +277,7 @@ void win32SystemManager::enableDebugPrivilege() {
 
 	CloseHandle(hToken);
 
-	// 
-	// 也可以用RtlAdjustPrivilege来提权：
-	// 
+	//// 也可以用RtlAdjustPrivilege来提权： 
 	// typedef NTSTATUS (WINAPI* pf)(ULONG Privilege, BOOLEAN Enable, BOOLEAN CurrentThread, PBOOLEAN Enabled);
 	// pf RtlAdjustPrivilege = (pf)GetProcAddress(GetModuleHandle("Ntdll.dll"), "RtlAdjustPrivilege");
 	// BOOLEAN prev;
@@ -338,6 +336,7 @@ bool win32SystemManager::createWindow(WNDPROC WndProc, DWORD WndIcon) {
 WPARAM win32SystemManager::messageLoop() {
 	
 	MSG msg;
+
 	while (GetMessage(&msg, nullptr, 0, 0)) {
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);

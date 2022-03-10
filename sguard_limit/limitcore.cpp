@@ -48,7 +48,7 @@ void LimitManager::hijack() {
 			auto pid = threadMgr.getTargetPid();
 
 			if (pid == 0) {
-				return; // if process is no more alive, exit.
+				break; // if process is no more alive, exit.
 			}
 
 
