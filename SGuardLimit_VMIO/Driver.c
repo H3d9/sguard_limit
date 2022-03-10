@@ -516,25 +516,30 @@ NTSTATUS DriverEntry(
 
 
 	// 获取VadRoot在_EPROCESS中的偏移
-	if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) {
+	if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) { // Win 7 (SP0, SP1)
 		VadRoot = 0x448;
+
 	} else if (OSVersion.dwMajorVersion == 10 && OSVersion.dwMinorVersion == 0) {
-		switch (OSVersion.dwBuildNumber) {
-		case 10586:
-			VadRoot = 0x610;
-			break;
-		case 14393:
-			VadRoot = 0x620;
-			break;
-		case 15063: case 16299: case 17134: case 17763:
-			VadRoot = 0x628;
-			break;
-		case 18362: case 18363:
-			VadRoot = 0x658;
-			break;
-		case 19041: case 19042: case 19043: case 19044: case 22000:
+		if (OSVersion.dwBuildNumber < 22000) { // Win 10
+			switch (OSVersion.dwBuildNumber) {
+			case 10586:
+				VadRoot = 0x610;
+				break;
+			case 14393:
+				VadRoot = 0x620;
+				break;
+			case 15063: case 16299: case 17134: case 17763:
+				VadRoot = 0x628;
+				break;
+			case 18362: case 18363:
+				VadRoot = 0x658;
+				break;
+			case 19041: case 19042: case 19043: case 19044:
+				VadRoot = 0x7D8;
+				break;
+			}
+		} else if (OSVersion.dwBuildNumber < 22572) { // Win 11 latest (22.3.11)
 			VadRoot = 0x7D8;
-			break;
 		}
 	}
 
