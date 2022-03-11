@@ -26,12 +26,13 @@ PatchManager  PatchManager::patchManager;
 PatchManager::PatchManager()
 	: patchEnabled(true), patchPid(0), patchFailCount(), 
 	  patchSwitches{}, patchStatus{}, patchDelay{},
-	  patchDelayRange{
+	  patchDelayRange {
 	   { 200, 1500, 2500 },   /* NtQueryVirtualMemory */
 	   { 100, 1000, 1500 },   /* GetAsyncKeyState */
 	   { 1,   10,   200  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 }    /* NtDelayExecution */
-	  }, useAdvancedSearch(true),
+	  }, 
+	  useAdvancedSearch(true), patchDelayInAdvancedSearch(20),
 	  vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
 
 PatchManager& PatchManager::getInstance() {
@@ -71,6 +72,20 @@ void PatchManager::patch() {
 			}
 
 			Sleep(1000);
+		}
+
+		if (useAdvancedSearch) {
+			systemMgr.log("patch(): waiting %us before activate advanced search.", patchDelayInAdvancedSearch);
+
+			for (auto time = 0; time < patchDelayInAdvancedSearch; time++) {
+
+				if (!patchEnabled || pid != threadMgr.getTargetPid()) {
+					systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
+					return;
+				}
+
+				Sleep(1000);
+			}
 		}
 
 

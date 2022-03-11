@@ -166,6 +166,14 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		patchMgr.useAdvancedSearch = res ? true : false;
 	}
 
+	res = GetPrivateProfileInt("Patch", "DelayInAdvancedSearch", -1, profile);
+	if (res == (UINT)-1) {
+		WritePrivateProfileString("Patch", "DelayInAdvancedSearch", "20", profile);
+		patchMgr.patchDelayInAdvancedSearch = 20;
+	} else {
+		patchMgr.patchDelayInAdvancedSearch = res;
+	}
+
 	return result;
 }
 
@@ -215,4 +223,7 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, patchMgr.useAdvancedSearch ? "1" : "0");
 	WritePrivateProfileString("Patch", "useAdvancedSearch", buf, profile);
+
+	sprintf(buf, "%u", patchMgr.patchDelayInAdvancedSearch);
+	WritePrivateProfileString("Patch", "DelayInAdvancedSearch", buf, profile);
 }

@@ -39,10 +39,21 @@ static void ShowAbout() {
 	{
 		if (IDOK == MessageBox(0,
 			"【工作模式说明 P1】\n\n"
-			"时间片轮转（21.2.6）：\n\n"
-			"该模式原理与BES相同，不建议DNF使用（但是LOL可以用）。\n\n"
-			"【注】如果LOL经常掉线连不上，可以切换到这个模式；且【不要打开】内核态调度器。\n"
-			"【注】对于DNF，如果你仍然想用这个模式，建议打开内核态调度器。\n\n"
+			"内存补丁 V4（21.10.6）：\n\n"
+			"这是默认模式，建议优先使用，如果不好用再换其他模式。\n\n"
+			">1 NtQueryVirtualMemory(V2新增): 令SGUARD扫内存的速度变慢。\n\n"
+			">2 GetAsyncKeyState(V3新增): 令SGUARD读取键盘按键的速度变慢。\n"
+			"【注】启用该选项似乎能有效提升游戏流畅度，但特殊情况下可能导致游戏掉线。\n"
+			"【注】若出现问题，关闭该选项即可。相关的引用位于动态库ACE-DRV64.dll中。\n\n"
+			">3 NtWaitForSingleObject(V1新增): 不建议使用：已知可能导致游戏异常。\n\n"
+			">4 NtDelayExecution(V1新增): 不建议使用：已知可能导致游戏异常和卡顿。\n\n"
+			"> 高级内存搜索(V4新增)：该功能主要用于解决[1/2]到不了[2/2]的问题，\n"
+			"【注】启用该功能后不再需要对指令指针采样，故提交内存的速度会快一些。\n"
+			"【注】启用该功能后默认开游戏20秒后开始限制。你可以在“设置延时”中更改等待时间。\n"
+			"     等待时间设置的越小，则限制SG越快；设为0时可以启动游戏秒限制。\n"
+			"     等待时间设置的越大，则游戏启动时越不易掉线。\n\n\n"
+			"【说明】内存补丁V4需要临时装载一次驱动，提交内存后会立即将之卸载。\n"
+			"若你使用时出现问题，可以去更新链接下载证书。\n\n\n"
 			"点击“确定”翻到下一页；点击“取消”结束查看说明。",
 			"SGuard限制器 " VERSION "  by: @H3d9",
 			MB_OKCANCEL)) 
@@ -53,25 +64,17 @@ static void ShowAbout() {
 				"该模式仅针对DNF，且仅推荐使用-rr后缀的功能。\n"
 				"你可以点击“设置时间切分”并尝试诸如90，85，80...直到合适即可。\n\n"
 				"【注】“时间切分”设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n"
-				"【注】根据统计反馈，目前该模式中最好用的选项为【弱锁定-rr】。\n\n"
+				"【注】根据统计反馈，目前该模式中最好用的选项为【弱锁定-rr】。\n\n\n"
 				"点击“确定”翻到下一页；点击“取消”结束查看说明。",
 				"SGuard限制器 " VERSION "  by: @H3d9",
 				MB_OKCANCEL))
 			{
 				MessageBox(0,
 					"【工作模式说明 P3】\n\n"
-					"内存补丁 V4（21.10.6）：\n\n"
-					"这是默认模式，建议优先使用，如果不好用再换其他模式。\n\n"
-					">1 NtQueryVirtualMemory(V2新增): 令SGUARD扫内存的速度变慢。\n\n"
-					">2 GetAsyncKeyState(V3新增): 令SGUARD读取键盘按键的速度变慢。\n"
-					"【注】启用该选项似乎能有效提升游戏流畅度，但特殊情况下可能导致游戏掉线。\n"
-					"【注】若出现问题，关闭该选项即可。相关的引用位于动态库ACE-DRV64.dll中。\n\n"
-					">3 NtWaitForSingleObject(V1新增): 不建议使用：已知可能导致游戏异常。\n\n"
-					">4 NtDelayExecution(V1新增): 不建议使用：已知可能导致游戏异常和卡顿。\n\n"
-					"> 高级内存搜索(V4新增)：该功能主要用于解决[1/2]到不了[2/2]的问题，\n"
-					"> 此外，启用该功能不再需要对指令指针采样，故提交内存的速度会快一些。\n\n"
-					"【说明】内存补丁V4需要临时装载一次驱动，提交内存后会立即将之卸载。\n"
-					"若你使用时出现问题，可以去更新链接下载证书。",
+					"时间片轮转（21.2.6）：\n\n"
+					"该模式原理与BES相同，不建议DNF使用（但是LOL可以用）。\n\n"
+					"【注】如果LOL经常掉线连不上，可以切换到这个模式；且【不要打开】内核态调度器。\n"
+					"【注】对于DNF，如果你仍然想用这个模式，建议打开内核态调度器。",
 					"SGuard限制器 " VERSION "  by: @H3d9",
 					MB_OK);
 			}
@@ -79,99 +82,51 @@ static void ShowAbout() {
 	}
 }
 
-// dialog: set percent.
-static INT_PTR CALLBACK SetPctDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
-	switch (message) {
-	case WM_INITDIALOG:
-	{
-		char buf[0x1000];
-		sprintf(buf, "输入整数1~99，或999（代表99.9）\n（当前值：%u）", limitMgr.limitPercent);
-		SetDlgItemText(hDlg, IDC_SETPCTTEXT, buf);
-		return (INT_PTR)TRUE;
-	}
+static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 
-	case WM_COMMAND:
-		if (LOWORD(wParam) == IDC_SETPCTOK) {
-			BOOL translated;
-			UINT res = GetDlgItemInt(hDlg, IDC_SETPCTEDIT, &translated, FALSE);
-			if (!translated || res < 1 || (res > 99 && res != 999)) {
-				MessageBox(0, "输入1~99或999", "错误", MB_OK);
-			} else {
-				limitMgr.setPercent(res);
-				EndDialog(hDlg, LOWORD(wParam));
-				return (INT_PTR)TRUE;
-			}
-		}
-		break;
-
-	case WM_CLOSE:
-		EndDialog(hDlg, LOWORD(wParam));
-		return (INT_PTR)TRUE;
-	}
-
-	return (INT_PTR)FALSE;
-}
-
-// dialog: set time slice.
-static INT_PTR CALLBACK SetTimeDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
-
-	switch (message) {
-	case WM_INITDIALOG:
-	{
-		char buf[0x1000];
-		sprintf(buf, "输入1~99的整数（当前值：%u）", traceMgr.lockRound);
-		SetDlgItemText(hDlg, IDC_SETTIMETEXT, buf);
-			return (INT_PTR)TRUE;
-	}
-
-	case WM_COMMAND:
-		if (LOWORD(wParam) == IDC_SETTIMEOK) {
-			BOOL translated;
-			UINT res = GetDlgItemInt(hDlg, IDC_SETTIMEEDIT, &translated, FALSE);
-			if (!translated || res < 1 || res > 99) {
-				MessageBox(0, "输入1~99的整数", "错误", MB_OK);
-			} else {
-				traceMgr.lockRound = res;
-				EndDialog(hDlg, LOWORD(wParam));
-				return (INT_PTR)TRUE;
-			}
-		}
-		break;
-
-	case WM_CLOSE:
-		EndDialog(hDlg, LOWORD(wParam));
-		return (INT_PTR)TRUE;
-	}
-
-	return (INT_PTR)FALSE;
-}
-
-// dialog: set syscall delay.
-static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
-
-	static DWORD id = 0;
+	static DWORD dlgParam = 0;
 
 	auto& delayRange = patchMgr.patchDelayRange;
 	auto& delay      = patchMgr.patchDelay;
-
+	
 	switch (message) {
+
 		case WM_INITDIALOG:
 		{
-			id = (DWORD)lParam;
+			char buf [0x1000];
+			dlgParam = (DWORD)lParam;
+			
+			if (dlgParam == DLGPARAM_PCT) { // set limit percent.
+				SetWindowText(hDlg, "输入限制资源的百分比");
+				sprintf(buf, "输入整数1~99，或999（代表99.9）\n（当前值：%u）", limitMgr.limitPercent);
+				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
-			char buf[0x1000];
-			sprintf(buf, "输入%u~%u的整数（当前值：%u）", delayRange[id].low, delayRange[id].high, delay[id]);
-			SetDlgItemText(hDlg, IDC_SETDELAYTEXT, buf);
+			} else if (dlgParam == DLGPARAM_TIME) { // set time slice.
+				SetWindowText(hDlg, "输入每100ms从目标线程中强制剥夺的时间（单位：ms）");
+				sprintf(buf, "\n输入1~99的整数（当前值：%u）", traceMgr.lockRound);
+				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
-			if (lParam == 0) {
-				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtQueryVirtualMemory");
-			} else if (lParam == 1) {
-				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：GetAsyncKeyState");
-			} else if (lParam == 2) {
-				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtWaitForSingleObject\n【注意】不建议设置大于100的数值。");
-			} else { // lParam == 3
-				SetDlgItemText(hDlg, IDC_SETDELAYNOTE, "当前设置：NtDelayExecution");
+			} else if (dlgParam == DLGPARAM_PATCHWAIT) { // set advanced patch initial wait.
+				SetWindowText(hDlg, "输入启用高级内存搜索时限制器的初始等待时间（单位：秒）");
+				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayInAdvancedSearch);
+				SetDlgItemText(hDlg, IDC_TEXT1, buf);
+
+			} else { // set patch delay switches.
+				auto id = dlgParam - DLGPARAM_DELAY1;
+				SetWindowText(hDlg, "输入SGUARD每次执行当前系统调用的强制延迟（单位：ms）");
+				sprintf(buf, "\n输入%u~%u的整数（当前值：%u）", delayRange[id].low, delayRange[id].high, delay[id]);
+				SetDlgItemText(hDlg, IDC_TEXT1, buf);
+
+				if (dlgParam == DLGPARAM_DELAY1) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：NtQueryVirtualMemory");
+				} else if (dlgParam == DLGPARAM_DELAY2) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：GetAsyncKeyState");
+				} else if (dlgParam == DLGPARAM_DELAY3) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：NtWaitForSingleObject\n【注意】不建议设置大于100的数值。");
+				} else if (dlgParam == DLGPARAM_DELAY4) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：NtDelayExecution");
+				}
 			}
 
 			return (INT_PTR)TRUE;
@@ -179,27 +134,57 @@ static INT_PTR CALLBACK SetDelayDlgProc(HWND hDlg, UINT message, WPARAM wParam, 
 
 		case WM_COMMAND:
 		{
-			if (LOWORD(wParam) == IDC_SETDELAYOK) {
+			if (LOWORD(wParam) == IDC_OK) {
 				BOOL translated;
-				UINT res = GetDlgItemInt(hDlg, IDC_SETDELAYEDIT, &translated, FALSE);
+				UINT res = GetDlgItemInt(hDlg, IDC_EDIT, &translated, FALSE);
 
-				if (!translated || res < delayRange[id].low || res > delayRange[id].high) {
-					systemMgr.panic("应输入%u~%u的整数", delayRange[id].low, delayRange[id].high);
-					return (INT_PTR)FALSE;
+				if (dlgParam == DLGPARAM_PCT) {
+					if (!translated || res < 1 || (res > 99 && res != 999)) {
+						systemMgr.panic("输入1~99或999");
+					} else {
+						limitMgr.setPercent(res);
+						EndDialog(hDlg, LOWORD(wParam));
+						return (INT_PTR)TRUE;
+					}
+
+				} else if (dlgParam == DLGPARAM_TIME) {
+					if (!translated || res < 1 || res > 99) {
+						systemMgr.panic("输入1~99的整数");
+					} else {
+						traceMgr.lockRound = res;
+						EndDialog(hDlg, LOWORD(wParam));
+						return (INT_PTR)TRUE;
+					}
+
+				} else if (dlgParam == DLGPARAM_PATCHWAIT) {
+					if (!translated) {
+						systemMgr.panic("输入格式错误");
+					} else {
+						patchMgr.patchDelayInAdvancedSearch = res;
+						EndDialog(hDlg, LOWORD(wParam));
+						return (INT_PTR)TRUE;
+					}
+
 				} else {
-					patchMgr.patchDelay[id] = res;
-					EndDialog(hDlg, LOWORD(wParam));
-					return (INT_PTR)TRUE;
+					auto id = dlgParam - DLGPARAM_DELAY1;
+					if (!translated || res < delayRange[id].low || res > delayRange[id].high) {
+						systemMgr.panic("输入%u~%u的整数", delayRange[id].low, delayRange[id].high);
+					} else {
+						patchMgr.patchDelay[id] = res;
+						EndDialog(hDlg, LOWORD(wParam));
+						return (INT_PTR)TRUE;
+					}
 				}
 			}
 		}
-			break;
+		break;
 
 		case WM_CLOSE:
 		{
 			EndDialog(hDlg, LOWORD(wParam));
 			return (INT_PTR)TRUE;
 		}
+		break;
 	}
 
 	return (INT_PTR)FALSE;
@@ -376,8 +361,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH3,  "inline Ntdll!NtWaitForSingleObject");
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH4,  "re-write Ntdll!NtDelayExecution");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索功能");
-				sprintf(buf, "设置延时（当前：%u/%u/%u/%u）", patchMgr.patchDelay[0], patchMgr.patchDelay[1], patchMgr.patchDelay[2], patchMgr.patchDelay[3]);
+				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索");
+				sprintf(buf, "设置延时（当前：%u/%u/%u/%u/%u）", patchMgr.patchDelayInAdvancedSearch, patchMgr.patchDelay[0], patchMgr.patchDelay[1], patchMgr.patchDelay[2], patchMgr.patchDelay[3]);
 				AppendMenu(hMenu, drvMenuType, IDM_SETDELAY, buf);
 
 				CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
@@ -463,7 +448,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				limitMgr.disable();
 				break;
 			case IDM_SETPERCENT:
-				DialogBox(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETPCTDIALOG), hWnd, SetPctDlgProc);
+				DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_PCT);
 				configMgr.writeConfig();
 				break;
 			case IDM_KERNELLIMIT:
@@ -490,7 +475,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				configMgr.writeConfig();
 				break;
 			case IDM_SETRRTIME:
-				DialogBox(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETTIMEDIALOG), hWnd, SetTimeDlgProc);
+				DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_TIME);
 				configMgr.writeConfig();
 				break;
 			case IDM_UNLOCK:
@@ -499,11 +484,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				
 			// patch
 			case IDM_SETDELAY:
-				if (IDYES == MessageBox(0, "请依次设置以下开关的强制延时。\n如果不想设置某个选项，可以直接关掉对应的窗口。\n\nNtQueryVirtualMemory\nGetAsyncKeyState\nNtWaitForSingleObject\nNtDelayExecution\n", "信息", MB_YESNO)) {
-					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 0);
-					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 1);
-					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 2);
-					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_SETDELAYDIALOG), hWnd, SetDelayDlgProc, 3);
+				if (IDYES == MessageBox(0, 
+					"请依次设置以下选项的延迟。\n"
+					"如果不想设置某个选项，可以直接关掉对应的窗口。\n\n"
+					"(高级内存搜索) 限制器初始等待时间\n"
+					"NtQueryVirtualMemory\n"
+					"GetAsyncKeyState\n"
+					"NtWaitForSingleObject\n"
+					"NtDelayExecution\n", "信息", MB_YESNO)) {
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_PATCHWAIT);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_DELAY1);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_DELAY2);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_DELAY3);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_DELAY4);
 					configMgr.writeConfig();
 					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				}
