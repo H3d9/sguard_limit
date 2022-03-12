@@ -153,7 +153,6 @@ void SearchVad_NT61(PSEARCH_RESULT result, PMMVAD_7 pVad) { // assert: pVad != N
 		}
 	}
 
-
 	if (!result->Found && pVad->LeftChild) {
 		SearchVad_NT61(result, pVad->LeftChild);
 	}
@@ -420,15 +419,17 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 					SearchVad_NT10(&result, root);
 				}
 			}
+			
 
+			// 清空缓冲区结构以准备储存搜索结果
+			RtlZeroMemory(Input->data, sizeof(Input->data));
 
 			if (result.Found) {
 
 				// 如果找到，则记录目标镜像中所有可执行模块的虚拟地址范围到Input->data，以{0,0}结尾
 				// [note] typeof (Input->data) => struct { __int64[2]; } * ;
 				ULONG addressCount = 0;
-				RtlZeroMemory(Input->data, sizeof(Input->data));
-
+				
 				// 搜索目标镜像中可执行模块的位置
 				PVOID virtualStart = (PVOID)result.VirtualAddress[0];
 				while (virtualStart < (PVOID)result.VirtualAddress[1]) {
@@ -453,8 +454,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 					virtualStart = (PVOID)((ULONG64)virtualStart + memInfo.RegionSize);
 				}
-
-			} // else: 若搜索模块失败，则Input->data为空。
+			}
 		}
 		break;
 
