@@ -77,7 +77,7 @@ void PatchManager::patch() {
 		if (useAdvancedSearch) {
 			systemMgr.log("patch(): waiting %us before activate advanced search.", patchDelayInAdvancedSearch);
 
-			for (auto time = 0; time < patchDelayInAdvancedSearch; time++) {
+			for (DWORD time = 0; time < patchDelayInAdvancedSearch; time++) {
 
 				if (!patchEnabled || pid != threadMgr.getTargetPid()) {
 					systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
@@ -196,14 +196,12 @@ bool PatchManager::_patch_stage1(DWORD pid) {
 			driver.searchVad(pid, executeRange, L"Ntdll.dll");
 
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch1() warning: Advanced memory search failed: %s.", driver.errorMessage);
-				systemMgr.panic(driver.errorCode, "patch1(): 内存扫描失败: %s\n建议你把问题反馈到群里。", driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "patch1(): 内存扫描失败: %s", driver.errorMessage);
 			}
 
 			// check if result exists.
 			if (executeRange.empty()) {
-				systemMgr.log("patch1() warning: Advanced memory search get 0 result.");
-				systemMgr.panic("patch1(): 内存扫描失败: 找不到目标模块的虚拟地址\n建议你把问题反馈到群里。");
+				systemMgr.panic("patch1(): 内存扫描失败: 找不到目标模块的虚拟地址");
 			}
 
 			// split executable range to pieces to read.
@@ -853,14 +851,12 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 			driver.searchVad(pid, executeRange, L"User32.dll");
 			
 			if (!status) {
-				systemMgr.log(driver.errorCode, "patch2() warning: Advanced memory search failed: %s.", driver.errorMessage);
-				systemMgr.panic(driver.errorCode, "patch2(): 内存扫描失败: %s\n建议你把问题反馈到群里。", driver.errorMessage);
+				systemMgr.panic(driver.errorCode, "patch2(): 内存扫描失败: %s", driver.errorMessage);
 			}
 
 			// check if result exists.
 			if (executeRange.empty()) {
-				systemMgr.log("patch2() warning: Advanced memory search get 0 result.");
-				systemMgr.panic("patch2(): 内存扫描失败: 找不到目标模块的虚拟地址\n建议你把问题反馈到群里。");
+				systemMgr.panic("patch2(): 内存扫描失败: 找不到目标模块的虚拟地址");
 			}
 
 			// split executable range to pieces to read.
