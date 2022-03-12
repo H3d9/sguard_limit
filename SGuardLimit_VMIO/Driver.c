@@ -33,7 +33,7 @@ typedef struct {
 } VMIO_REQUEST;
 
 
-// ZwProtectVirtualMemory（win7未导出符号）
+// ZwProtectVirtualMemory (win7未导出符号)
 NTSTATUS (NTAPI* ZwProtectVirtualMemory)(
 	__in HANDLE ProcessHandle,
 	__inout PVOID* BaseAddress,
@@ -67,7 +67,7 @@ NTSTATUS KeReadVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID Targe
 	
 	// 此处MmCopyVirtualMemory仅用于拷贝用户空间的虚拟内存。
 	// 尽管MmCopyVirtualMemory也可以拷贝内核空间的分页内存，但若触碰到内核非分页区域或无页表映射区域，
-	// 由于对应的内核页表项不存在，触发内核态page fault后缺页中断无法处理，nt kernel会将之判定为严重错误，这将引发BSOD。
+	// 由于对应的内核页表项不存在，触发内核态page fault后缺页中断无法处理，ntos会将之判定为严重错误，这将引发BSOD。
 	// 相应的，若触发了用户态page fault，即使无法解决缺页，也只是MmCopyVirtualMemory返回失败而已。
 	ULONG64 mask = (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) ? 
 		(ULONG64)SourceAddress >> 44 : (ULONG64)SourceAddress >> 48;
@@ -126,31 +126,30 @@ void SearchVad_NT61(PSEARCH_RESULT result, PMMVAD_7 pVad) { // assert: pVad != N
 			}
 			imageIndex++;
 
-			if (imageIndex == 0) {
-				return;
+			if (imageIndex != 0) {
+
+				// 若映像名称存在，则构造为字符串以供对比
+				wchar_t* pImageName = ExAllocatePoolWithTag(NonPagedPool, 512, '9d3H');
+
+				if (pImageName) {
+
+					RtlZeroMemory(pImageName, 512);
+					for (USHORT i = 0; i < 255 && imageIndex < pImagePath->Length / 2; i++, imageIndex++) {
+						pImageName[i] = pImagePath->Buffer[imageIndex];
+					}
+
+					// 对比映像名称是否与待查询的一致
+					if (0 == _wcsicmp(pImageName, TargetImageName)) {
+
+						// 若一致，则取该内存镜像的虚拟地址范围为结果
+						result->Found = TRUE;
+						result->VirtualAddress[0] = pVad->StartingVpn << 12;
+						result->VirtualAddress[1] = pVad->EndingVpn << 12;
+					}
+
+					ExFreePoolWithTag(pImageName, '9d3H');
+				}
 			}
-
-			wchar_t* pImageName = ExAllocatePoolWithTag(NonPagedPool, 512, '9d3H');
-
-			if (!pImageName) {
-				return;
-			}
-
-			RtlZeroMemory(pImageName, 512);
-			for (USHORT i = 0; i < 255 && imageIndex < pImagePath->Length / 2; i++, imageIndex++) {
-				pImageName[i] = pImagePath->Buffer[imageIndex];
-			}
-
-			// 对比映像名称是否与待查询的一致
-			if (0 == _wcsicmp(pImageName, TargetImageName)) {
-
-				// 若一致，则取该内存镜像的虚拟地址范围为结果
-				result->Found = TRUE;
-				result->VirtualAddress[0] = pVad->StartingVpn << 12;
-				result->VirtualAddress[1] = pVad->EndingVpn << 12;
-			}
-
-			ExFreePoolWithTag(pImageName, '9d3H');
 		}
 	}
 
@@ -192,33 +191,29 @@ void SearchVad_NT10(PSEARCH_RESULT result, PMMVAD_10 pVad) { // assert: pVad != 
 			}
 			imageIndex++;
 
-			if (imageIndex == 0) {
-				DbgPrint("\nimageIndex invalid\n");
-				return;
+			if (imageIndex != 0) {
+
+				wchar_t* pImageName = ExAllocatePoolWithTag(NonPagedPool, 512, '9d3H');
+
+				if (pImageName) {
+
+					RtlZeroMemory(pImageName, 512);
+					for (USHORT i = 0; i < 255 && imageIndex < pImagePath->Length / 2; i++, imageIndex++) {
+						pImageName[i] = pImagePath->Buffer[imageIndex];
+					}
+
+					if (0 == _wcsicmp(pImageName, TargetImageName)) {
+
+						result->Found = TRUE;
+						// [note] NT10(以及NT6.2, win8.1)使用额外的字节表示第44~47位虚拟地址，且Vpn字段为32位。
+						// 而NT6.1的Vpn字段为64位，但仅使用了低32位，它的44~47位虚拟地址从未被使用。
+						result->VirtualAddress[0] = ((ULONG64)pVad->Core.StartingVpnHigh << 44) | ((ULONG64)pVad->Core.StartingVpn << 12);
+						result->VirtualAddress[1] = ((ULONG64)pVad->Core.EndingVpnHigh << 44) | ((ULONG64)pVad->Core.EndingVpn << 12);
+					}
+
+					ExFreePoolWithTag(pImageName, '9d3H');
+				}
 			}
-
-			wchar_t* pImageName = ExAllocatePoolWithTag(NonPagedPool, 512, '9d3H');
-
-			if (!pImageName) {
-				DbgPrint("\nalloc mem failed\n");
-				return;
-			}
-
-			RtlZeroMemory(pImageName, 512);
-			for (USHORT i = 0; i < 255 && imageIndex < pImagePath->Length / 2; i++, imageIndex++) {
-				pImageName[i] = pImagePath->Buffer[imageIndex];
-			}
-
-			if (0 == _wcsicmp(pImageName, TargetImageName)) {
-
-				result->Found = TRUE;
-				// [note] NT10(以及NT6.2, win8.1)使用额外的字节表示第44~47位虚拟地址，且Vpn字段为32位。
-				// 而NT6.1的Vpn字段为64位，但仅使用了低32位，它的44~47位虚拟地址从未被使用。
-				result->VirtualAddress[0] = ((ULONG64)pVad->Core.StartingVpnHigh << 44) | ((ULONG64)pVad->Core.StartingVpn << 12);
-				result->VirtualAddress[1] = ((ULONG64)pVad->Core.EndingVpnHigh << 44) | ((ULONG64)pVad->Core.EndingVpn << 12);
-			}
-
-			ExFreePoolWithTag(pImageName, '9d3H');
 		}
 	}
 
@@ -416,7 +411,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 					SearchVad_NT61(&result, root);
 				}
 
-			} else { // else win10, 11
+			} else { // if win10, 11
 
 				PRTL_AVL_TREE pAvlEntry = (PRTL_AVL_TREE)((ULONG64)pEProcess + VadRoot);
 				PMMVAD_10 root = (PMMVAD_10)(pAvlEntry->Root);
@@ -451,7 +446,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 						memInfo.Protect & PAGE_EXECUTE_READWRITE ||
 						memInfo.Protect & PAGE_EXECUTE_WRITECOPY) {
 
-						// 如果是可执行模块，则记录虚拟地址
+						// 如果是可执行模块，则记录虚拟地址范围以返回给应用层
 						((PULONG64)Input->data) [ addressCount++ ] = (ULONG64)memInfo.BaseAddress;
 						((PULONG64)Input->data) [ addressCount++ ] = (ULONG64)memInfo.BaseAddress + memInfo.RegionSize;
 					}
