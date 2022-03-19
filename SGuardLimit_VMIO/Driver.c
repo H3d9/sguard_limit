@@ -533,7 +533,7 @@ NTSTATUS DriverEntry(
 				VadRoot = 0x7D8;
 				break;
 			}
-		} else if (OSVersion.dwBuildNumber <= 22572) { // Win 11 latest (22.3.11)
+		} else if (OSVersion.dwBuildNumber <= 22579) { // Win 11 latest (22.3.19)
 			VadRoot = 0x7D8;
 		}
 	}
