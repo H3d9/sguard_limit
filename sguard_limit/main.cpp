@@ -43,7 +43,7 @@ static void CleanThreadWorker() {
 	if (pid) {
 
 		// ensure SG's pid not changed before we eliminate ace-loader,
-		// that's because pid change identifys game re-launch.
+		// that's because pid change identifies game re-launch.
 		systemMgr.log("ace-killer thread: 1 min wait begin.");
 
 		do {
