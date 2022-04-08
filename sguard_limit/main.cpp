@@ -96,7 +96,7 @@ static void HijackThreadWorker() {
 			// raise ace-killer thread if switch is enabled.
 			if (g_KillAceLoader) {
 
-				auto CleanThreadCaller = []() {
+				auto CleanThreadCaller = [] () {
 					std::thread cleanThread(CleanThreadWorker);
 					cleanThread.detach();
 				};

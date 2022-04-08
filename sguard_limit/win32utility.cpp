@@ -95,11 +95,13 @@ bool win32ThreadManager::killTarget() { // kill process: return true if killed.
 	}
 
 	if (!TerminateProcess(hProc, 0)) { // async if handle is not this program.
+		CloseHandle(hProc);
 		return false;
 	}
 
 	WaitForSingleObject(hProc, INFINITE);
-
+	
+	CloseHandle(hProc);
 	return true;
 }
 
