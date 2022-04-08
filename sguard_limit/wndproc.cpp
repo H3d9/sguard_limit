@@ -20,6 +20,8 @@ extern PatchManager&            patchMgr;
 extern volatile bool            g_HijackThreadWaiting;
 extern volatile DWORD           g_Mode;
 
+extern volatile bool            g_KillAceLoader;
+
 
 // about func: show about dialog box.
 static void ShowAbout() {
@@ -28,7 +30,7 @@ static void ShowAbout() {
 		"本工具专用于约束TX游戏扫盘插件ACE-Guard Client EXE的CPU使用率。\n"
 		"该工具仅供研究交流游戏优化使用，将来可能失效，不保证稳定性。\n"
 		"如果你发现无法正常使用，请更换模式或选项；若还不行请停止使用并等待更新。\n\n"
-		"【使用方法】双击打开，右下角出现托盘即可。一般情况无需进行任何设置。\n\n\n"
+		"【使用方法】双击打开，右下角出现托盘即可。若无报错则无需其他设置。\n\n\n"
 		"【提示】 不要强行关闭上述扫盘插件，这会导致游戏掉线。\n\n"
 		"【提示】 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n\n"
 		"SGUARD讨论群：775176979\n"
@@ -47,7 +49,7 @@ static void ShowAbout() {
 			"【注】若出现问题，关闭该选项即可。相关的引用位于动态库ACE-DRV64.dll中。\n\n"
 			">3 NtWaitForSingleObject(V1新增): 不建议使用：已知可能导致游戏异常。\n\n"
 			">4 NtDelayExecution(V1新增): 不建议使用：已知可能导致游戏异常和卡顿。\n\n"
-			"> 高级内存搜索(V4新增)：该功能主要用于解决[1/2]到不了[2/2]的问题，\n"
+			"> 高级内存搜索(V4新增)：该功能原用于解决仅提交[1/2]的问题。\n"
 			"【注】启用该功能后不再需要对指令指针采样，故提交内存的速度会快一些。\n"
 			"【注】启用该功能后默认开游戏20秒后开始限制。你可以在“设置延时”中更改等待时间。\n"
 			"     等待时间越大，则游戏启动时越不易掉线。姥爷机建议多设置几十秒。\n"
@@ -73,8 +75,9 @@ static void ShowAbout() {
 					"【工作模式说明 P3】\n\n"
 					"时间片轮转（21.2.6）：\n\n"
 					"该模式原理与BES相同，不建议DNF使用（但是LOL可以用）。\n\n"
-					"【注】如果LOL经常掉线连不上，可以切换到这个模式；且【不要打开】内核态调度器。\n"
-					"【注】对于DNF，如果你仍然想用这个模式，建议打开内核态调度器。",
+					"【注1】如果LOL经常掉线连不上，可以切换到这个模式；且【不要打开】内核态调度器。\n"
+					"【注2】对于DNF，如果你仍然想用这个模式，建议打开内核态调度器。\n"
+					"【注3】时间转轮可能无法约束扫硬盘。",
 					"SGuard限制器 " VERSION "  by: @H3d9",
 					MB_OK);
 			}
@@ -220,9 +223,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				CheckMenuItem(hMenuModes, IDM_MODE_PATCH,  MF_CHECKED);
 			}
 
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_KILLACELOADER,   "游戏启动60秒后，结束ace-loader");
+			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_UPDATEPAGE, "检查更新【当前版本：" VERSION "】");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_ABOUT,           "查看说明");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_SOURCEPAGE, "查看源代码");
+			if (g_KillAceLoader) {
+				CheckMenuItem(hMenuOthers, IDM_KILLACELOADER, MF_CHECKED);
+			}
 
 
 			if (g_Mode == 0) {
@@ -551,6 +559,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 
 			// more options
+			case IDM_KILLACELOADER:
+				if (g_KillAceLoader && 
+					MessageBox(0, "点击“是”将关闭自动结束ace-loader功能。", "注意", MB_YESNO) == IDYES) {
+					g_KillAceLoader = false;
+				} else {
+					g_KillAceLoader = true;
+				}
+				configMgr.writeConfig();
+				break;
 			case IDM_MORE_UPDATEPAGE:
 				ShellExecute(0, "open", "https://bbs.colg.cn/thread-8087898-1-1.html", 0, 0, SW_SHOW);
 				break;

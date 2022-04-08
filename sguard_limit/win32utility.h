@@ -51,7 +51,8 @@ public:
 	win32ThreadManager& operator= (const win32ThreadManager&)  = delete;
 	win32ThreadManager& operator= (win32ThreadManager&&)       = delete;
 
-	DWORD  getTargetPid();
+	DWORD  getTargetPid(const char* procName = "SGuard64.exe");
+	bool   killTarget();
 	bool   enumTargetThread(DWORD desiredAccess = THREAD_ALL_ACCESS);
 
 public:

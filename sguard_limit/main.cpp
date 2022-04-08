@@ -2,6 +2,7 @@
 // H3d9, 写于2021.2.5晚。
 #include <Windows.h>
 #include <thread>
+#include <mutex>
 #include "resource.h"
 #include "wndproc.h"
 #include "win32utility.h"
@@ -22,6 +23,61 @@ PatchManager&           patchMgr                = PatchManager::getInstance();
 volatile bool           g_HijackThreadWaiting   = true;
 volatile DWORD          g_Mode                  = 2;      // 0: lim  1: lock  2: patch
 
+volatile bool           g_KillAceLoader         = true;
+
+
+static void CleanThreadWorker() {
+
+	// this clean thread cannnot be re-entered, so there we have a lock.
+	// [note] former call will give up if game has re-launched, which is identified by pid.
+	static std::mutex mtx;
+
+	mtx.lock();
+	systemMgr.log("ace-killer thread: entering critical section.");
+
+	win32ThreadManager  threadMgr;
+	DWORD               pid            = threadMgr.getTargetPid();
+	DWORD               timeElapsed    = 0;
+	constexpr auto      timeToWait     = 60;
+
+	if (pid) {
+
+		// ensure SG's pid not changed before we eliminate ace-loader,
+		// that's because pid change identifys game re-launch.
+		systemMgr.log("ace-killer thread: 1 min wait begin.");
+
+		do {
+			Sleep(5000);
+			timeElapsed += 5;
+		} while ( timeElapsed < timeToWait && pid == threadMgr.getTargetPid() );
+
+
+		// if wait success, try kill ace-loader.
+		// there maybe multiple ace-loader(s), so do a while.
+		// [note] check pid finally, that's to ensure kill is immediately after check.
+		// check pid won't execute twice at one time, no matter wait success or fail.
+		if (timeElapsed >= timeToWait && pid == threadMgr.getTargetPid()) {
+
+			while ( threadMgr.getTargetPid("GameLoader.exe") ) {
+
+				if (threadMgr.killTarget()) {
+					systemMgr.log("ace-killer thread: eliminated ace-loader, pid: %u", threadMgr.pid);
+
+				} else {
+					systemMgr.log(GetLastError(), "ace-killer thread: failed to kill target.");
+					break;
+				}
+			}
+
+		} else {
+			systemMgr.log("ace-killer thread: abort waiting: game re-launched.");
+		}
+
+	}
+
+	systemMgr.log("ace-killer thread: leaving critical section.");
+	mtx.unlock();
+}
 
 static void HijackThreadWorker() {
 	
@@ -37,6 +93,18 @@ static void HijackThreadWorker() {
 
 			systemMgr.log("hijack thread: pid found.");
 
+			// raise ace-killer thread if switch is enabled.
+			if (g_KillAceLoader) {
+
+				auto CleanThreadCaller = []() {
+					std::thread cleanThread(CleanThreadWorker);
+					cleanThread.detach();
+				};
+
+				CleanThreadCaller();
+			}
+
+			// select mode.
 			if (g_Mode == 0 && limitMgr.limitEnabled) {
 				g_HijackThreadWaiting = false;
 				limitMgr.hijack();
@@ -115,14 +183,12 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 V4：新增“高级内存搜索”（当前支持到Win11.22512）。\n\n"
-			"1. 修复高级搜索失败时可能引发的问题。\n\n\n"
+			"1. 新增功能：启动游戏60秒后，结束ace-loader。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
-			"2. “高级内存搜索”默认开游戏20秒后开始限制。\n"
-			"   如果电脑性能不够则多等待一会，在设置延时里把“初始等待时间”多加几十秒即可。\n\n"
-			"3. 默认模式为内存补丁，如果发现LOL不好用，可以切换模式“时间转轮”\n"
-			"   但DNF不建议使用时间转轮（可能掉线）。注意：时间转轮可能无法约束扫硬盘。\n\n"
+			"2. 默认模式为内存补丁。LOL可以换“时间转轮”，但DNF不建议换。\n"
+			"3. “高级内存搜索”默认开游戏20秒后开始执行。\n\n"
 			"4. 若你第一次使用，请【务必】仔细阅读说明（右键菜单→其他选项）。",
 			VERSION "  by: @H3d9", MB_OK);
 	}

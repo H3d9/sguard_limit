@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "22.3.13 万圣节特别版"
+#define VERSION             "22.4.9 万圣节特别版"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 
@@ -41,8 +41,12 @@
 #define IDM_PATCHFAILHINT   222
 #define IDM_ADVMEMSEARCH    223
 
-#define IDM_MORE_UPDATEPAGE 224
-#define IDM_MORE_SOURCEPAGE 225
+
+// other commands
+#define IDM_KILLACELOADER   1000
+
+#define IDM_MORE_UPDATEPAGE 1100
+#define IDM_MORE_SOURCEPAGE 1101
 
 
 // dialog param macro

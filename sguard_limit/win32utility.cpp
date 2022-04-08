@@ -53,7 +53,7 @@ void win32Thread::_mySwap(win32Thread& t1, win32Thread& t2) {
 win32ThreadManager::win32ThreadManager() 
 	: pid(0), threadCount(0), threadList{} {}
 
-DWORD win32ThreadManager::getTargetPid() {  // ret == 0 if no proc.
+DWORD win32ThreadManager::getTargetPid(const char* procName) {  // ret == 0 if no proc.
 
 	HANDLE            hSnapshot    = NULL;
 	PROCESSENTRY32    pe           = {};
@@ -68,7 +68,7 @@ DWORD win32ThreadManager::getTargetPid() {  // ret == 0 if no proc.
 	}
 
 	for (BOOL next = Process32First(hSnapshot, &pe); next; next = Process32Next(hSnapshot, &pe)) {
-		if (_strcmpi(pe.szExeFile, "SGuard64.exe") == 0) {
+		if (_strcmpi(pe.szExeFile, procName) == 0) {
 			pid = pe.th32ProcessID;
 			break; // assert: only 1 pinstance.
 		}
@@ -77,6 +77,30 @@ DWORD win32ThreadManager::getTargetPid() {  // ret == 0 if no proc.
 	CloseHandle(hSnapshot);
 
 	return pid;
+}
+
+bool win32ThreadManager::killTarget() { // kill process: return true if killed.
+	
+	HANDLE hProc = NULL;
+
+
+	if (pid == 0) {
+		return false;
+	}
+
+	hProc = OpenProcess(PROCESS_ALL_ACCESS, NULL, pid);
+
+	if (!hProc) {
+		return false;
+	}
+
+	if (!TerminateProcess(hProc, 0)) { // async if handle is not this program.
+		return false;
+	}
+
+	WaitForSingleObject(hProc, INFINITE);
+
+	return true;
 }
 
 bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadList & threadCount
@@ -364,7 +388,7 @@ void win32SystemManager::removeTray() {
 
 void win32SystemManager::log(const char* format, ...) {
 
-	char logbuf[0x1000];
+	CHAR logbuf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
@@ -449,7 +473,7 @@ void win32SystemManager::_log(DWORD code, const char* logbuf) {
 		return;
 	}
 
-	char result[0x1000];
+	CHAR result[0x1000];
 
 	// put timestamp to result.
 	time_t t = time(0);
@@ -489,7 +513,7 @@ void win32SystemManager::_log(DWORD code, const char* logbuf) {
 
 void win32SystemManager::_panic(DWORD code, const char* showbuf) {
 
-	char result[0x1000];
+	CHAR result[0x1000];
 
 	// before panic, log first.
 	_log(code, showbuf);

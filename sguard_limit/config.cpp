@@ -9,6 +9,7 @@
 
 // objects to write
 extern volatile DWORD    g_Mode;
+extern volatile bool     g_KillAceLoader;
 extern LimitManager&     limitMgr;
 extern TraceManager&     traceMgr;
 extern PatchManager&     patchMgr;
@@ -50,6 +51,14 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		g_Mode = 2;
 	} else {
 		g_Mode = res;
+	}
+
+	res = GetPrivateProfileInt("Global", "KillAceLoader", -1, profile);
+	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Global", "KillAceLoader", "1", profile);
+		g_KillAceLoader = true;
+	} else {
+		g_KillAceLoader = res ? true : false;
 	}
 
 	// limit module
@@ -184,6 +193,9 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, "%u", g_Mode);
 	WritePrivateProfileString("Global", "Mode", buf, profile);
+
+	sprintf(buf, g_KillAceLoader ? "1" : "0");
+	WritePrivateProfileString("Global", "KillAceLoader", buf, profile);
 
 	sprintf(buf, "%u", limitMgr.limitPercent);
 	WritePrivateProfileString("Limit", "Percent", buf, profile);

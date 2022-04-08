@@ -123,7 +123,7 @@ void PatchManager::patch() {
 		driver.unload();
 
 		patchPid = pid;
-		systemMgr.log("patch(): operation complete.");
+		systemMgr.log("patch(): all operation complete.");
 	}
 
 
@@ -1008,14 +1008,9 @@ bool PatchManager::_patch_stage2(DWORD pid) {
 							continue;
 						}
 						
-						// (and check memory to find if it's real target)
-						if (!(0 == memcmp(vmrelate + 0x1000 + target_entry % 0x1000, traits, sizeof(traits) - 1))) {
-							systemMgr.log(driver.errorCode, "patch2(): it seems that vaddress_entry 0x%llx is inlined, ignored.", vaddress_entry);
-							fake_entries++;
-							continue;
-						}
-
 						// then modify final result.
+						// no need to check target traits again; patch it directly. 
+						// only ptrs're changed and kbs of memory're wasted since game didn't restart.
 						target_offset   = 0x1000 + target_entry % 0x1000;
 						vmStartAddress  = (target_entry & ~0xfff) - 0x1000;
 						memcpy(vmbuf, vmrelate, 0x4000);
