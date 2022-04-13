@@ -28,12 +28,12 @@ volatile bool           g_KillAceLoader         = true;
 
 static void CleanThreadWorker() {
 
-	// this clean thread cannnot be re-entered, so there we have a lock.
-	// [note] former call will give up if game has re-launched, which is identified by pid.
+	// clean thread: 1 min after game starts, end "ace-loader" process.
+	// [note] former call will give up cleaning if game has re-launched, which is identified by SG pid.
 	static std::mutex mtx;
 
 	mtx.lock();
-	systemMgr.log("ace-killer thread: entering critical section.");
+	systemMgr.log("clean thread: [entering] -> critical section");
 
 	win32ThreadManager  threadMgr;
 	DWORD               pid            = threadMgr.getTargetPid();
@@ -44,13 +44,12 @@ static void CleanThreadWorker() {
 
 		// ensure SG's pid not changed before we eliminate ace-loader,
 		// that's because pid change identifies game re-launch.
-		systemMgr.log("ace-killer thread: 1 min wait begin.");
+		systemMgr.log("clean thread: 1 min wait begin.");
 
 		do {
 			Sleep(5000);
 			timeElapsed += 5;
 		} while ( timeElapsed < timeToWait && pid == threadMgr.getTargetPid() );
-
 
 		// if wait success, try kill ace-loader.
 		// there maybe multiple ace-loader(s), so do a while.
@@ -61,21 +60,20 @@ static void CleanThreadWorker() {
 			while ( threadMgr.getTargetPid("GameLoader.exe") ) {
 
 				if (threadMgr.killTarget()) {
-					systemMgr.log("ace-killer thread: eliminated ace-loader, pid: %u", threadMgr.pid);
+					systemMgr.log("clean thread: eliminated [GameLoader.exe] - pid %u", threadMgr.pid);
 
 				} else {
-					systemMgr.log(GetLastError(), "ace-killer thread: failed to kill target.");
+					systemMgr.log(GetLastError(), "clean thread: failed to kill target.");
 					break;
 				}
 			}
 
 		} else {
-			systemMgr.log("ace-killer thread: abort waiting: game re-launched.");
+			systemMgr.log("clean thread: abort waiting: game re-launched.");
 		}
-
 	}
 
-	systemMgr.log("ace-killer thread: leaving critical section.");
+	systemMgr.log("clean thread: [leaving] <- critical section");
 	mtx.unlock();
 }
 
@@ -93,15 +91,10 @@ static void HijackThreadWorker() {
 
 			systemMgr.log("hijack thread: pid found.");
 
-			// raise ace-killer thread if switch is enabled.
+			// raise clean thread if switch is enabled.
 			if (g_KillAceLoader) {
-
-				auto CleanThreadCaller = [] () {
-					std::thread cleanThread(CleanThreadWorker);
-					cleanThread.detach();
-				};
-
-				CleanThreadCaller();
+				std::thread cleanThread(CleanThreadWorker);
+				cleanThread.detach();
 			}
 
 			// select mode.
