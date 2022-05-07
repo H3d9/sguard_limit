@@ -88,8 +88,8 @@ public:
 	void       createTray(UINT trayActiveMsg);
 	void       removeTray();
 	WPARAM     messageLoop();
-	
-public:	
+
+public:
 	void       log(const char* format, ...);
 	void       log(DWORD errorCode, const char* format, ...);
 	void       panic(const char* format, ...);
@@ -99,6 +99,9 @@ public:
 	const std::string&  getProfileDir();     // xref: config, kdriver
 	OSVersion           getSystemVersion();  // xref: mempatch
 	DWORD               getSystemBuildNum(); // xref: mempatch
+
+public:
+	void       cleanAceLoader(); // util: get rid of GameLoader.exe
 
 private:
 	ATOM     _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);

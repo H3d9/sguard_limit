@@ -2,7 +2,6 @@
 // H3d9, Ð´ÓÚ2021.2.5Íí¡£
 #include <Windows.h>
 #include <thread>
-#include <mutex>
 #include "resource.h"
 #include "wndproc.h"
 #include "win32utility.h"
@@ -26,57 +25,6 @@ volatile DWORD          g_Mode                  = 2;      // 0: lim  1: lock  2:
 volatile bool           g_KillAceLoader         = true;
 
 
-static void CleanThreadWorker() {
-
-	// clean thread: 1 min after game starts, end "ace-loader" process.
-	// [note] former call will give up cleaning if game has re-launched, which is identified by SG pid.
-	static std::mutex mtx;
-
-	mtx.lock();
-	systemMgr.log("clean thread: [entering] -> critical section");
-
-	win32ThreadManager  threadMgr;
-	DWORD               pid            = threadMgr.getTargetPid();
-	DWORD               timeElapsed    = 0;
-	constexpr auto      timeToWait     = 60;
-
-	if (pid) {
-
-		// ensure SG's pid not changed before we eliminate ace-loader,
-		// that's because pid change identifies game re-launch.
-		systemMgr.log("clean thread: 1 min wait begin.");
-
-		do {
-			Sleep(5000);
-			timeElapsed += 5;
-		} while ( timeElapsed < timeToWait && pid == threadMgr.getTargetPid() );
-
-		// if wait success, try kill ace-loader.
-		// there maybe multiple ace-loader(s), so do a while.
-		// [note] check pid finally, that's to ensure kill is immediately after check.
-		// check pid won't execute twice at one time, no matter wait success or fail.
-		if (timeElapsed >= timeToWait && pid == threadMgr.getTargetPid()) {
-
-			while ( threadMgr.getTargetPid("GameLoader.exe") ) {
-
-				if (threadMgr.killTarget()) {
-					systemMgr.log("clean thread: eliminated [GameLoader.exe] - pid %u", threadMgr.pid);
-
-				} else {
-					systemMgr.log(GetLastError(), "clean thread: failed to kill target.");
-					break;
-				}
-			}
-
-		} else {
-			systemMgr.log("clean thread: abort waiting: game re-launched.");
-		}
-	}
-
-	systemMgr.log("clean thread: [leaving] <- critical section");
-	mtx.unlock();
-}
-
 static void HijackThreadWorker() {
 	
 	systemMgr.log("hijack thread: created.");
@@ -91,10 +39,9 @@ static void HijackThreadWorker() {
 
 			systemMgr.log("hijack thread: pid found.");
 
-			// raise clean thread if switch is enabled.
+			// raise clean thread to kill GameLoader at appropriate time.
 			if (g_KillAceLoader) {
-				std::thread cleanThread(CleanThreadWorker);
-				cleanThread.detach();
+				systemMgr.cleanAceLoader();
 			}
 
 			// select mode.

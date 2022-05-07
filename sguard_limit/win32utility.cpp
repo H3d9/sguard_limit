@@ -2,6 +2,8 @@
 #include <tlhelp32.h>
 #include <UserEnv.h>
 #include <time.h>
+#include <thread>
+#include <mutex>
 #include "win32utility.h"
 
 // dependency: Userenv.lib
@@ -449,6 +451,62 @@ OSVersion win32SystemManager::getSystemVersion() {
 
 DWORD win32SystemManager::getSystemBuildNum() {
 	return osBuildNum;
+}
+
+void win32SystemManager::cleanAceLoader() {
+
+	std::thread cleanThread([this]() {
+
+		// clean thread: 1 min after game starts, end "ace-loader" process.
+		// [note] former thread(s) will give up cleaning if game has re-launched.
+		static std::mutex mtx;
+
+		mtx.lock();
+		log("clean thread: [entering] -> critical section");
+
+		win32ThreadManager  threadMgr;
+		DWORD               pid            = threadMgr.getTargetPid();
+		DWORD               timeElapsed    = 0;
+		constexpr auto      timeToWait     = 60;
+
+		if (pid) {
+
+			// ensure SG pid not changed before we eliminate ace-loader,
+			// here we use pid change to identify game re-launch.
+			log("clean thread: [wait] 1 min wait begin.");
+
+			do {
+				Sleep(5000);
+				timeElapsed += 5;
+			} while ( timeElapsed < timeToWait && pid == threadMgr.getTargetPid() );
+
+			// if wait success, try kill ace-loader.
+			// [note] check pid at end to ensure kill is immediately after check.
+			// check pid won't execute twice at one time, no matter wait success or fail.
+			if (timeElapsed >= timeToWait && pid == threadMgr.getTargetPid()) {
+
+				// there maybe multiple procs, so do a while.
+				while ( threadMgr.getTargetPid("GameLoader.exe") ) {
+
+					if (threadMgr.killTarget()) {
+						log("clean thread: [GameLoader.exe] - pid %u eliminated.", threadMgr.pid);
+
+					} else {
+						log(GetLastError(), "clean thread: [GameLoader.exe] - failed.");
+						break;
+					}
+				}
+
+			} else {
+				log("clean thread: [wait] aborted: game re-launched");
+			}
+		}
+
+		log("clean thread: [leaving] <- critical section");
+		mtx.unlock();
+	});
+
+	cleanThread.detach();
 }
 
 ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc, DWORD iconRcNum) {
