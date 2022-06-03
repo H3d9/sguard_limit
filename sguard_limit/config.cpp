@@ -167,6 +167,22 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		patchMgr.patchSwitches.NtDelayExecution = res ? true : false;
 	}
 
+	res = GetPrivateProfileInt("Patch", "DeviceIoControl_1", -1, profile);
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Patch", "DeviceIoControl_1", "1", profile);
+		patchMgr.patchSwitches.DeviceIoControl_1 = true;
+	} else {
+		patchMgr.patchSwitches.DeviceIoControl_1 = res ? true : false;
+	}
+
+	res = GetPrivateProfileInt("Patch", "DeviceIoControl_2", -1, profile);
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Patch", "DeviceIoControl_2", "1", profile);
+		patchMgr.patchSwitches.DeviceIoControl_2 = true;
+	} else {
+		patchMgr.patchSwitches.DeviceIoControl_2 = res ? true : false;
+	}
+	
 	res = GetPrivateProfileInt("Patch", "useAdvancedSearch", -1, profile);
 	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("Patch", "useAdvancedSearch", "1", profile);
@@ -175,12 +191,20 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		patchMgr.useAdvancedSearch = res ? true : false;
 	}
 
-	res = GetPrivateProfileInt("Patch", "DelayInAdvancedSearch", -1, profile);
+	res = GetPrivateProfileInt("Patch", "DelayBeforeNtdllioctl", -1, profile);
 	if (res == (UINT)-1) {
-		WritePrivateProfileString("Patch", "DelayInAdvancedSearch", "20", profile);
-		patchMgr.patchDelayInAdvancedSearch = 20;
+		WritePrivateProfileString("Patch", "DelayBeforeNtdllioctl", "0", profile);
+		patchMgr.patchDelayBeforeNtdllioctl = 0;
 	} else {
-		patchMgr.patchDelayInAdvancedSearch = res;
+		patchMgr.patchDelayBeforeNtdllioctl = res;
+	}
+
+	res = GetPrivateProfileInt("Patch", "DelayBeforeNtdlletc", -1, profile);
+	if (res == (UINT)-1) {
+		WritePrivateProfileString("Patch", "DelayBeforeNtdlletc", "20", profile);
+		patchMgr.patchDelayBeforeNtdlletc = 20;
+	} else {
+		patchMgr.patchDelayBeforeNtdlletc = res;
 	}
 
 	return result;
@@ -233,9 +257,18 @@ void ConfigManager::writeConfig() {
 	sprintf(buf, patchMgr.patchSwitches.NtDelayExecution ? "1" : "0");
 	WritePrivateProfileString("Patch", "NtDelayExecution", buf, profile);
 
+	sprintf(buf, patchMgr.patchSwitches.DeviceIoControl_1 ? "1" : "0");
+	WritePrivateProfileString("Patch", "DeviceIoControl_1", buf, profile);
+
+	sprintf(buf, patchMgr.patchSwitches.DeviceIoControl_2 ? "1" : "0");
+	WritePrivateProfileString("Patch", "DeviceIoControl_2", buf, profile);
+
 	sprintf(buf, patchMgr.useAdvancedSearch ? "1" : "0");
 	WritePrivateProfileString("Patch", "useAdvancedSearch", buf, profile);
 
-	sprintf(buf, "%u", patchMgr.patchDelayInAdvancedSearch);
-	WritePrivateProfileString("Patch", "DelayInAdvancedSearch", buf, profile);
+	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdllioctl);
+	WritePrivateProfileString("Patch", "DelayBeforeNtdllioctl", buf, profile);
+
+	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdlletc);
+	WritePrivateProfileString("Patch", "DelayBeforeNtdlletc", buf, profile);
 }

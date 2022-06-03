@@ -83,14 +83,11 @@ DWORD win32ThreadManager::getTargetPid(const char* procName) {  // ret == 0 if n
 
 bool win32ThreadManager::killTarget() { // kill process: return true if killed.
 	
-	HANDLE hProc = NULL;
-
-
 	if (pid == 0) {
 		return false;
 	}
 
-	hProc = OpenProcess(PROCESS_ALL_ACCESS, NULL, pid);
+	HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, NULL, pid);
 
 	if (!hProc) {
 		return false;
@@ -238,7 +235,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	auto      logfile       = profileDir + "\\log.txt";
 	DWORD     logfileSize   = GetCompressedFileSize(logfile.c_str(), NULL);
 
-	if (logfileSize != INVALID_FILE_SIZE && logfileSize > (1 << 16)) {
+	if (logfileSize != INVALID_FILE_SIZE && logfileSize > (1 << 18)) { // 256KB
 		DeleteFile(logfile.c_str());
 	}
 
@@ -453,7 +450,7 @@ DWORD win32SystemManager::getSystemBuildNum() {
 	return osBuildNum;
 }
 
-void win32SystemManager::cleanAceLoader() {
+void win32SystemManager::raiseCleanThread() {
 
 	std::thread cleanThread([this]() {
 

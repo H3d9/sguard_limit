@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "22.4.9 万圣节特别版"
+#define VERSION             "22.6.3 万圣节特别版"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 
@@ -38,25 +38,28 @@
 #define IDM_PATCHSWITCH2    219
 #define IDM_PATCHSWITCH3    220
 #define IDM_PATCHSWITCH4    221
-#define IDM_PATCHFAILHINT   222
-#define IDM_ADVMEMSEARCH    223
+#define IDM_PATCHSWITCH5    222
+#define IDM_PATCHSWITCH6    223
+#define IDM_PATCHFAILHINT   224
+#define IDM_ADVMEMSEARCH    225
 
 
 // other commands
-#define IDM_KILLACELOADER   1000
+#define IDM_KILLACELOADER    1000
 
-#define IDM_MORE_UPDATEPAGE 1100
-#define IDM_MORE_SOURCEPAGE 1101
+#define IDM_MORE_UPDATEPAGE  1100
+#define IDM_MORE_SOURCEPAGE  1101
 
 
 // dialog param macro
-#define DLGPARAM_PCT        2000
-#define DLGPARAM_TIME       2001
-#define DLGPARAM_PATCHWAIT  2002
-#define DLGPARAM_DELAY1     2003
-#define DLGPARAM_DELAY2     2004
-#define DLGPARAM_DELAY3     2005
-#define DLGPARAM_DELAY4     2006
+#define DLGPARAM_PCT         2000
+#define DLGPARAM_TIME        2001
+#define DLGPARAM_PATCHWAIT1  2002
+#define DLGPARAM_PATCHWAIT2  2003
+#define DLGPARAM_DELAY1      2004
+#define DLGPARAM_DELAY2      2005
+#define DLGPARAM_DELAY3      2006
+#define DLGPARAM_DELAY4      2007
 
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

@@ -22,32 +22,39 @@ public:
 	static PatchManager&       getInstance();
 
 public:
-	struct patchStatus_t {
-		bool stage1                  = false;
-		bool stage2                  = false;
-	};
 	struct patchSwitches_t {
-		bool NtQueryVirtualMemory    = true;
-		bool GetAsyncKeyState        = true;
+		bool NtQueryVirtualMemory    = false;
+		bool GetAsyncKeyState        = false;
 		bool NtWaitForSingleObject   = false;
 		bool NtDelayExecution        = false;
+		bool DeviceIoControl_1       = false;
+		bool DeviceIoControl_2       = false;
 	};
 	struct patchDelayRange_t {
 		DWORD low, def, high;
 	};
+	struct patchStatus_t {
+		bool NtQueryVirtualMemory    = false;
+		bool GetAsyncKeyState        = false;
+		bool NtWaitForSingleObject   = false;
+		bool NtDelayExecution        = false;
+		bool DeviceIoControl_1       = false;
+		bool DeviceIoControl_2       = false;
+	};
 
 	volatile bool                 patchEnabled;
+
+	volatile patchSwitches_t      patchSwitches;
+	volatile DWORD                patchDelay[4];        // ioctl dont need delayexecution
+	const patchDelayRange_t       patchDelayRange[4];
 
 	volatile DWORD                patchPid;
 	volatile patchStatus_t        patchStatus;
 	volatile int                  patchFailCount;
 
-	volatile patchSwitches_t      patchSwitches;
-	volatile DWORD                patchDelay[4];
-	const patchDelayRange_t       patchDelayRange[4];
-
 	volatile bool                 useAdvancedSearch;
-	volatile DWORD                patchDelayInAdvancedSearch;
+	volatile DWORD                patchDelayBeforeNtdllioctl;
+	volatile DWORD                patchDelayBeforeNtdlletc;
 
 public:
 	void      patch();
@@ -55,8 +62,8 @@ public:
 	void      disable(bool forceRecover = false);
 
 private:
-	bool                      _patch_stage1(DWORD pid);
-	bool                      _patch_stage2(DWORD pid);
+	bool                      _patch_ntdll(DWORD pid, patchSwitches_t switches);
+	bool                      _patch_user32(DWORD pid, patchSwitches_t switches);
 	std::vector<ULONG64>      _findRip(bool useAll = false);
 	void                      _outVmbuf(ULONG64, const CHAR*);
 

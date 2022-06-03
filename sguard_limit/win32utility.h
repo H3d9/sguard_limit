@@ -101,7 +101,7 @@ public:
 	DWORD               getSystemBuildNum(); // xref: mempatch
 
 public:
-	void       cleanAceLoader(); // util: get rid of GameLoader.exe
+	void       raiseCleanThread(); // util: get rid of GameLoader.exe
 
 private:
 	ATOM     _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);
