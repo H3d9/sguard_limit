@@ -631,7 +631,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 			case IDM_PATCHSWITCH5:
 				if (patchMgr.patchSwitches.DeviceIoControl_1) {
-					if (IDYES == MessageBox(0, "点击“是”将关闭NtDeviceControlFile开关。", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "点击“是”将关闭NtDeviceIoControlFile开关。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.DeviceIoControl_1 = false;
 					} else {
 						break;

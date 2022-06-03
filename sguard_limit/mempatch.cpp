@@ -32,7 +32,7 @@ PatchManager::PatchManager()
 	   { 1,   10,   200  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 }    /* NtDelayExecution */
 	  }, 
-	  useAdvancedSearch(true), patchDelayBeforeNtdlletc(20),
+	  useAdvancedSearch(true), patchDelayBeforeNtdllioctl(0), patchDelayBeforeNtdlletc(20), 
 	  vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
 
 PatchManager& PatchManager::getInstance() {
@@ -639,7 +639,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtDelayExecution = true;
 		}
 
-		if (switches.DeviceIoControl_1) { // 0x7 => NtDeviceControlFile
+		if (switches.DeviceIoControl_1) { // 0x7 => NtDeviceIoControlFile
 
 			CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
 			/*
@@ -993,7 +993,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtDelayExecution = true;
 		}
 
-		if (switches.DeviceIoControl_1) { // 0x4 => NtDeviceControlFile
+		if (switches.DeviceIoControl_1) { // 0x4 => NtDeviceIoControlFile
 
 			CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0";
 			/*
@@ -1007,7 +1007,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				"\x49\x89\xCA\xB8\x04\x00\x00\x00\x0F\x05\xC3";
 			/*
 				...(same as above)
-				37: b8 07 00 00 00          mov    eax, 0x4
+				37: b8 04 00 00 00          mov    eax, 0x4
 				3c: 0f 05                   syscall
 				3e: c3                      ret
 			*/
@@ -1056,7 +1056,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				"\x49\x89\xCA\xB8\x36\x00\x00\x00\x0F\x05\xC3";
 			/*
 				...(same as above)
-				21: b8 39 00 00 00          mov    eax, 0x36
+				21: b8 36 00 00 00          mov    eax, 0x36
 				26: 0f 05                   syscall
 				28: c3                      ret
 			*/
@@ -1424,7 +1424,6 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 	memcpy(working_bytes + 0x25, &delay_param, 4);
 
 	if (osVersion == OSVersion::WIN_10_11) {
-
 
 		CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\x90\xC3";
 		/*
