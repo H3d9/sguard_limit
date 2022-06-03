@@ -517,6 +517,9 @@ NTSTATUS DriverEntry(
 	} else if (OSVersion.dwMajorVersion == 10 && OSVersion.dwMinorVersion == 0) {
 		if (OSVersion.dwBuildNumber < 22000) { // Win 10
 			switch (OSVersion.dwBuildNumber) {
+			case 10240:
+				VadRoot = 0x608;
+				break;
 			case 10586:
 				VadRoot = 0x610;
 				break;
