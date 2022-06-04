@@ -2,7 +2,6 @@
 // H3d9ÓÚ2021.7.17£¬Óê¡£
 #include <Windows.h>
 #include <tlhelp32.h>
-#include <process.h>
 #include "tracecore.h"
 
 // dependencies
@@ -213,13 +212,15 @@ void TraceManager::chase() {   // trace maybe, but i like that word.
 		switch (lockMode) {
 			case 0:  // lock 3
 			{
-				for (auto i = 0; i < 3; i++) {
-					if (lockedThreads[i].handle && !lockedThreads[i].locked) {
-						SuspendThread(lockedThreads[i].handle);
-						lockedThreads[i].locked = true;
+				for (auto ms = 0; lockEnabled && ms < 5000; ms += 100) {
+					for (auto i = 0; i < 3; i++) {
+						if (lockedThreads[i].handle && !lockedThreads[i].locked) {
+							SuspendThread(lockedThreads[i].handle);
+							lockedThreads[i].locked = true;
+						}
 					}
+					Sleep(100);
 				}
-				Sleep(5000);
 			}
 			break;
 			case 1:  // lock 3 rr
@@ -244,19 +245,21 @@ void TraceManager::chase() {   // trace maybe, but i like that word.
 			break;
 			case 2:  // lock 1
 			{
-				if (lockedThreads[0].handle && !lockedThreads[0].locked) {
-					SuspendThread(lockedThreads[0].handle);
-					lockedThreads[0].locked = true;
+				for (auto ms = 0; lockEnabled && ms < 5000; ms += 100) {
+					if (lockedThreads[0].handle && !lockedThreads[0].locked) {
+						SuspendThread(lockedThreads[0].handle);
+						lockedThreads[0].locked = true;
+					}
+					if (lockedThreads[1].handle && lockedThreads[1].locked) {
+						ResumeThread(lockedThreads[1].handle);
+						lockedThreads[1].locked = false;
+					}
+					if (lockedThreads[2].handle && lockedThreads[2].locked) {
+						ResumeThread(lockedThreads[2].handle);
+						lockedThreads[2].locked = false;
+					}
+					Sleep(100);
 				}
-				if (lockedThreads[1].handle && lockedThreads[1].locked) {
-					ResumeThread(lockedThreads[1].handle);
-					lockedThreads[1].locked = false;
-				}
-				if (lockedThreads[2].handle && lockedThreads[2].locked) {
-					ResumeThread(lockedThreads[2].handle);
-					lockedThreads[2].locked = false;
-				}
-				Sleep(5000);
 			}
 			break;
 			case 3:  // lock 1 rr
@@ -323,7 +326,7 @@ bool TraceManager::_enumThreadInfo(DWORD pid, map* m) {
 		if (te.th32OwnerProcessID == pid) {
 			DWORD tid = currentTids[tidCount++] = te.th32ThreadID;
 			if (m->count(tid) == 0) {
-				(*m)[tid] = threadinfo();
+				(*m) [tid] = threadinfo();
 			}
 		}
 	}

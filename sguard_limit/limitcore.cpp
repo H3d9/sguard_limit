@@ -156,7 +156,6 @@ void LimitManager::enable() {
 
 void LimitManager::disable() {
 	limitEnabled = false;
-	while (!g_HijackThreadWaiting); // spin; wait till hijack release target.
 }
 
 void LimitManager::setPercent(DWORD percent) {

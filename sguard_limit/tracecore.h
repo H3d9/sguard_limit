@@ -47,8 +47,8 @@ private:
 		int           dieCount        = 0;
 	};
 
-	using  map    =  std::unordered_map<DWORD, threadinfo>;  // hashmap: tid -> {...}
-	using  mapIt  =  decltype(map().begin());
+	using map   = std::unordered_map<DWORD, threadinfo>;  // hashmap: tid -> {...}
+	using mapIt = decltype(map().begin());
 
 private:
 	bool      _enumThreadInfo(DWORD pid, map* m);

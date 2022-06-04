@@ -468,6 +468,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			case IDM_EXIT:
 				if (g_Mode == 0 && limitMgr.limitEnabled) {
 					limitMgr.disable();
+					while (!g_HijackThreadWaiting) {
+						Sleep(1); // spin; wait till hijack release target.
+					}
 				} else if (g_Mode == 1 && traceMgr.lockEnabled) {
 					traceMgr.disable();
 				} else if (g_Mode == 2 && patchMgr.patchEnabled) {

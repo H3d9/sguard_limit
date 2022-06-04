@@ -3,11 +3,11 @@
 #include <string>
 
 
-// config load & write module (sington)
+// config load & save module (sington)
 class ConfigManager {
 
 private:
-	static ConfigManager   configManager;
+	static ConfigManager  configManager;
 
 private:
 	ConfigManager();
@@ -26,5 +26,5 @@ public:
 	void    writeConfig();
 
 private:
-	std::string   profile;
+	std::string  profile;
 };
