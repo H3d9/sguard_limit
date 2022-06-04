@@ -481,18 +481,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			
 			// mode
 			case IDM_MODE_HIJACK:
-				traceMgr.disable();
-				patchMgr.disable();
-				limitMgr.enable();
-				g_Mode = 0;
-				configMgr.writeConfig();
+				if (IDYES == MessageBox(0, "“时间片轮转”是旧版功能，可能导致游戏掉线，建议默认模式无法使用时再换。你确定要切换吗？", "注意", MB_YESNO)) {
+					traceMgr.disable();
+					patchMgr.disable();
+					limitMgr.enable();
+					g_Mode = 0;
+					configMgr.writeConfig();
+				}
 				break;
 			case IDM_MODE_TRACE:
-				limitMgr.disable();
-				patchMgr.disable();
-				traceMgr.enable();
-				g_Mode = 1;
-				configMgr.writeConfig();
+				if (IDYES == MessageBox(0, "“线程追踪”是旧版功能，可能导致游戏掉线，不建议使用。你确定要切换吗？", "注意", MB_YESNO)) {
+					limitMgr.disable();
+					patchMgr.disable();
+					traceMgr.enable();
+					g_Mode = 1;
+					configMgr.writeConfig();
+				}
 				break;
 			case IDM_MODE_PATCH:
 				limitMgr.disable();
