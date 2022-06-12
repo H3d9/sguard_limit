@@ -9,6 +9,11 @@
 #include "tracecore.h"
 #include "mempatch.h"
 
+#pragma comment(linker, "/manifestdependency:\"type='win32' \
+						 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+						 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' \
+						 language='*'\"")
+
 
 extern KernelDriver&            driver;
 extern win32SystemManager&      systemMgr;
@@ -564,19 +569,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 				if (IDYES == MessageBox(0, buf, "пео╒", MB_YESNO)) {
 
-					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_PATCHWAIT1);
-					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_PATCHWAIT2);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT1);
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT2);
 					if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
-						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_DELAY1);
+						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_DELAY1);
 					}
 					if (patchMgr.patchSwitches.GetAsyncKeyState) {
-						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_DELAY2);
+						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_DELAY2);
 					}
 					if (patchMgr.patchSwitches.NtWaitForSingleObject) {
-						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_DELAY3);
+						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_DELAY3);
 					}
 					if (patchMgr.patchSwitches.NtDelayExecution) {
-						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_DELAY4);
+						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_DELAY4);
 					}
 
 					configMgr.writeConfig();
