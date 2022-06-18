@@ -143,6 +143,14 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		patchMgr.patchSwitches.NtQueryVirtualMemory = res ? true : false;
 	}
 
+	res = GetPrivateProfileInt("Patch", "NtReadVirtualMemory", -1, profile);
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Patch", "NtReadVirtualMemory", "1", profile);
+		patchMgr.patchSwitches.NtReadVirtualMemory = true;
+	} else {
+		patchMgr.patchSwitches.NtReadVirtualMemory = res ? true : false;
+	}
+
 	res = GetPrivateProfileInt("Patch", "GetAsyncKeyState", -1, profile);
 	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("Patch", "GetAsyncKeyState", "1", profile);
@@ -247,6 +255,9 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, patchMgr.patchSwitches.NtQueryVirtualMemory ? "1" : "0");
 	WritePrivateProfileString("Patch", "NtQueryVirtualMemory", buf, profile);
+
+	sprintf(buf, patchMgr.patchSwitches.NtReadVirtualMemory ? "1" : "0");
+	WritePrivateProfileString("Patch", "NtReadVirtualMemory", buf, profile);
 
 	sprintf(buf, patchMgr.patchSwitches.GetAsyncKeyState ? "1" : "0");
 	WritePrivateProfileString("Patch", "GetAsyncKeyState", buf, profile);

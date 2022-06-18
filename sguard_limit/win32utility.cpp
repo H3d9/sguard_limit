@@ -176,13 +176,7 @@ void win32SystemManager::setupProcessDpi() {
 			SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED);
 		
 		} else {
-			
-			typedef BOOL(WINAPI* fp2)();
-			fp2 SetProcessDPIAware = (fp2)GetProcAddress(hUser32, "SetProcessDPIAware");
-
-			if (SetProcessDPIAware) {
-				SetProcessDPIAware();
-			}
+			SetProcessDPIAware();
 		}
 
 		FreeLibrary(hUser32);
@@ -246,7 +240,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 		return false;
 	}
 
-	setbuf(logfp, NULL);
+	//setbuf(logfp, NULL);
 
 	time_t t = time(0);
 	tm* local = localtime(&t);
@@ -284,56 +278,35 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	return true;
 }
 
-void win32SystemManager::enableDebugPrivilege() {
+bool win32SystemManager::enableDebugPrivilege() {
 
 	HANDLE hToken;
-	LUID Luid;
-	TOKEN_PRIVILEGES tp;
-
 	OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken);
 
-	LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &Luid);
-
+	// raise to debug previlege
+	TOKEN_PRIVILEGES tp;
 	tp.PrivilegeCount = 1;
-	tp.Privileges[0].Luid = Luid;
 	tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
+	LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &tp.Privileges[0].Luid);
 	AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL);
 
-	CloseHandle(hToken);
-
-	//// 也可以用RtlAdjustPrivilege来提权： 
-	// typedef NTSTATUS (WINAPI* pf)(ULONG Privilege, BOOLEAN Enable, BOOLEAN CurrentThread, PBOOLEAN Enabled);
-	// pf RtlAdjustPrivilege = (pf)GetProcAddress(GetModuleHandle("Ntdll.dll"), "RtlAdjustPrivilege");
-	// BOOLEAN prev;
-	// int ret = RtlAdjustPrivilege(0x14, 1, 0, &prev);
-}
-
-bool win32SystemManager::checkDebugPrivilege() {
-
-	HANDLE hToken;
-	LUID luidPrivilege = { 0 };
-	PRIVILEGE_SET RequiredPrivileges = { 0 };
-	BOOL bResult = 0;
-
-	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
-
-	LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luidPrivilege);
-
-	RequiredPrivileges.Control = PRIVILEGE_SET_ALL_NECESSARY;
-	RequiredPrivileges.PrivilegeCount = 1;
-	RequiredPrivileges.Privilege[0].Luid = luidPrivilege;
-	RequiredPrivileges.Privilege[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-	PrivilegeCheck(hToken, &RequiredPrivileges, &bResult);
-
-	CloseHandle(hToken);
-
-	if (!bResult) {
+	// check if debug previlege is acquired
+	PRIVILEGE_SET ps;
+	ps.Control = PRIVILEGE_SET_ALL_NECESSARY;
+	ps.PrivilegeCount = 1;
+	ps.Privilege[0].Attributes = SE_PRIVILEGE_ENABLED;
+	
+	BOOL result = FALSE;
+	LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &ps.Privilege[0].Luid);
+	PrivilegeCheck(hToken, &ps, &result);
+	
+	if (!result) {
 		panic("提升权限失败，请右键管理员运行。");
 	}
 
-	return (bool)bResult;
+	CloseHandle(hToken);
+	return result;
 }
 
 bool win32SystemManager::createWindow(WNDPROC WndProc, DWORD WndIcon) {

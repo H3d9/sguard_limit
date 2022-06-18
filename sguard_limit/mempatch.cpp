@@ -27,8 +27,8 @@ PatchManager::PatchManager()
 	: patchEnabled(true), patchPid(0), patchFailCount(), 
 	  patchSwitches{}, patchStatus{}, patchDelay{},
 	  patchDelayRange {
-	   { 200, 1500, 2500 },   /* NtQueryVirtualMemory */
-	   { 100, 1000, 1500 },   /* GetAsyncKeyState */
+	   { 1,   50,   1500 },   /* NtQueryVirtualMemory */
+	   { 1,   50,   1000 },   /* GetAsyncKeyState */
 	   { 1,   10,   200  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 }    /* NtDelayExecution */
 	  }, 
@@ -60,6 +60,7 @@ void PatchManager::patch() {
 		// reset status.
 		patchPid                             = 0;
 		patchStatus.NtQueryVirtualMemory     = false;
+		patchStatus.NtReadVirtualMemory      = false;
 		patchStatus.GetAsyncKeyState         = false;
 		patchStatus.NtWaitForSingleObject    = false;
 		patchStatus.NtDelayExecution         = false;
@@ -122,10 +123,12 @@ void PatchManager::patch() {
 		}
 
 		// patch ntdll etc. (v2 features)
-		if (patchSwitches.NtQueryVirtualMemory || patchSwitches.NtWaitForSingleObject || patchSwitches.NtDelayExecution) {
+		if (patchSwitches.NtQueryVirtualMemory  || patchSwitches.NtReadVirtualMemory ||
+			patchSwitches.NtWaitForSingleObject || patchSwitches.NtDelayExecution) {
 
 			patchSwitches_t switches;
 			switches.NtQueryVirtualMemory   = patchSwitches.NtQueryVirtualMemory;
+			switches.NtReadVirtualMemory    = patchSwitches.NtReadVirtualMemory;
 			switches.NtWaitForSingleObject  = patchSwitches.NtWaitForSingleObject;
 			switches.NtDelayExecution       = patchSwitches.NtDelayExecution;
 
@@ -502,6 +505,24 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			//	ret
 		}
 
+		if (switches.NtReadVirtualMemory) { // 0x3f
+
+			CHAR patch_bytes[] = "\xB8\x22\x00\x00\xC0\xC3";
+			/*
+				0:  b8 22 00 00 c0          mov    eax, 0xc0000022
+				5:  c3                      ret
+			*/
+
+			// syscall rva => offset.
+			LONG offset = offset0 + 0x20 /* win10 syscall align */ * 0x3f;
+
+			// patch_bytes => vmbuf.
+			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+
+			// mark related flag to inform user that patch has complete.
+			patchedNow.NtReadVirtualMemory = true;
+		}
+
 		if (switches.NtWaitForSingleObject) { // 0x4
 
 			CHAR patch_bytes[] = "\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\xC3";
@@ -673,7 +694,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				3c: 0f 05                   syscall
 				3e: c3                      ret
 			*/
-
+			
 			/*
 			pseudo code:
 				NTSTATUS fake_device(...) {
@@ -909,6 +930,24 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtQueryVirtualMemory = true;
 		}
 
+		if (switches.NtReadVirtualMemory) { // 0x3c
+
+			CHAR patch_bytes[] = "\xB8\x22\x00\x00\xC0\xC3";
+			/*
+				0:  b8 22 00 00 c0          mov    eax, 0xc0000022
+				5:  c3                      ret
+			*/
+
+			// syscall rva => offset.
+			LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x3c;
+
+			// patch_bytes => vmbuf.
+			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
+
+			// mark related flag to inform user that patch has complete.
+			patchedNow.NtReadVirtualMemory = true;
+		}
+
 		if (switches.NtWaitForSingleObject) { // 0x1
 
 			// syscall rva => offset.
@@ -1104,6 +1143,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 	// stage1 complete.
 	if (patchedNow.NtQueryVirtualMemory)   patchStatus.NtQueryVirtualMemory   = true;
+	if (patchedNow.NtReadVirtualMemory)    patchStatus.NtReadVirtualMemory    = true;
 	if (patchedNow.NtWaitForSingleObject)  patchStatus.NtWaitForSingleObject  = true;
 	if (patchedNow.NtDelayExecution)       patchStatus.NtDelayExecution       = true;
 	if (patchedNow.DeviceIoControl_1)      patchStatus.DeviceIoControl_1      = true;

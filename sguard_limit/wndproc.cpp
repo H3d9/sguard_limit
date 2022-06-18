@@ -49,12 +49,12 @@ static void ShowAbout() {
 
 		if (IDOK == MessageBox(0,
 			"【工作模式说明 P1】\n\n"
-			"内存补丁 V4.2（21.10.6）：\n\n"
+			"内存补丁 " MEMPATCH_VERSION "（21.10.6）：\n\n"
 			"这是默认模式，建议优先使用，如果不好用再换其他模式。\n\n"
 
 			">1 NtQueryVirtualMemory(V2新增): 令SGUARD扫内存的速度变慢。\n\n"
+			">1 NtReadVirtualMemory(V4.3新增): 拒绝SGUARD在应用层跨进程读内存。\n\n"
 			">2 GetAsyncKeyState(V3新增): 令SGUARD读取键盘按键的速度变慢。\n"
-			"【注】特殊情况下该选项可能导致游戏掉线。若出现问题，关闭该选项即可。\n"
 			"【注】启用该选项似乎可以提升流畅度。相关的引用位于动态库ACE-DRV64.dll中。\n\n"
 
 			">3 NtWaitForSingleObject: 旧功能，不建议使用：已知可能导致游戏异常。\n"
@@ -65,13 +65,13 @@ static void ShowAbout() {
 			"【注】游戏刚启动时SG读盘是不可避免的，若屏蔽则游戏会启动失败。\n"
 			"【注】间歇性卡硬盘原因为SG使用MDL读其他进程内存而这些内存刚好位于页面文件。\n\n\n"
 			
-			"> 高级内存搜索(V4新增)：该功能原用于解决无法定位User32模块的问题。\n"
-			"【注】启用该功能后不再需要采样指令指针，故提交内存的速度会快一些。\n"
-			"【注】你可以在“设置延迟”中更改修改内存的时机。\n"
+			"> 高级内存搜索(V4新增)：该功能用于解决无法定位模块User32。\n"
+			"【注】启用该功能后不再需要采样指令指针，故修改内存可以瞬间完成。\n"
+			"【注】你可以在“设置延迟”中更改“等待SG稳定的时间”来决定修改内存的时机。\n"
 			"     等待时间越大，则游戏启动时越不易掉线。姥爷机可以多设置几十秒。\n"
 			"     等待时间越小，则限制SG越快；设为0时可以启动游戏秒限制。\n\n"
 
-			"【说明】内存补丁V4.2需要临时装载一次驱动，提交内存后会立即将之卸载。\n"
+			"【说明】该模式需要临时装载一次驱动，修改内存后会立即卸载驱动。\n"
 			"若你使用时出现问题，可以去更新链接下载证书。\n\n\n"
 			"点击“确定”翻到下一页；点击“取消”结束查看说明。",
 			"SGuard限制器 " VERSION "  by: @H3d9",
@@ -245,7 +245,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_HIJACK,  "切换到：时间片轮转");
 			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_TRACE,   "切换到：线程追踪");
-			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_PATCH,   "切换到：内存补丁 V4.2");
+			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_PATCH,   "切换到：内存补丁 " MEMPATCH_VERSION);
 			if (g_Mode == 0) {
 				CheckMenuItem(hMenuModes, IDM_MODE_HIJACK, MF_CHECKED);
 			} else if (g_Mode == 1) {
@@ -367,6 +367,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					} else {
 						int total = 
 							patchMgr.patchSwitches.NtQueryVirtualMemory + 
+							patchMgr.patchSwitches.NtReadVirtualMemory + 
 							patchMgr.patchSwitches.GetAsyncKeyState + 
 							patchMgr.patchSwitches.NtWaitForSingleObject + 
 							patchMgr.patchSwitches.NtDelayExecution + 
@@ -375,10 +376,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 						int finished = 
 							patchMgr.patchStatus.NtQueryVirtualMemory + 
+							patchMgr.patchStatus.NtReadVirtualMemory + 
 							patchMgr.patchStatus.GetAsyncKeyState + 
 							patchMgr.patchStatus.NtWaitForSingleObject + 
 							patchMgr.patchStatus.NtDelayExecution + 
-							patchMgr.patchStatus.DeviceIoControl_1 +
+							patchMgr.patchStatus.DeviceIoControl_1 + 
 							patchMgr.patchStatus.DeviceIoControl_2;
 
 						if (finished == 0) {
@@ -394,17 +396,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 						}
 					}
 				}
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "当前模式：内存补丁 V4.2  [点击切换]");
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "当前模式：内存补丁 " MEMPATCH_VERSION "  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_DOPATCH,       "自动");
 				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH,       "撤销修改");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH1,  "inline Ntdll!NtQueryVirtualMemory");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH2,  "inline User32!GetAsyncKeyState");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH3,  "inline Ntdll!NtWaitForSingleObject");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH4,  "re-write Ntdll!NtDelayExecution");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH5,  "[防扫盘1] 伪造ACE-BASE.sys的MDL控制代码");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH6,  "[防扫盘2] 执行失败的文件系统记录枚举");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH2,  "inline Ntdll!NtReadVirtualMemory");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH3,  "inline User32!GetAsyncKeyState");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH4,  "inline Ntdll!NtWaitForSingleObject");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH5,  "re-write Ntdll!NtDelayExecution");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH6,  "[防扫盘1] 伪造ACE-BASE.sys的MDL控制代码");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH7,  "[防扫盘2] 执行失败的文件系统记录枚举");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索");
 				sprintf(buf, "设置延迟（当前：%u/%u", patchMgr.patchDelayBeforeNtdllioctl, patchMgr.patchDelayBeforeNtdlletc);
@@ -427,20 +430,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH1, MF_CHECKED);
 				}
-				if (patchMgr.patchSwitches.GetAsyncKeyState) {
+				if (patchMgr.patchSwitches.NtReadVirtualMemory) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH2, MF_CHECKED);
 				}
-				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
+				if (patchMgr.patchSwitches.GetAsyncKeyState) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH3, MF_CHECKED);
 				}
-				if (patchMgr.patchSwitches.NtDelayExecution) {
+				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH4, MF_CHECKED);
 				}
-				if (patchMgr.patchSwitches.DeviceIoControl_1) {
+				if (patchMgr.patchSwitches.NtDelayExecution) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH5, MF_CHECKED);
 				}
-				if (patchMgr.patchSwitches.DeviceIoControl_2) {
+				if (patchMgr.patchSwitches.DeviceIoControl_1) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH6, MF_CHECKED);
+				}
+				if (patchMgr.patchSwitches.DeviceIoControl_2) {
+					CheckMenuItem(hMenu, IDM_PATCHSWITCH7, MF_CHECKED);
 				}
 				if (patchMgr.useAdvancedSearch) {
 					CheckMenuItem(hMenu, IDM_ADVMEMSEARCH, MF_CHECKED);
@@ -603,6 +609,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
 			case IDM_PATCHSWITCH2:
+				if (patchMgr.patchSwitches.NtReadVirtualMemory) {
+					if (IDYES == MessageBox(0, "点击“是”将关闭NtReadVirtualMemory开关。", "注意", MB_YESNO)) {
+						patchMgr.patchSwitches.NtReadVirtualMemory = false;
+					} else {
+						break;
+					}
+				} else {
+					patchMgr.patchSwitches.NtReadVirtualMemory = true;
+				}
+				configMgr.writeConfig();
+				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+				break;
+			case IDM_PATCHSWITCH3:
 				if (patchMgr.patchSwitches.GetAsyncKeyState) {
 					if (IDYES == MessageBox(0, "点击“是”将关闭GetAsyncKeyState开关。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.GetAsyncKeyState = false;
@@ -615,7 +634,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				configMgr.writeConfig();
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
-			case IDM_PATCHSWITCH3:
+			case IDM_PATCHSWITCH4:
 				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 					patchMgr.patchSwitches.NtWaitForSingleObject = false;
 				} else {
@@ -628,7 +647,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				configMgr.writeConfig();
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
-			case IDM_PATCHSWITCH4:
+			case IDM_PATCHSWITCH5:
 				if (patchMgr.patchSwitches.NtDelayExecution) {
 					patchMgr.patchSwitches.NtDelayExecution = false;
 				} else {
@@ -641,7 +660,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				configMgr.writeConfig();
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
-			case IDM_PATCHSWITCH5:
+			case IDM_PATCHSWITCH6:
 				if (patchMgr.patchSwitches.DeviceIoControl_1) {
 					if (IDYES == MessageBox(0, "点击“是”将关闭NtDeviceIoControlFile开关。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.DeviceIoControl_1 = false;
@@ -654,7 +673,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				configMgr.writeConfig();
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				break;
-			case IDM_PATCHSWITCH6:
+			case IDM_PATCHSWITCH7:
 				if (patchMgr.patchSwitches.DeviceIoControl_2) {
 					if (IDYES == MessageBox(0, "点击“是”将关闭NtFsControlFile开关。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.DeviceIoControl_2 = false;

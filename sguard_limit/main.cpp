@@ -84,10 +84,8 @@ INT WINAPI WinMain(
 
 	systemMgr.setupProcessDpi();
 
-	systemMgr.enableDebugPrivilege();
-
 	status =
-	systemMgr.checkDebugPrivilege();
+	systemMgr.enableDebugPrivilege();
 
 	if (!status) {
 		return -1;
@@ -122,14 +120,15 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			" 内存补丁 V4.2：新增防扫盘选项。\n\n"
-			"1. 新增功能：防止SGUARD扫硬盘。\n\n\n"
+			" 内存补丁 " MEMPATCH_VERSION "：加强防SG扫内存。\n\n"
+			"1. 新增：拒绝SG在应用层跨进程读内存。\n"
+			"2. 新增：尝试缓解个别可能由限制器导致的掉线。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
 			"2. 默认模式为内存补丁，能用就不要换模式！否则可能游戏掉线。\n\n"
 			"3. “高级内存搜索”默认游戏启动时立即开启防扫盘，然后等待稳定后开启其他功能。\n"
-			"   如果你启动游戏较慢，可以适当调高“等待SGUARD稳定的时间”（默认为20秒）。\n\n"
+			"   如果你游戏启动较慢，可以调高“等待SGUARD稳定的时间”（默认为20秒）。\n\n"
 			"4. 若你第一次使用新版，请务必仔细阅读说明（可在托盘右键菜单中找到）。",
 			VERSION "  by: @H3d9", MB_OK);
 	}
@@ -156,7 +155,7 @@ INT WINAPI WinMain(
 			// show panic: alert usr to switch options manually.
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 			systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
-							   "内存补丁 V4.2\n"
+							   "内存补丁 " MEMPATCH_VERSION "\n"
 							   "内核态调度器\n");
 		}
 	}

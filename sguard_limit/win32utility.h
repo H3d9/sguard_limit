@@ -82,8 +82,7 @@ public:
 public:
 	bool       systemInit(HINSTANCE hInstance);
 	void       setupProcessDpi();
-	void       enableDebugPrivilege();
-	bool       checkDebugPrivilege();
+	bool       enableDebugPrivilege();
 	bool       createWindow(WNDPROC WndProc, DWORD WndIcon);
 	void       createTray(UINT trayActiveMsg);
 	void       removeTray();

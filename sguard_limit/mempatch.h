@@ -22,30 +22,24 @@ public:
 	static PatchManager&       getInstance();
 
 public:
-	struct patchSwitches_t {
+	typedef struct tagPatchSwitches_t {
 		bool NtQueryVirtualMemory    = false;
+		bool NtReadVirtualMemory     = false; // no delay
 		bool GetAsyncKeyState        = false;
 		bool NtWaitForSingleObject   = false;
 		bool NtDelayExecution        = false;
-		bool DeviceIoControl_1       = false;
-		bool DeviceIoControl_2       = false;
-	};
+		bool DeviceIoControl_1       = false; // no delay
+		bool DeviceIoControl_2       = false; // no delay
+	} patchSwitches_t, patchStatus_t;
+
 	struct patchDelayRange_t {
 		DWORD low, def, high;
-	};
-	struct patchStatus_t {
-		bool NtQueryVirtualMemory    = false;
-		bool GetAsyncKeyState        = false;
-		bool NtWaitForSingleObject   = false;
-		bool NtDelayExecution        = false;
-		bool DeviceIoControl_1       = false;
-		bool DeviceIoControl_2       = false;
 	};
 
 	volatile bool                 patchEnabled;
 
 	volatile patchSwitches_t      patchSwitches;
-	volatile DWORD                patchDelay[4];        // ioctl dont need delayexecution
+	volatile DWORD                patchDelay[4];
 	const patchDelayRange_t       patchDelayRange[4];
 
 	volatile DWORD                patchPid;
