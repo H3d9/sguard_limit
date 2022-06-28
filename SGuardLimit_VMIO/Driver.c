@@ -6,6 +6,8 @@
 #include "Vad.h"
 
 
+#define DRIVER_VERSION  "22.6.28"
+
 // 全局对象
 RTL_OSVERSIONINFOW   OSVersion;
 UNICODE_STRING       dev, dos;
@@ -15,6 +17,7 @@ wchar_t              TargetImageName[256];
 
 
 // I/O接口事件和缓冲区结构
+#define VMIO_VERSION   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0700, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_READ      CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_WRITE     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_ALLOC     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
@@ -458,6 +461,12 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		}
 		break;
 
+		case VMIO_VERSION:
+		{
+			strcpy_s(Input->data, 256, DRIVER_VERSION);
+		}
+		break;
+
 		default:
 		{
 			Status = STATUS_UNSUCCESSFUL;
@@ -536,7 +545,7 @@ NTSTATUS DriverEntry(
 				VadRoot = 0x7D8;
 				break;
 			}
-		} else if (OSVersion.dwBuildNumber <= 22579) { // Win 11 latest (22.3.19)
+		} else { // if (OSVersion.dwBuildNumber <= 22621) Win 11 latest (22.6.28 beta branch)
 			VadRoot = 0x7D8;
 		}
 	}

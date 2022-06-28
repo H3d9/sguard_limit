@@ -35,12 +35,16 @@ public:
 
 public:
 	bool     driverReady;  // driver ready if init() success. load() & unload() is still required.
-	                       // this switch is used for decide usability of some menu options.
+	                       // this switch is used for decide accessibility of some menu options.
+	bool     win11ForceEnable;  // assert: use same kernel offset, despite of the risk of BSOD!
+	                            // this switch is loaded from config, to determine whether driverReady is true.
+	DWORD    win11CurrentBuild; // current build number on win11. used to alert user when system updated.
 
 
 private:
 	bool     _startService();
 	void     _endService();
+	bool     _checkSysVersion();
 
 private:
 	struct VMIO_REQUEST {
@@ -55,6 +59,7 @@ private:
 		VMIO_REQUEST(DWORD pid) : pid(reinterpret_cast<HANDLE>(static_cast<LONG64>(pid))) {}
 	};
 
+	static constexpr DWORD   VMIO_VERSION  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0700, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD   VMIO_READ     = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD   VMIO_WRITE    = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD   VMIO_ALLOC    = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0703, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);

@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include "wndproc.h"    // macro VERSION
+#include "kdriver.h"    // win11 kdriver options
 #include "limitcore.h"  // class LimitManager
 #include "tracecore.h"  // class TraceManager
 #include "mempatch.h"   // class PatchManager
@@ -10,6 +11,7 @@
 // objects to write
 extern volatile DWORD    g_Mode;
 extern volatile bool     g_KillAceLoader;
+extern KernelDriver&     driver;
 extern LimitManager&     limitMgr;
 extern TraceManager&     traceMgr;
 extern PatchManager&     patchMgr;
@@ -60,6 +62,24 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	} else {
 		g_KillAceLoader = res ? true : false;
 	}
+
+	// kdriver module
+	res = GetPrivateProfileInt("kdriver", "win11ForceEnable", -1, profile);
+	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("kdriver", "win11ForceEnable", "0", profile);
+		driver.win11ForceEnable = false;
+	} else {
+		driver.win11ForceEnable = res ? true : false;
+	}
+
+	res = GetPrivateProfileInt("kdriver", "win11CurrentBuild", -1, profile);
+	if (res == (UINT)-1) {
+		WritePrivateProfileString("kdriver", "win11CurrentBuild", "0", profile);
+		driver.win11CurrentBuild = 0;
+	} else {
+		driver.win11CurrentBuild = res;
+	}
+
 
 	// limit module
 	res = GetPrivateProfileInt("Limit", "Percent", -1, profile);
@@ -229,17 +249,27 @@ void ConfigManager::writeConfig() {
 	sprintf(buf, g_KillAceLoader ? "1" : "0");
 	WritePrivateProfileString("Global", "KillAceLoader", buf, profile);
 
+
+	sprintf(buf, driver.win11ForceEnable ? "1" : "0");
+	WritePrivateProfileString("kdriver", "win11ForceEnable", buf, profile);
+
+	sprintf(buf, "%u", driver.win11CurrentBuild);
+	WritePrivateProfileString("kdriver", "win11CurrentBuild", buf, profile);
+
+
 	sprintf(buf, "%u", limitMgr.limitPercent);
 	WritePrivateProfileString("Limit", "Percent", buf, profile);
 
 	sprintf(buf, limitMgr.useKernelMode ? "1" : "0");
 	WritePrivateProfileString("Limit", "useKernelMode", buf, profile);
 
+
 	sprintf(buf, "%u", traceMgr.lockMode);
 	WritePrivateProfileString("Lock", "Mode", buf, profile);
 
 	sprintf(buf, "%u", traceMgr.lockRound);
 	WritePrivateProfileString("Lock", "Round", buf, profile);
+
 
 	sprintf(buf, "%u", patchMgr.patchDelay[0]);
 	WritePrivateProfileString("Patch", "Delay0", buf, profile);

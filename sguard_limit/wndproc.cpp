@@ -53,23 +53,23 @@ static void ShowAbout() {
 			"这是默认模式，建议优先使用，如果不好用再换其他模式。\n\n"
 
 			">1 NtQueryVirtualMemory(V2新增): 令SGUARD扫内存的速度变慢。\n\n"
-			">1 NtReadVirtualMemory(V4.3新增): 拒绝SGUARD在应用层跨进程读内存。\n\n"
-			">2 GetAsyncKeyState(V3新增): 令SGUARD读取键盘按键的速度变慢。\n"
+			">2 NtReadVirtualMemory(V4.3新增): 拒绝SGUARD在应用层跨进程读内存。\n\n"
+			">3 GetAsyncKeyState(V3新增): 令SGUARD读取键盘按键的速度变慢。\n"
 			"【注】启用该选项似乎可以提升流畅度。相关的引用位于动态库ACE-DRV64.dll中。\n\n"
 
-			">3 NtWaitForSingleObject: 旧功能，不建议使用：已知可能导致游戏异常。\n"
-			">4 NtDelayExecution: 旧功能，不建议使用：已知可能导致游戏异常和卡顿。\n\n"
+			">4 NtWaitForSingleObject: 已弃用。已知可能导致游戏异常。\n"
+			">5 NtDelayExecution: 已弃用。已知可能导致游戏异常和卡顿。\n\n"
 
-			">5 伪造ACE-BASE.sys的MDL控制代码(V4.2新增): 防止间歇性卡硬盘（经常出现）。\n"
-			">6 执行失败的文件系统记录枚举(V4.2新增): 防止高强度扫硬盘（偶尔出现）。\n"
+			">6 伪造ACE-BASE.sys的MDL控制代码(V4.2新增): 防止间歇性卡硬盘（经常出现）。\n"
+			">7 执行失败的文件系统记录枚举(V4.2新增): 防止高强度扫硬盘（偶尔出现）。\n"
 			"【注】游戏刚启动时SG读盘是不可避免的，若屏蔽则游戏会启动失败。\n"
 			"【注】间歇性卡硬盘原因为SG使用MDL读其他进程内存而这些内存刚好位于页面文件。\n\n\n"
 			
 			"> 高级内存搜索(V4新增)：该功能用于解决无法定位模块User32。\n"
 			"【注】启用该功能后不再需要采样指令指针，故修改内存可以瞬间完成。\n"
 			"【注】你可以在“设置延迟”中更改“等待SG稳定的时间”来决定修改内存的时机。\n"
-			"     等待时间越大，则游戏启动时越不易掉线。姥爷机可以多设置几十秒。\n"
-			"     等待时间越小，则限制SG越快；设为0时可以启动游戏秒限制。\n\n"
+			"     时间大则游戏启动时不容易“初始化失败”。\n"
+			"     时间小则限制SGUARD快，设为0可以启动游戏秒限制（不建议）。\n\n"
 
 			"【说明】该模式需要临时装载一次驱动，修改内存后会立即卸载驱动。\n"
 			"若你使用时出现问题，可以去更新链接下载证书。\n\n\n"
@@ -128,15 +128,15 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
 			} else if (dlgParam == DLGPARAM_PATCHWAIT1) { // set advanced patch wait for ntdll ioctl.
-				SetWindowText(hDlg, "输入开启防扫盘功能前的等待时间（单位：秒）");
+				SetWindowText(hDlg, "输入开启防扫盘功能前的初始等待时间（单位：秒）");
 				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdllioctl);
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
-
+				
 			} else if (dlgParam == DLGPARAM_PATCHWAIT2) { // set advanced patch wait for ntdll etc.
 				SetWindowText(hDlg, "输入开启防扫盘功能后等待SGUARD稳定的时间（单位：秒）");
 				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdlletc);
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
-
+				
 			} else { // set patch delay switches.
 				auto id = dlgParam - DLGPARAM_DELAY1;
 				SetWindowText(hDlg, "输入SGUARD每次执行当前系统调用的强制延迟（单位：ms）");
@@ -492,7 +492,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			
 			// mode
 			case IDM_MODE_HIJACK:
-				if (IDYES == MessageBox(0, "“时间片轮转”是旧版功能，可能导致游戏掉线，建议默认模式无法使用时再换。你确定要切换吗？", "注意", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "“时间片轮转”是旧版功能，可能导致游戏掉线！\n建议默认模式无法使用时再换。你确定要切换吗？", "注意", MB_YESNO)) {
 					traceMgr.disable();
 					patchMgr.disable();
 					limitMgr.enable();
@@ -501,7 +501,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				break;
 			case IDM_MODE_TRACE:
-				if (IDYES == MessageBox(0, "“线程追踪”是旧版功能，可能导致游戏掉线，不建议使用。你确定要切换吗？", "注意", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "“线程追踪”是旧版功能，可能导致游戏掉线！\n不建议使用该功能，你确定要切换吗？", "注意：已弃用的功能！", MB_YESNO)) {
 					limitMgr.disable();
 					patchMgr.disable();
 					traceMgr.enable();
@@ -563,17 +563,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			case IDM_SETDELAY:
 			{
 				char buf[0x1000];
-				sprintf(buf, "请依次设置以下选项的延迟。\n"
-					"如果不知道某选项的含义或不想设置某选项，可以直接关掉对应的窗口。\n\n"
-					"(高级内存搜索) 开启防扫盘功能前的等待时间\n"
+				sprintf(buf, "请依次设置以下选项的延迟：\n\n"
+					"(高级内存搜索) 开启防扫盘功能前的初始等待时间\n"
 					"(高级内存搜索) 开启防扫盘功能后等待SGUARD稳定的时间\n"
-					"%s%s%s%s",
+					"%s%s%s%s\n\n"
+					"【提示】如果不知道某选项的作用，请勿胡乱设置，否则可能游戏掉线/无法启动。\n"
+					"【提示】如果不想设置某选项，可以直接关掉对应的窗口。",
 					patchMgr.patchSwitches.NtQueryVirtualMemory   ? "NtQueryVirtualMemory\n"   : "",
 					patchMgr.patchSwitches.GetAsyncKeyState       ? "GetAsyncKeyState\n"       : "",
 					patchMgr.patchSwitches.NtWaitForSingleObject  ? "NtWaitForSingleObject\n"  : "",
 					patchMgr.patchSwitches.NtDelayExecution       ? "NtDelayExecution\n"       : "");
 
-				if (IDYES == MessageBox(0, buf, "信息", MB_YESNO)) {
+				if (IDYES == MessageBox(0, buf, "设置延迟", MB_YESNO)) {
 
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT1);
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT2);
@@ -597,7 +598,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 			case IDM_PATCHSWITCH1:
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
-					if (IDYES == MessageBox(0, "点击“是”将关闭NtQueryVirtualMemory开关。", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "点击“是”将关闭NtQueryVirtualMemory开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.NtQueryVirtualMemory = false;
 					} else {
 						break;
@@ -610,7 +611,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 			case IDM_PATCHSWITCH2:
 				if (patchMgr.patchSwitches.NtReadVirtualMemory) {
-					if (IDYES == MessageBox(0, "点击“是”将关闭NtReadVirtualMemory开关。", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "点击“是”将关闭NtReadVirtualMemory开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.NtReadVirtualMemory = false;
 					} else {
 						break;
@@ -623,7 +624,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 			case IDM_PATCHSWITCH3:
 				if (patchMgr.patchSwitches.GetAsyncKeyState) {
-					if (IDYES == MessageBox(0, "点击“是”将关闭GetAsyncKeyState开关。", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "点击“是”将关闭GetAsyncKeyState开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.GetAsyncKeyState = false;
 					} else {
 						break;
@@ -638,7 +639,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 					patchMgr.patchSwitches.NtWaitForSingleObject = false;
 				} else {
-					if (IDYES == MessageBox(0, "这是旧版增强模式，已知可能导致游戏异常。如果你出现“3009”，“96”，“lol掉线”问题，需要立即关闭该选项。要继续么？", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n已知启用后可能导致“3009”，“96”，“lol掉线”等游戏异常。\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 						patchMgr.patchSwitches.NtWaitForSingleObject = true;
 					} else {
 						break;
@@ -651,7 +652,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (patchMgr.patchSwitches.NtDelayExecution) {
 					patchMgr.patchSwitches.NtDelayExecution = false;
 				} else {
-					if (IDYES == MessageBox(0, "这是旧版功能，不建议启用该选项，以免出现“3009”，“96”，“偶尔卡顿”等问题。要继续么？", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n已知启用后可能出现“3009”，“96”，“偶尔卡顿”等问题。\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 						patchMgr.patchSwitches.NtDelayExecution = true;
 					} else {
 						break;
@@ -662,7 +663,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 			case IDM_PATCHSWITCH6:
 				if (patchMgr.patchSwitches.DeviceIoControl_1) {
-					if (IDYES == MessageBox(0, "点击“是”将关闭NtDeviceIoControlFile开关。", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "点击“是”将关闭NtDeviceIoControlFile开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.DeviceIoControl_1 = false;
 					} else {
 						break;
@@ -675,7 +676,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 			case IDM_PATCHSWITCH7:
 				if (patchMgr.patchSwitches.DeviceIoControl_2) {
-					if (IDYES == MessageBox(0, "点击“是”将关闭NtFsControlFile开关。", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "点击“是”将关闭NtFsControlFile开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 						patchMgr.patchSwitches.DeviceIoControl_2 = false;
 					} else {
 						break;
@@ -700,7 +701,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 			case IDM_ADVMEMSEARCH:
 				if (patchMgr.useAdvancedSearch) {
-					if (IDYES == MessageBox(0, "点击“是”将关闭高级内存搜索功能。", "注意", MB_YESNO)) {
+					if (IDYES == MessageBox(0, "点击“是”将关闭高级内存搜索功能。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 						patchMgr.useAdvancedSearch = false;
 					} else {
 						break;

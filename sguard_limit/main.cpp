@@ -135,25 +135,77 @@ INT WINAPI WinMain(
 
 
 	// initialize kdriver module:
-	// make preparations for load kernel driver from given path.
-	// however, if (driver init fails && user selected related options), modify config and panic.
+	// (if os supported) set registry, copy sys file, check sys version.
+	
+	auto DriverOptionsSelected = [&] ()->bool {
+		return g_Mode == 2 || (g_Mode == 0 && limitMgr.useKernelMode);
+	};
+
 
 	if (systemMgr.getSystemVersion() == OSVersion::OTHERS) {
-		systemMgr.panic(0, "内核驱动模块在你的操作系统上不受支持。\n"
-			               "【注】内核驱动仅支持win7/10/11系统。");
+
+		// driver not supported on this system, don't call driver.init(). 
+		// if selected related options, show panic.
+		if (DriverOptionsSelected()) {
+			systemMgr.panic(0, "内核驱动模块在你的操作系统上不受支持。\n"
+			                   "【注】内核驱动仅支持win7/10/11系统。");
+		}
+
 	} else {
 
 		status =
 		driver.init(systemMgr.getProfileDir());
 
-		if (!status && (g_Mode == 2 || (g_Mode == 0 && limitMgr.useKernelMode))) {
 
-			// turn off related config flags.
+		// if driver init failed, and selected related options, show panic.
+		if (!status && DriverOptionsSelected()) {
+
+			// turn off related config flags and alert usr to switch options manually.
 			limitMgr.useKernelMode = false;
 			configMgr.writeConfig();
-
-			// show panic: alert usr to switch options manually.
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+		}
+
+
+		// if init success but is win11 latest,
+		constexpr auto supportedLatestBuildNum = 19042;
+
+		if (status && 
+			systemMgr.getSystemVersion() == OSVersion::WIN_10_11 && 
+			systemMgr.getSystemBuildNum() > supportedLatestBuildNum) {
+
+			// if force enable bit not set, but usr selected related options (first run default),
+			// or force enable bit set, but build num not match (system updated) :
+			if ((!driver.win11ForceEnable && DriverOptionsSelected()) ||
+				(driver.win11ForceEnable && systemMgr.getSystemBuildNum() != driver.win11CurrentBuild)) {
+
+				// alert user to confirm potential bsod threat.
+				char buf[0x1000];
+				sprintf(buf, "【！！！请仔细阅读：潜在的蓝屏风险！！！】\n\n\n"
+					"当前系统版本超出内核驱动模块已确认支持的最高系统版本：\n\n"
+					"已确认支持的Win11版本：10.0.%d\n"
+					"当前Win11系统版本：10.0.%d\n\n\n"
+					"若你启动游戏后右键菜单显示已提交，表示兼容，且可以保证下次系统更新前都没问题。\n\n"
+					"若每次游戏启动时都蓝屏，表示内核驱动模块不再兼容。你可以反馈到群里。\n\n\n"
+					"如果你已了解上述情况，并可以承担蓝屏风险，请点击“是”，否则请点击“否”。",
+					supportedLatestBuildNum, systemMgr.getSystemBuildNum());
+				
+				if (IDYES == MessageBox(0, buf, "系统版本警告", MB_YESNO)) {
+					driver.driverReady        = true;
+					driver.win11ForceEnable   = true;
+					driver.win11CurrentBuild  = systemMgr.getSystemBuildNum();
+				} else {
+					driver.driverReady        = false;
+					driver.win11ForceEnable   = false;
+					driver.win11CurrentBuild  = 0;
+				}
+
+				configMgr.writeConfig();
+			}
+		}
+
+		// show error if driver not init correctly.
+		if (!driver.driverReady) {
 			systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
 							   "内存补丁 " MEMPATCH_VERSION "\n"
 							   "内核态调度器\n");

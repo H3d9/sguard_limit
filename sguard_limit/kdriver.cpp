@@ -3,12 +3,15 @@
 #include <stdarg.h>
 #include "kdriver.h"
 
+#define DRIVER_VERSION  "22.6.28"
+
 
 // kernel-mode memory io
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
-	: driverReady(false), sysfile{}, hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
+	: driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
+	  sysfile{}, hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
 	  errorMessage_ptr(new CHAR[1024]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
 }
@@ -136,8 +139,9 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	if (fp != NULL) {
 		fclose(fp);
 		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
-			_recordError(0, "拷贝文件失败：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
-				            "你可以把附带的sys文件“剪切”到以下路径：\n\n%s", sysfileDir.c_str());
+			_recordError(GetLastError(), 
+				"拷贝文件失败：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
+				"你可以把附带的sys文件手动放到以下路径：\n\n%s", sysfileDir.c_str());
 			return driverReady = false;
 		} else {
 			DeleteFile(currentPath);
@@ -147,14 +151,17 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	fp = fopen(sysfilePath, "rb");
 
 	if (fp == NULL) {
-		_recordError(0, "找不到文件：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
-			            "你可以把附带的sys文件“剪切”到以下路径：\n\n%s", sysfileDir.c_str());
+		_recordError(GetLastError(), 
+			"找不到文件：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
+			"你可以把附带的sys文件手动放到以下路径：\n\n%s", sysfileDir.c_str());
 		return driverReady = false;
 	} else {
 		fclose(fp);
 	}
 
-	return driverReady = true;
+
+	// check sys file version to forbid unknown fault.
+	return driverReady = _checkSysVersion();
 }
 
 bool KernelDriver::load() {
@@ -179,8 +186,6 @@ bool KernelDriver::load() {
 }
 
 void KernelDriver::unload() {
-
-	_resetError();
 
 	if (hDriver != INVALID_HANDLE_VALUE) {
 
@@ -442,6 +447,35 @@ void KernelDriver::_endService() {
 	CloseServiceHandle(hSCManager);
 	hService = NULL;
 	hSCManager = NULL;
+}
+
+bool KernelDriver::_checkSysVersion() {
+
+	VMIO_REQUEST  request(0);
+	DWORD         Bytes;
+
+	_resetError();
+
+
+	if (!this->load()) {
+		return false;
+	}
+
+	if (!DeviceIoControl(hDriver, VMIO_VERSION, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
+		_recordError(GetLastError(), "driver::_checkSysVersion(): DeviceIoControl失败。");
+		this->unload();
+		return false;
+	}
+
+	this->unload();
+
+	if (0 != strcmp(request.data, DRIVER_VERSION)) {
+		_recordError(0, "driver::_checkSysVersion(): 内核驱动文件“SGuardLimit_VMIO.sys”不是最新的。\n\n"
+		                "解决办法：重新下载，先把sys和exe解压至同一目录下，然后再打开，不要从压缩包里直接点开。");
+		return false;
+	}
+
+	return true;
 }
 
 void KernelDriver::_resetError() {

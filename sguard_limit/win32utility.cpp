@@ -82,7 +82,7 @@ DWORD win32ThreadManager::getTargetPid(const char* procName) {  // ret == 0 if n
 }
 
 bool win32ThreadManager::killTarget() { // kill process: return true if killed.
-	
+
 	if (pid == 0) {
 		return false;
 	}
@@ -146,7 +146,7 @@ win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
 	: hWnd(NULL), hInstance(NULL),
-	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(19043), logfp(NULL), icon{}, profileDir{} {}
+	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{}, profileDir{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -281,32 +281,25 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 bool win32SystemManager::enableDebugPrivilege() {
 
 	HANDLE hToken;
-	OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken);
-
-	// raise to debug previlege
 	TOKEN_PRIVILEGES tp;
 	tp.PrivilegeCount = 1;
 	tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
+	// raise to debug previlege
+	OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken);
 	LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &tp.Privileges[0].Luid);
 	AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL);
-
+	
 	// check if debug previlege is acquired
-	PRIVILEGE_SET ps;
-	ps.Control = PRIVILEGE_SET_ALL_NECESSARY;
-	ps.PrivilegeCount = 1;
-	ps.Privilege[0].Attributes = SE_PRIVILEGE_ENABLED;
-	
-	BOOL result = FALSE;
-	LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &ps.Privilege[0].Luid);
-	PrivilegeCheck(hToken, &ps, &result);
-	
-	if (!result) {
+	if (GetLastError() != ERROR_SUCCESS) {
 		panic("提升权限失败，请右键管理员运行。");
+
+		CloseHandle(hToken);
+		return false;
 	}
 
 	CloseHandle(hToken);
-	return result;
+	return true;
 }
 
 bool win32SystemManager::createWindow(WNDPROC WndProc, DWORD WndIcon) {
