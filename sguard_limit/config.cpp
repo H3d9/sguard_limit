@@ -65,7 +65,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 
 	// kdriver module
 	res = GetPrivateProfileInt("kdriver", "win11ForceEnable", -1, profile);
-	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("kdriver", "win11ForceEnable", "0", profile);
 		driver.win11ForceEnable = false;
 	} else {
@@ -73,7 +73,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	}
 
 	res = GetPrivateProfileInt("kdriver", "win11CurrentBuild", -1, profile);
-	if (res == (UINT)-1) {
+	if (!result || res == (UINT)-1) {
 		WritePrivateProfileString("kdriver", "win11CurrentBuild", "0", profile);
 		driver.win11CurrentBuild = 0;
 	} else {
@@ -220,7 +220,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	}
 
 	res = GetPrivateProfileInt("Patch", "DelayBeforeNtdllioctl", -1, profile);
-	if (res == (UINT)-1) {
+	if (!result || res == (UINT)-1) {
 		WritePrivateProfileString("Patch", "DelayBeforeNtdllioctl", "0", profile);
 		patchMgr.patchDelayBeforeNtdllioctl = 0;
 	} else {
@@ -228,7 +228,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	}
 
 	res = GetPrivateProfileInt("Patch", "DelayBeforeNtdlletc", -1, profile);
-	if (res == (UINT)-1) {
+	if (!result || res == (UINT)-1) {
 		WritePrivateProfileString("Patch", "DelayBeforeNtdlletc", "20", profile);
 		patchMgr.patchDelayBeforeNtdlletc = 20;
 	} else {

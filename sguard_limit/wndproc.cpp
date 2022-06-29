@@ -32,13 +32,13 @@ extern volatile bool            g_KillAceLoader;
 static void ShowAbout() {
 
 	if (IDOK == MessageBox(0,
-		"本工具专用于约束TX游戏后台扫盘插件ACE-Guard Client EXE占用系统资源。\n"
+		"本工具专用于约束TX游戏后台扫盘插件ACE-Guard Client EXE占用CPU和扫盘。\n"
 		"该工具仅供研究交流游戏优化使用，将来可能失效，不保证稳定性。\n"
 		"如果你发现无法正常使用，请更换模式或选项；若还不行请停止使用并等待更新。\n\n"
 
-		"【使用方法】双击打开，右下角出现托盘即可。若无报错则无需其他设置。\n\n\n"
-
-		"【提示】 不要强行关闭上述扫盘插件，这会导致游戏掉线。\n\n"
+		"【使用方法】双击打开即可。若无报错则无需其他设置。\n\n\n"
+		
+		"【提示】 不要使用工具强行关闭上述扫盘插件，这会导致游戏掉线。\n\n"
 		"【提示】 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n\n"
 
 		"SGUARD讨论群：775176979\n"
@@ -52,27 +52,22 @@ static void ShowAbout() {
 			"内存补丁 " MEMPATCH_VERSION "（21.10.6）：\n\n"
 			"这是默认模式，建议优先使用，如果不好用再换其他模式。\n\n"
 
-			">1 NtQueryVirtualMemory(V2新增): 令SGUARD扫内存的速度变慢。\n\n"
-			">2 NtReadVirtualMemory(V4.3新增): 拒绝SGUARD在应用层跨进程读内存。\n\n"
-			">3 GetAsyncKeyState(V3新增): 令SGUARD读取键盘按键的速度变慢。\n"
-			"【注】启用该选项似乎可以提升流畅度。相关的引用位于动态库ACE-DRV64.dll中。\n\n"
-
-			">4 NtWaitForSingleObject: 已弃用。已知可能导致游戏异常。\n"
-			">5 NtDelayExecution: 已弃用。已知可能导致游戏异常和卡顿。\n\n"
-
-			">6 伪造ACE-BASE.sys的MDL控制代码(V4.2新增): 防止间歇性卡硬盘（经常出现）。\n"
-			">7 执行失败的文件系统记录枚举(V4.2新增): 防止高强度扫硬盘（偶尔出现）。\n"
+			">1 NtQueryVirtualMemory(V2): 令SGUARD扫内存的速度变慢。\n\n"
+			">2 NtReadVirtualMemory(V4.3): 拒绝SGUARD在应用层跨进程读内存。\n\n"
+			">3 GetAsyncKeyState(V3): 令SGUARD读取键盘按键的速度变慢。\n\n"
+			">4 NtWaitForSingleObject, NtDelayExecution: 已弃用，不要使用。\n\n"
+			">5 伪造ACE-BASE.sys的MDL控制代码(V4.2): 防止间歇性卡硬盘（经常出现）。\n"
+			">6 执行失败的文件系统记录枚举(V4.2): 防止高强度扫硬盘（偶尔出现）。\n"
 			"【注】游戏刚启动时SG读盘是不可避免的，若屏蔽则游戏会启动失败。\n"
-			"【注】间歇性卡硬盘原因为SG使用MDL读其他进程内存而这些内存刚好位于页面文件。\n\n\n"
+			" 间歇性卡硬盘原因为SG使用MDL读其他进程内存而这些内存刚好位于页面文件。\n\n\n"
 			
-			"> 高级内存搜索(V4新增)：该功能用于解决无法定位模块User32。\n"
-			"【注】启用该功能后不再需要采样指令指针，故修改内存可以瞬间完成。\n"
-			"【注】你可以在“设置延迟”中更改“等待SG稳定的时间”来决定修改内存的时机。\n"
-			"     时间大则游戏启动时不容易“初始化失败”。\n"
-			"     时间小则限制SGUARD快，设为0可以启动游戏秒限制（不建议）。\n\n"
+			"> 高级内存搜索(V4)：启用后修改内存可以瞬间完成。\n"
+			"【注】你可以在“设置延迟”中更改“等待SG稳定的时间”（第二个，默认20秒那个）\n"
+			" 来决定修改内存的时机。非常不建议将该数值调整的过小，以免游戏启动失败。\n"
+			" 如果你游戏启动较慢，可以调高这一项，或先开游戏再开限制器。\n\n"
 
 			"【说明】该模式需要临时装载一次驱动，修改内存后会立即卸载驱动。\n"
-			"若你使用时出现问题，可以去更新链接下载证书。\n\n\n"
+			" 若你使用时出现问题，可以去更新链接下载证书。\n\n\n"
 			"点击“确定”翻到下一页；点击“取消”结束查看说明。",
 			"SGuard限制器 " VERSION "  by: @H3d9",
 			MB_OKCANCEL)) {
@@ -91,10 +86,8 @@ static void ShowAbout() {
 				MessageBox(0,
 					"【工作模式说明 P3】\n\n"
 					"时间片轮转（21.2.6）：\n\n"
-					"该模式原理与BES相同，不建议DNF使用（但是LOL可以用，不过有重新连接的风险）。\n\n"
-					"【注1】如果LOL经常掉线连不上，可以切换到这个模式；且【不要打开】内核态调度器。\n"
-					"【注2】对于DNF，如果你仍然想用这个模式，建议打开内核态调度器。\n"
-					"【注3】时间转轮可能无法约束扫硬盘。",
+					"该模式原理与BES相同，不建议DNF和LOL使用（可能出上报异常和重新连接）。\n\n"
+					"【注】时间转轮无法限制扫硬盘，只能限制cpu使用。",
 					"SGuard限制器 " VERSION "  by: @H3d9",
 					MB_OK);
 			}
@@ -131,6 +124,7 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 				SetWindowText(hDlg, "输入开启防扫盘功能前的初始等待时间（单位：秒）");
 				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdllioctl);
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
+				SetDlgItemText(hDlg, IDC_TEXT2, "【提示】你没有必要修改这一项。");
 				
 			} else if (dlgParam == DLGPARAM_PATCHWAIT2) { // set advanced patch wait for ntdll etc.
 				SetWindowText(hDlg, "输入开启防扫盘功能后等待SGUARD稳定的时间（单位：秒）");
@@ -153,6 +147,8 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：NtDelayExecution");
 				}
 			}
+
+			SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 
 			return (INT_PTR)TRUE;
 		}
@@ -563,12 +559,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			case IDM_SETDELAY:
 			{
 				char buf[0x1000];
-				sprintf(buf, "请依次设置以下选项的延迟：\n\n"
+				sprintf(buf, "请设置以下选项的延迟：如果不想设置某选项，可以直接关闭窗口。\n\n"
 					"(高级内存搜索) 开启防扫盘功能前的初始等待时间\n"
 					"(高级内存搜索) 开启防扫盘功能后等待SGUARD稳定的时间\n"
 					"%s%s%s%s\n\n"
-					"【提示】如果不知道某选项的作用，请勿胡乱设置，否则可能游戏掉线/无法启动。\n"
-					"【提示】如果不想设置某选项，可以直接关掉对应的窗口。",
+					"【提示】如果不知道某选项的作用，请勿胡乱设置，否则可能游戏掉线/无法启动。\n",
 					patchMgr.patchSwitches.NtQueryVirtualMemory   ? "NtQueryVirtualMemory\n"   : "",
 					patchMgr.patchSwitches.GetAsyncKeyState       ? "GetAsyncKeyState\n"       : "",
 					patchMgr.patchSwitches.NtWaitForSingleObject  ? "NtWaitForSingleObject\n"  : "",

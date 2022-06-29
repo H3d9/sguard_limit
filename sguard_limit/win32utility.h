@@ -7,6 +7,8 @@
 // system version (kdriver support)
 enum class OSVersion { 
 	WIN_7       = 1, 
+	WIN_8,
+	WIN_81,
 	WIN_10_11,
 	OTHERS
 };

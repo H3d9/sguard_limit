@@ -3,7 +3,6 @@
 #include <UserEnv.h>
 #include <time.h>
 #include <thread>
-#include <mutex>
 #include "win32utility.h"
 
 // dependency: Userenv.lib
@@ -268,6 +267,10 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 				osVersion = OSVersion::WIN_10_11;  // NT 10.0
 			} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 1) {
 				osVersion = OSVersion::WIN_7;      // NT 6.1
+			} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 2) {
+				osVersion = OSVersion::WIN_8;      // NT 6.2
+			} else if (osInfo.dwMajorVersion == 6 && osInfo.dwMinorVersion == 3) {
+				osVersion = OSVersion::WIN_81;     // NT 6.3
 			}  // else default to:  OSVersion::OTHERS
 
 			osBuildNum = osInfo.dwBuildNumber;
@@ -418,14 +421,11 @@ DWORD win32SystemManager::getSystemBuildNum() {
 
 void win32SystemManager::raiseCleanThread() {
 
-	std::thread cleanThread([this]() {
+	std::thread cleanThread([this] () {
 
 		// clean thread: 1 min after game starts, end "ace-loader" process.
 		// [note] former thread(s) will give up cleaning if game has re-launched.
-		static std::mutex mtx;
-
-		mtx.lock();
-		log("clean thread: [entering] -> critical section");
+		log("clean thread %u: created.", GetCurrentThreadId());
 
 		win32ThreadManager  threadMgr;
 		DWORD               pid            = threadMgr.getTargetPid();
@@ -436,7 +436,7 @@ void win32SystemManager::raiseCleanThread() {
 
 			// ensure SG pid not changed before we eliminate ace-loader,
 			// here we use pid change to identify game re-launch.
-			log("clean thread: [wait] 1 min wait begin.");
+			log("clean thread %u: 1 min wait begin.", GetCurrentThreadId());
 
 			do {
 				Sleep(5000);
@@ -452,21 +452,20 @@ void win32SystemManager::raiseCleanThread() {
 				while ( threadMgr.getTargetPid("GameLoader.exe") ) {
 
 					if (threadMgr.killTarget()) {
-						log("clean thread: [GameLoader.exe] - pid %u eliminated.", threadMgr.pid);
+						log("clean thread %u: eliminated GameLoader.exe - pid %u.", GetCurrentThreadId(), threadMgr.pid);
 
 					} else {
-						log(GetLastError(), "clean thread: [GameLoader.exe] - failed.");
+						log(GetLastError(), "clean thread %u: clean GameLoader.exe failed.", GetCurrentThreadId());
 						break;
 					}
 				}
 
 			} else {
-				log("clean thread: [wait] aborted: game re-launched");
+				log("clean thread %u: game re-launched, aborted.", GetCurrentThreadId());
 			}
 		}
 
-		log("clean thread: [leaving] <- critical section");
-		mtx.unlock();
+		log("clean thread %u: exit.", GetCurrentThreadId());
 	});
 
 	cleanThread.detach();

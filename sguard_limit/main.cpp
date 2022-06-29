@@ -120,16 +120,15 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			" 内存补丁 " MEMPATCH_VERSION "：加强防SG扫内存。\n\n"
-			"1. 新增：拒绝SG在应用层跨进程读内存。\n"
-			"2. 新增：尝试缓解个别可能由限制器导致的掉线。\n\n\n"
+			" 内存补丁 " MEMPATCH_VERSION "：新增支持Win8/8.1。\n\n"
+			"1. 新增限制DNF更新110后SG更新导致的额外占用CPU。\n"
+			"2. 增加生效速度并解决旧版某些情况下限制不生效的问题。\n"
+			"3. 加了一些黑魔法 :)\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
-			"2. 默认模式为内存补丁，能用就不要换模式！否则可能游戏掉线。\n\n"
-			"3. “高级内存搜索”默认游戏启动时立即开启防扫盘，然后等待稳定后开启其他功能。\n"
-			"   如果你游戏启动较慢，可以调高“等待SGUARD稳定的时间”（默认为20秒）。\n\n"
-			"4. 若你第一次使用新版，请务必仔细阅读说明（可在托盘右键菜单中找到）。",
+			"2. 若你第一次使用，请务必仔细阅读说明（可在右下角托盘菜单中找到）\n"
+			"   如果看了说明仍未解决你的问题，可以加群反馈：775176979",
 			VERSION "  by: @H3d9", MB_OK);
 	}
 
@@ -148,14 +147,13 @@ INT WINAPI WinMain(
 		// if selected related options, show panic.
 		if (DriverOptionsSelected()) {
 			systemMgr.panic(0, "内核驱动模块在你的操作系统上不受支持。\n"
-			                   "【注】内核驱动仅支持win7/10/11系统。");
+			                   "【注】驱动模块支持win7/8/8.1/10/11。");
 		}
 
 	} else {
 
 		status =
 		driver.init(systemMgr.getProfileDir());
-
 
 		// if driver init failed, and selected related options, show panic.
 		if (!status && DriverOptionsSelected()) {
@@ -166,15 +164,14 @@ INT WINAPI WinMain(
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 		}
 
-
 		// if init success but is win11 latest,
-		constexpr auto supportedLatestBuildNum = 19042;
+		constexpr auto supportedLatestBuildNum = 22621;
 
 		if (status && 
 			systemMgr.getSystemVersion() == OSVersion::WIN_10_11 && 
 			systemMgr.getSystemBuildNum() > supportedLatestBuildNum) {
 
-			// if force enable bit not set, but usr selected related options (first run default),
+			// if force enable bit not set, but user selected related options (first run default),
 			// or force enable bit set, but build num not match (system updated) :
 			if ((!driver.win11ForceEnable && DriverOptionsSelected()) ||
 				(driver.win11ForceEnable && systemMgr.getSystemBuildNum() != driver.win11CurrentBuild)) {
@@ -210,6 +207,18 @@ INT WINAPI WinMain(
 							   "内存补丁 " MEMPATCH_VERSION "\n"
 							   "内核态调度器\n");
 		}
+	}
+
+
+	// initialize patch module:
+	// get all native syscall numbers it should use.
+
+	if (!patchMgr.init()) {
+		systemMgr.panic(0, "“内存补丁 " MEMPATCH_VERSION "”模块初始化失败。\n"
+		                   "查看%s\\log.txt以获得更多信息。", systemMgr.getProfileDir().c_str());
+		
+		// this rarely happens, disable kdriver to stop user from continue.
+		driver.driverReady = false;
 	}
 
 

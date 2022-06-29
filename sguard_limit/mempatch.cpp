@@ -27,16 +27,45 @@ PatchManager::PatchManager()
 	: patchEnabled(true), patchPid(0), patchFailCount(), 
 	  patchSwitches{}, patchStatus{}, patchDelay{},
 	  patchDelayRange {
-	   { 1,   50,   1500 },   /* NtQueryVirtualMemory */
-	   { 1,   50,   1000 },   /* GetAsyncKeyState */
+	   { 1,   1500, 2000 },   /* NtQueryVirtualMemory */
+	   { 1,   500,  1000 },   /* GetAsyncKeyState */
 	   { 1,   10,   200  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 }    /* NtDelayExecution */
 	  }, 
 	  useAdvancedSearch(true), patchDelayBeforeNtdllioctl(0), patchDelayBeforeNtdlletc(20), 
-	  vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
+	  syscallTable{}, vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
 
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
+}
+
+bool PatchManager::init() {
+	
+	bool ret = true;
+
+	// acquire syscall numbers we need.
+	syscallTable["NtQueryVirtualMemory"]   = _getSyscallNumber("NtQueryVirtualMemory",  "Ntdll.dll");
+	syscallTable["NtReadVirtualMemory"]    = _getSyscallNumber("NtReadVirtualMemory",   "Ntdll.dll");
+	syscallTable["NtWaitForSingleObject"]  = _getSyscallNumber("NtWaitForSingleObject", "Ntdll.dll");
+	syscallTable["NtDelayExecution"]       = _getSyscallNumber("NtDelayExecution",      "Ntdll.dll");
+	syscallTable["NtDeviceIoControlFile"]  = _getSyscallNumber("NtDeviceIoControlFile", "Ntdll.dll");
+	syscallTable["NtFsControlFile"]        = _getSyscallNumber("NtFsControlFile",       "Ntdll.dll");
+
+	if (systemMgr.getSystemVersion() == OSVersion::WIN_10_11) {
+		syscallTable["NtUserGetAsyncKeyState"] = _getSyscallNumber("NtUserGetAsyncKeyState", "win32u.dll");
+	} else {
+		syscallTable["GetAsyncKeyState"] = _getSyscallNumber("GetAsyncKeyState", "User32.dll");
+	}
+
+	// check if there's any fail while getting syscall numbers.
+	for (auto& it : syscallTable) {
+		if (it.second == 0) {
+			systemMgr.panic(0, "patch::init(): 从函数 %s 中获取本地系统调用编号失败。", it.first.c_str());
+			ret = false;
+		}
+	}
+
+	return ret;
 }
 
 void PatchManager::patch() {
@@ -184,6 +213,32 @@ void PatchManager::disable(bool forceRecover) {
 	patchEnabled = false;
 }
 
+DWORD PatchManager::_getSyscallNumber(const char* funcName, const char* libName) {
+
+	DWORD callNumber = 0;
+
+	auto hModule = LoadLibrary(libName);
+	if (hModule) {
+
+		auto procAddr = (char*)GetProcAddress(hModule, funcName);
+		if (procAddr) {
+
+			// if is Nt/Zw func (__kernelentry), pattern is at header+0.
+			// otherwise, search in a small range (win7/8/8.1, in user32).
+			for (auto rip = procAddr; rip < procAddr + 0x200; rip++) {
+				if (0 == memcmp(rip, "\x4c\x8b\xd1\xb8", 4) && 0 == memcmp(rip + 6, "\x00\x00", 2)) {
+					callNumber = *(DWORD*)(rip + 4);
+					break;
+				}
+			}
+		}
+
+		FreeLibrary(hModule);
+	}
+
+	return callNumber;
+}
+
 bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 	win32ThreadManager     threadMgr;
@@ -233,7 +288,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 			// check if result exists.
 			if (executeRange.empty()) {
-				systemMgr.panic("patch_ntdll(): 无法在SGUARD进程中找到模块“Ntdll”");
+				systemMgr.panic("patch_ntdll(): 无法在目标进程中找到模块“Ntdll”");
 			}
 
 			// split executable range to pieces to read.
@@ -286,6 +341,8 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				// 4c 8b d1 b8 ??+x 00 00 00 ...  << to be patch     pages
 				// ...                                                 |
 				// 4c 8b d1 b8 40   00 00 00 ...  << call 40          ---
+				// 
+				// [call 40] by now, all call numbers we need are in range [0x0, 0x40].
 				
 				char pattern[] = "\x4c\x8b\xd1\xb8\x00\x00\x00\x00";
 				for (LONG offset = 0; offset < 0x4000 - 0x20 * 0x41; offset++) {
@@ -387,74 +444,77 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 	// assert: vmbuf is syscall pages && offset0 >= 0.
 	// patch according to switches.
+
+	DWORD callNum_delay = syscallTable["NtDelayExecution"];
+
 	if (osVersion == OSVersion::WIN_10_11) {
 
 		// for win10 there're 0x20 bytes to place shellcode.
+		// [22.6.29] reduce trampoline, in that case ret won't change and target is not easy to crash.
 
-		if (switches.NtQueryVirtualMemory) { // 0x23
+		if (switches.NtQueryVirtualMemory) {
 
-			CHAR patch_bytes[] = "\x49\x89\xCA\xB8\x23\x00\x00\x00\x0F\x05\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3";
+			CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+			/*
+				0:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
+				7:  00 00 00
+				a:  ff e0                   jmp    rax
+			*/
+
+			CHAR working_bytes[] =
+				"\x49\x89\xCA\xB8\x23\x00\x00\x00\x0F\x05"
+				"\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
+				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
+				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B\x58\xC3";
 			/*
 				0:  49 89 ca                mov    r10, rcx
 				3:  b8 23 00 00 00          mov    eax, 0x23
 				8:  0f 05                   syscall
 				a:  50                      push   rax
-				b:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
-				12: 00 00 00
-				15: ff e0                   jmp    rax
-				17: 58                      pop    rax
-				18: c3                      ret
+				b:  53                      push   rbx
+				c:  51                      push   rcx
+				d:  52                      push   rdx
+				e:  56                      push   rsi
+				f:  57                      push   rdi
+				10: 55                      push   rbp
+				11: 41 50                   push   r8
+				13: 41 51                   push   r9
+				15: 41 52                   push   r10
+				17: 41 53                   push   r11
+				19: 41 54                   push   r12
+				1b: 41 55                   push   r13
+				1d: 41 56                   push   r14
+				1f: 41 57                   push   r15
+				21: 9c                      pushf
+				22: 49 c7 c2 e0 43 41 ff    mov    r10, 0xFFFFFFFFFF4143E0
+				29: 41 52                   push   r10
+				2b: 48 89 e2                mov    rdx, rsp
+				2e: b8 34 00 00 00          mov    eax, 0x34
+				33: 0f 05                   syscall
+				35: 41 5a                   pop    r10
+				37: 9d                      popf
+				38: 41 5f                   pop    r15
+				3a: 41 5e                   pop    r14
+				3c: 41 5d                   pop    r13
+				3e: 41 5c                   pop    r12
+				40: 41 5b                   pop    r11
+				42: 41 5a                   pop    r10
+				44: 41 59                   pop    r9
+				46: 41 58                   pop    r8
+				48: 5d                      pop    rbp
+				49: 5f                      pop    rdi
+				4a: 5e                      pop    rsi
+				4b: 5a                      pop    rdx
+				4c: 59                      pop    rcx
+				4d: 5b                      pop    rbx
+				4e: 58                      pop    rax
+				4f: c3                      ret
 			*/
 
-			CHAR working_bytes[] =
-				"\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
-				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
-				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
-				"\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
-			/*
-				0:  53                      push   rbx
-				1:  51                      push   rcx
-				2:  52                      push   rdx
-				3:  56                      push   rsi
-				4:  57                      push   rdi
-				5:  55                      push   rbp
-				6:  41 50                   push   r8
-				8:  41 51                   push   r9
-				a:  41 52                   push   r10
-				c:  41 53                   push   r11
-				e:  41 54                   push   r12
-				10: 41 55                   push   r13
-				12: 41 56                   push   r14
-				14: 41 57                   push   r15
-				16: 9c                      pushf
-				17: 49 c7 c2 e0 43 41 ff    mov    r10, 0xFFFFFFFFFF4143E0
-				1e: 41 52                   push   r10
-				20: 48 89 e2                mov    rdx, rsp
-				23: b8 34 00 00 00          mov    eax, 0x34
-				28: 0f 05                   syscall
-				2a: 41 5a                   pop    r10
-				2c: 9d                      popf
-				2d: 41 5f                   pop    r15
-				2f: 41 5e                   pop    r14
-				31: 41 5d                   pop    r13
-				33: 41 5c                   pop    r12
-				35: 41 5b                   pop    r11
-				37: 41 5a                   pop    r10
-				39: 41 59                   pop    r9
-				3b: 41 58                   pop    r8
-				3d: 5d                      pop    rbp
-				3e: 5f                      pop    rdi
-				3f: 5e                      pop    rsi
-				40: 5a                      pop    rdx
-				41: 59                      pop    rcx
-				42: 5b                      pop    rbx
-				43: 48 b8 00 00 00 00 00    mov    rax, <returnAddress>
-				4a: 00 00 00
-				4d: ff e0                   jmp    rax
-			*/
-
+			DWORD callNum_this = syscallTable["NtQueryVirtualMemory"];
+			
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x20 /* win10 syscall align */ * 0x23;
+			LONG offset = offset0 + 0x20 /* win10 syscall align */ * callNum_this;
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -465,15 +525,17 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			}
 
 			// allocAddress => patch_bytes.
-			memcpy(patch_bytes + 0xd, &allocAddress, 8);
+			memcpy(patch_bytes + 0x2, &allocAddress, 8);
+
+			// syscall num => working_bytes.
+			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
 			LONG64 delay_param = (LONG64)-10000 * patchDelay[0];
-			memcpy(working_bytes + 0x1a, &delay_param, 4);
+			memcpy(working_bytes + 0x25, &delay_param, 4);
 
-			// returnAddress => working_bytes.
-			ULONG64	returnAddress = vmStartAddress + offset + 0x17;
-			memcpy(working_bytes + 0x45, &returnAddress, 8);
+			// delay num => working_bytes.
+			memcpy(working_bytes + 0x2f, &callNum_delay, 4);
 
 			// patch_bytes => vmbuf.
 			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
@@ -505,7 +567,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			//	ret
 		}
 
-		if (switches.NtReadVirtualMemory) { // 0x3f
+		if (switches.NtReadVirtualMemory) {
 
 			CHAR patch_bytes[] = "\xB8\x22\x00\x00\xC0\xC3";
 			/*
@@ -513,8 +575,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				5:  c3                      ret
 			*/
 
+			DWORD callNum_this = syscallTable["NtReadVirtualMemory"];
+
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x20 /* win10 syscall align */ * 0x3f;
+			LONG offset = offset0 + 0x20 /* win10 syscall align */ * callNum_this;
 
 			// patch_bytes => vmbuf.
 			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
@@ -523,7 +587,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtReadVirtualMemory = true;
 		}
 
-		if (switches.NtWaitForSingleObject) { // 0x4
+		if (switches.NtWaitForSingleObject) {
 
 			CHAR patch_bytes[] = "\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\xC3";
 			/*
@@ -596,8 +660,13 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				59: ff e0                   jmp    rax
 			*/
 
+			DWORD callNum_this = syscallTable["NtWaitForSingleObject"];
+
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x20 /* win10 syscall align */ * 0x4;
+			LONG offset = offset0 + 0x20 /* win10 syscall align */ * callNum_this;
+			
+			// syscall num => working_bytes.
+			memcpy(working_bytes + 0x5, &callNum_this, 4);
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -613,6 +682,9 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			// delay => working_bytes.
 			LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
 			memcpy(working_bytes + 0x26, &delay_param, 4);
+
+			// delay num => working_bytes.
+			memcpy(working_bytes + 0x30, &callNum_delay, 4);
 
 			// returnAddress => working_bytes.
 			ULONG64	returnAddress = vmStartAddress + offset + 0xd;
@@ -633,7 +705,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtWaitForSingleObject = true;
 		}
 
-		if (switches.NtDelayExecution) { // 0x34
+		if (switches.NtDelayExecution) {
 
 			CHAR patch_bytes[] =
 				"\x49\xC7\xC2\xE0\x43\x41\xFF\x4C\x89\x12\x49\x89\xCA\xB8\x34\x00\x00\x00\x0F\x05\xC3";
@@ -646,12 +718,15 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				ret
 			*/
 
+			// syscall rva => offset.
+			LONG offset = offset0 + 0x20 /* win10 syscall align */ * callNum_delay;
+
 			// modify delay.
 			LONG64 delay_param = (LONG64)-10000 * patchDelay[3];
 			memcpy(patch_bytes + 3, &delay_param, 4);
 
-			// syscall rva => offset.
-			LONG offset = offset0 + 0x20 * 0x34;
+			// syscall num => patch_bytes.
+			memcpy(patch_bytes + 14, &callNum_delay, 4);
 
 			// patch_bytes => vmbuf.
 			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
@@ -660,7 +735,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtDelayExecution = true;
 		}
 
-		if (switches.DeviceIoControl_1) { // 0x7 => NtDeviceIoControlFile
+		if (switches.DeviceIoControl_1) { // NtDeviceIoControlFile
 
 			CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
 			/*
@@ -699,12 +774,12 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			pseudo code:
 				NTSTATUS fake_device(...) {
 					if (IoCode == 0x221c2c) { // (ACE-BASE.sys) MDL_1 entry
-						// memcpy (dst.header, src.header, xx);
+						// construct dst header from src header ...
 						pIoStatusBlock->Information = 0x34;
 						return STATUS_SUCCESS; // 0x0
 					}
 					if (IoCode == 0x221c24) { // (ACE-BASE.sys) MDL_2 entry
-						// memcpy (dst.header, src.header, xx);
+						// construct dst header from src header ...
 						pIoStatusBlock->Information = 0x830;
 						return STATUS_SUCCESS;
 					}
@@ -719,8 +794,13 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			//if (!switches.DeviceIoControl_2) // disable hijack NTFS usn journal
 			//	memset(working_bytes + 0x4, 0x90, 0x16);
 
+			DWORD callNum_this = syscallTable["NtDeviceIoControlFile"];
+
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x20 /* win10 syscall align */ * 0x7;
+			LONG offset = offset0 + 0x20 /* win10 syscall align */ * callNum_this;
+
+			// syscall num => working_bytes.
+			memcpy(working_bytes + 0x38, &callNum_this, 4);
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -748,7 +828,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.DeviceIoControl_1 = true;
 		}
 
-		if (switches.DeviceIoControl_2) { // 0x39 => NtFsControlFile
+		if (switches.DeviceIoControl_2) { // NtFsControlFile
 
 			CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
 			/*
@@ -787,9 +867,13 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				}
 			*/
 
+			DWORD callNum_this = syscallTable["NtFsControlFile"];
 
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x20 /* win10 syscall align */ * 0x39;
+			LONG offset = offset0 + 0x20 /* win10 syscall align */ * callNum_this;
+
+			// syscall num => working_bytes.
+			memcpy(working_bytes + 0x22, &callNum_this, 4);
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -817,13 +901,13 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.DeviceIoControl_2 = true;
 		}
 
-	} else { // if WIN_7
+	} else { // if WIN_7 / WIN_8 / WIN_81
 
-		// win7 ntdll maps 0x10 bytes for each syscall.
-		// that's really short to place shellcode, caus 'ret' cannot be moved.
+		// NT 6.x: ntdll maps 0x10 bytes for each syscall.
+		// we should construct shellcode carefully, caus 'ret' cannot be moved.
 		// fortunately, by assigning param@ZeroBits we can make VirtualAlloc give an addr smaller than 0x1 0000 0000, then
-		// 0: use mov eax instead of rax. (rax's high 32-bit is 0 due to x86_64 isa convention)
-		// a: [caution] original 'ret' cannot change, for some threads to return correctly from previous syscall.
+		// 0x0: use mov eax instead of rax. (rax's high 32-bit is 0 due to x86_64 isa convention)
+		// 0xa: [caution] original 'ret' cannot change, for some threads to return correctly from previous syscall.
 
 		CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
 		/*
@@ -887,10 +971,15 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			58: ff e0                   jmp    rax
 		*/
 
-		if (switches.NtQueryVirtualMemory) { // 0x20
+		// delay num => working_bytes.
+		memcpy(working_bytes + 0x2f, &callNum_delay, 4);
+
+		if (switches.NtQueryVirtualMemory) {
+
+			DWORD callNum_this = syscallTable["NtQueryVirtualMemory"];
 
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x20;
+			LONG offset = offset0 + 0x10 /* nt6 syscall align */ * callNum_this;
 
 			// allocate vm.
 			// allocAddress must < 32 bit, that's ensured by driver's allocator's param@ZeroBits.
@@ -905,7 +994,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			memcpy(patch_bytes + 0x1, &allocAddress, 4);
 
 			// syscallNum => working_bytes.
-			working_bytes[0x4] = 0x20;
+			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
 			LONG64 delay_param = (LONG64)-10000 * patchDelay[0];
@@ -930,7 +1019,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtQueryVirtualMemory = true;
 		}
 
-		if (switches.NtReadVirtualMemory) { // 0x3c
+		if (switches.NtReadVirtualMemory) {
 
 			CHAR patch_bytes[] = "\xB8\x22\x00\x00\xC0\xC3";
 			/*
@@ -938,8 +1027,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				5:  c3                      ret
 			*/
 
+			DWORD callNum_this = syscallTable["NtReadVirtualMemory"];
+
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x3c;
+			LONG offset = offset0 + 0x10 /* nt6 syscall align */ * callNum_this;
 
 			// patch_bytes => vmbuf.
 			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
@@ -948,10 +1039,12 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtReadVirtualMemory = true;
 		}
 
-		if (switches.NtWaitForSingleObject) { // 0x1
+		if (switches.NtWaitForSingleObject) {
+
+			DWORD callNum_this = syscallTable["NtWaitForSingleObject"];
 
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x1;
+			LONG offset = offset0 + 0x10 /* nt6 syscall align */ * callNum_this;
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -965,7 +1058,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			memcpy(patch_bytes + 0x1, &allocAddress, 4);
 
 			// syscallNum => working_bytes.
-			working_bytes[0x4] = 0x1;
+			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
 			LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
@@ -990,10 +1083,12 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtWaitForSingleObject = true;
 		}
 
-		if (switches.NtDelayExecution) { // 0x31
+		if (switches.NtDelayExecution) {
+
+			DWORD callNum_this = syscallTable["NtDelayExecution"];
 
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x31;
+			LONG offset = offset0 + 0x10 /* nt6 syscall align */ * callNum_this;
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -1007,7 +1102,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			memcpy(patch_bytes + 0x1, &allocAddress, 4);
 
 			// syscallNum => working_bytes.
-			working_bytes[0x4] = 0x31;
+			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
 			LONG64 delay_param = (LONG64)-10000 * patchDelay[3];
@@ -1032,7 +1127,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.NtDelayExecution = true;
 		}
 
-		if (switches.DeviceIoControl_1) { // 0x4 => NtDeviceIoControlFile
+		if (switches.DeviceIoControl_1) { // NtDeviceIoControlFile
 
 			CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0";
 			/*
@@ -1052,8 +1147,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			*/
 
 
+			DWORD callNum_this = syscallTable["NtDeviceIoControlFile"];
+
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x4;
+			LONG offset = offset0 + 0x10 /* nt6 syscall align */ * callNum_this;
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -1065,6 +1162,9 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 			// allocAddress => patch_bytes.
 			memcpy(patch_bytes + 0x1, &allocAddress, 4);
+
+			// syscall num => working_bytes.
+			memcpy(working_bytes + 0x38, &callNum_this, 4);
 
 			// patch_bytes => vmbuf.
 			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
@@ -1081,7 +1181,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			patchedNow.DeviceIoControl_1 = true;
 		}
 
-		if (switches.DeviceIoControl_2) { // 0x36 => NtFsControlFile
+		if (switches.DeviceIoControl_2) { // NtFsControlFile
 
 			CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0";
 			/*
@@ -1100,9 +1200,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				28: c3                      ret
 			*/
 
+			DWORD callNum_this = syscallTable["NtFsControlFile"];
 
 			// syscall rva => offset.
-			LONG offset = offset0 + 0x10 /* win7 syscall align */ * 0x36;
+			LONG offset = offset0 + 0x10 /* nt6 syscall align */ * callNum_this;
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -1114,6 +1215,9 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 			// allocAddress => patch_bytes.
 			memcpy(patch_bytes + 0x1, &allocAddress, 4);
+
+			// syscall num => working_bytes.
+			memcpy(working_bytes + 0x22, &callNum_this, 4);
 
 			// patch_bytes => vmbuf.
 			memcpy(vmbuf + offset, patch_bytes, sizeof(patch_bytes) - 1);
@@ -1138,6 +1242,15 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 	if (!status) {
 		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 		return false;
+	}
+
+	// clear cpu instruction cache.
+	auto hProc = OpenProcess(PROCESS_ALL_ACCESS, NULL, pid);
+	if (hProc) {
+		if (!FlushInstructionCache(hProc, (PVOID)vmStartAddress, 0x4000)) {
+			systemMgr.log("patch_ntdll(): FlushInstructionCache() failed.");
+		}
+		CloseHandle(hProc);
 	}
 
 
@@ -1183,7 +1296,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 	LONG target_offset = -1;
 
 	// try multi-times to find target offset.
-	for (auto try_times = 1; try_times <= 5; try_times++) {
+	for (auto try_times = 1; try_times <= 3; try_times++) {
 		
 		std::vector<ULONG64> rips;
 		rips.clear();
@@ -1203,7 +1316,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 
 			// check if result exists.
 			if (executeRange.empty()) {
-				systemMgr.panic("patch_user32(): 无法在SGUARD进程中找到模块“User32”");
+				systemMgr.panic("patch_user32(): 无法在目标进程中找到模块“User32”");
 			}
 
 			// split executable range to pieces to read.
@@ -1249,11 +1362,11 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 
 			// get mem trait from system version.
 			char traits[] = "\x4c\x8b\xd1\xb8\x44\x10\x00\x00";
-			if (osVersion == OSVersion::WIN_10_11 && osBuildNumber <= 18363) {
-				traits[4] = '\x47';  // win10 1909 and former: 0x1047
-			} else if (osVersion == OSVersion::WIN_10_11 && osBuildNumber >= 22000) {
-				traits[4] = '\x3f';  // win11: 0x103f
-			} // else default to:    // win10 after 1909 || win7: 0x1044
+			if (osVersion == OSVersion::WIN_10_11) {   // NT10 trap entry at:  win32u!NtUserGetAsyncKeyState
+				*(DWORD*)(traits + 4) = syscallTable["NtUserGetAsyncKeyState"];
+			} else {                                   // NT6  trap entry at:  user32!GetAsyncKeyState
+				*(DWORD*)(traits + 4) = syscallTable["GetAsyncKeyState"];
+			}
 
 
 			// loop var to search for syscall entry.
@@ -1405,7 +1518,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 	}
 
 
-	// V3 feature
+	// V3 feature (detour user32/win32u).
 
 	CHAR working_bytes[] =
 		"\x49\x89\xCA\xB8\x44\x10\x00\x00\x0F\x05"
@@ -1459,9 +1572,10 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 		58: ff e0                   jmp    rax
 	*/
 
-	// delay => working_bytes.
-	LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
-	memcpy(working_bytes + 0x25, &delay_param, 4);
+	// delay num => working_bytes.
+	DWORD callNum_delay = syscallTable["NtDelayExecution"];
+	memcpy(working_bytes + 0x2f, &callNum_delay, 4);
+
 
 	if (osVersion == OSVersion::WIN_10_11) {
 
@@ -1483,6 +1597,8 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.GetAsyncKeyState) {
 
+			DWORD callNum_this = syscallTable["NtUserGetAsyncKeyState"];
+
 			// allocate vm.
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
@@ -1494,14 +1610,12 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 			// allocAddress => patch_bytes.
 			memcpy(patch_bytes + 0x2, &allocAddress, 8);
 
-			// call num => working_bytes. (WIN_10_11)
-			if (osBuildNumber <= 18363) {       // win10 1909 and former: 0x1047
-				working_bytes[0x4] = '\x47';
-			} else if (osBuildNumber < 22000) {  // win10 after 1909: 0x1044
-				working_bytes[0x4] = '\x44';
-			} else { // osBuildNumber >= 22000  // win11: 0x103f
-				working_bytes[0x4] = '\x3f';
-			}
+			// syscall num => working_bytes.
+			memcpy(working_bytes + 0x4, &callNum_this, 4);
+
+			// delay => working_bytes.
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+			memcpy(working_bytes + 0x25, &delay_param, 4);
 
 			// returnAddress => working_bytes.
 			ULONG64	returnAddress = vmStartAddress + target_offset + 0xc;
@@ -1523,7 +1637,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 		}
 		
 
-	} else { // if WIN_7
+	} else { // if WIN_7 / WIN_8 / WIN_81
 
 		CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
 		/*
@@ -1535,10 +1649,9 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 			a:  c3                      ret        ; previous rip.
 		*/
 
-		// if WIN7, use 0x31 to delay.
-		working_bytes[0x2f] = '\x31';
-
 		if (switches.GetAsyncKeyState) {
+
+			DWORD callNum_this = syscallTable["GetAsyncKeyState"];
 
 			// allocate vm.
 			PVOID allocAddress = NULL;
@@ -1551,8 +1664,12 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 			// allocAddress => patch_bytes.
 			memcpy(patch_bytes + 0x1, &allocAddress, 4);
 
-			// call num => working_bytes. (WIN_7)
-			working_bytes[0x4] = '\x44';
+			// syscall num => working_bytes.
+			memcpy(working_bytes + 0x4, &callNum_this, 4);
+
+			// delay => working_bytes.
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+			memcpy(working_bytes + 0x25, &delay_param, 4);
 
 			// returnAddress => working_bytes.
 			ULONG64	returnAddress = vmStartAddress + target_offset + 0x7;
@@ -1581,6 +1698,15 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 	if (!status) {
 		systemMgr.log(driver.errorCode, "patch_user32(): writeVM() failed : %s", driver.errorMessage);
 		return false;
+	}
+	
+	// clear cpu instruction cache.
+	auto hProc = OpenProcess(PROCESS_ALL_ACCESS, NULL, pid);
+	if (hProc) {
+		if (!FlushInstructionCache(hProc, (PVOID)vmStartAddress, 0x4000)) {
+			systemMgr.log("patch_user32(): FlushInstructionCache() failed.");
+		}
+		CloseHandle(hProc);
 	}
 
 
@@ -1698,7 +1824,7 @@ PatchManager::_findRip(bool useAll) {
 	return result;
 }
 
-void PatchManager::_outVmbuf(ULONG64 vmStart, const CHAR* vmbuf) {  // unused: for dbg only
+void PatchManager::_outVmbuf(ULONG64 vmStart, const char* vmbuf) {  // unused: for dbg only
 
 	char title[0x1000];
 	time_t t = time(0);
