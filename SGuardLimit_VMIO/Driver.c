@@ -36,7 +36,7 @@ typedef struct {
 } VMIO_REQUEST;
 
 
-// ZwProtectVirtualMemory (win7未导出符号)
+// ZwProtectVirtualMemory (win7/win8未导出符号)
 NTSTATUS (NTAPI* ZwProtectVirtualMemory)(
 	__in HANDLE ProcessHandle,
 	__inout PVOID* BaseAddress,
@@ -72,7 +72,7 @@ NTSTATUS KeReadVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID Targe
 	// 尽管MmCopyVirtualMemory也可以拷贝内核空间的分页内存，但若触碰到内核非分页区域或无页表映射区域，
 	// 由于对应的内核页表项不存在，触发内核态page fault后缺页中断无法处理，ntos会将之判定为严重错误，这将引发BSOD。
 	// 相应的，若触发了用户态page fault，即使无法解决缺页，也只是MmCopyVirtualMemory返回失败而已。
-	ULONG64 mask = (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) ? 
+	ULONG64 mask = (OSVersion.dwMajorVersion == 6 && (OSVersion.dwMinorVersion == 1 || OSVersion.dwMinorVersion == 2)) ?
 		(ULONG64)SourceAddress >> 44 : (ULONG64)SourceAddress >> 48;
 
 	if (mask) {
@@ -86,7 +86,7 @@ NTSTATUS KeReadVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID Targe
 
 NTSTATUS KeWriteVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID TargetAddress, SIZE_T Size) {
 	
-	ULONG64 mask = (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) ?
+	ULONG64 mask = (OSVersion.dwMajorVersion == 6 && (OSVersion.dwMinorVersion == 1 || OSVersion.dwMinorVersion == 2)) ?
 		(ULONG64)TargetAddress >> 44 : (ULONG64)TargetAddress >> 48;
 
 	if (mask) {
@@ -165,12 +165,66 @@ void SearchVad_NT61(PSEARCH_RESULT result, PMMVAD_7 pVad) { // assert: pVad != N
 	}
 }
 
+void SearchVad_NT62(PSEARCH_RESULT result, PMMVAD_8 pVad) { // assert: pVad != NULL
+
+	result->Found = FALSE;
+
+
+	if (pVad->Core.u.VadFlags.VadType == VadImageMap) {
+
+		if (pVad->Subsection && pVad->Subsection->ControlArea && pVad->Subsection->ControlArea->FilePointer.Object) {
+
+			PFILE_OBJECT pFileObj = (PFILE_OBJECT)(pVad->Subsection->ControlArea->FilePointer.Value & ~0xf);
+			PUNICODE_STRING pImagePath = &pFileObj->FileName;
+
+			USHORT imageIndex = -1;
+			for (USHORT i = 0; i < pImagePath->Length / 2; i++) {
+				if (pImagePath->Buffer[i] == L'\\') {
+					imageIndex = i;
+				}
+			}
+			imageIndex++;
+
+			if (imageIndex != 0) {
+
+				wchar_t* pImageName = ExAllocatePoolWithTag(NonPagedPool, 512, '9d3H');
+
+				if (pImageName) {
+
+					RtlZeroMemory(pImageName, 512);
+					for (USHORT i = 0; i < 255 && imageIndex < pImagePath->Length / 2; i++, imageIndex++) {
+						pImageName[i] = pImagePath->Buffer[imageIndex];
+					}
+
+					if (0 == _wcsicmp(pImageName, TargetImageName)) {
+
+						result->Found = TRUE;
+						result->VirtualAddress[0] = (ULONG64)pVad->Core.StartingVpn << 12;
+						result->VirtualAddress[1] = (ULONG64)pVad->Core.EndingVpn << 12;
+					}
+
+					ExFreePoolWithTag(pImageName, '9d3H');
+				}
+			}
+		}
+	}
+
+	if (!result->Found && pVad->Core.VadNode.LeftChild) {
+		SearchVad_NT62(result, (PMMVAD_8)pVad->Core.VadNode.LeftChild);
+	}
+
+	if (!result->Found && pVad->Core.VadNode.RightChild) {
+		SearchVad_NT62(result, (PMMVAD_8)pVad->Core.VadNode.RightChild);
+	}
+}
+
 void SearchVad_NT10(PSEARCH_RESULT result, PMMVAD_10 pVad) { // assert: pVad != NULL
 
 	result->Found = FALSE;
 
 
 	// [note] NT10需要依据BuildNumber区分VadType的偏移
+	// 如果是NT6.3，同样满足9600 <= 17763。
 	ULONG VadType;
 	if (OSVersion.dwBuildNumber <= 17763) {
 		VadType = pVad->Core.u.VadFlags._17763.VadType;
@@ -207,7 +261,7 @@ void SearchVad_NT10(PSEARCH_RESULT result, PMMVAD_10 pVad) { // assert: pVad != 
 					if (0 == _wcsicmp(pImageName, TargetImageName)) {
 
 						result->Found = TRUE;
-						// [note] NT10(以及NT6.2, win8.1)使用额外的字节表示第44~47位虚拟地址，且Vpn字段为32位。
+						// [note] NT6.3和后续的NT10使用额外的字节表示第44~47位虚拟地址，且Vpn字段为32位。
 						// 而NT6.1的Vpn字段为64位，但仅使用了低32位，它的44~47位虚拟地址从未被使用。
 						result->VirtualAddress[0] = ((ULONG64)pVad->Core.StartingVpnHigh << 44) | ((ULONG64)pVad->Core.StartingVpn << 12);
 						result->VirtualAddress[1] = ((ULONG64)pVad->Core.EndingVpnHigh << 44) | ((ULONG64)pVad->Core.EndingVpn << 12);
@@ -227,7 +281,6 @@ void SearchVad_NT10(PSEARCH_RESULT result, PMMVAD_10 pVad) { // assert: pVad != 
 		SearchVad_NT10(result, (PMMVAD_10)pVad->Core.VadNode.Right);
 	}
 }
-
 
 
 // 各种回调函数
@@ -332,8 +385,8 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 			PVOID BaseAddress = NULL;
 
-			if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) {
-				// 对于win7，约束堆的起始地址在32bit以内，以方便构造shellcode。注：参数ZeroBits的msdn描述有误，详见：
+			if (OSVersion.dwMajorVersion == 6) {
+				// 对于win7/win8/win8.1，约束堆的起始地址在32bit以内，以方便构造shellcode。注：参数ZeroBits的msdn描述有误，详见：
 				// https://stackoverflow.com/questions/50429365/what-is-the-most-reliable-portable-way-to-allocate-memory-at-low-addresses-on
 				Status = ZwAllocateVirtualMemory(hProcess, &BaseAddress, 0x7FFFFFFF, &allocSize, MEM_COMMIT, PAGE_EXECUTE);
 			} else {
@@ -400,20 +453,27 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			wcscpy_s(TargetImageName, 256, (wchar_t*)Input->data);
 
 
-			// 使用Vad搜索内存模块（依据不同操作系统版本，使用的结构偏移有区别）
+			// 搜索目标进程的Vad树以获取在应用层被隐藏的模块位置
 			SEARCH_RESULT result;
 			RtlZeroMemory(&result, sizeof(result));
 
 			if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) { // if win7
 
-				PMM_AVL_TABLE pAvlEntry = (PMM_AVL_TABLE)((ULONG64)pEProcess + VadRoot);
+				PMM_AVL_TABLE_7 pAvlEntry = (PMM_AVL_TABLE_7)((ULONG64)pEProcess + VadRoot);
 				PMMVAD_7 root = (PMMVAD_7)(&pAvlEntry->BalancedRoot);
 
-				if (root) {
-					SearchVad_NT61(&result, root);
-				}
+				SearchVad_NT61(&result, root);
 
-			} else { // if win10, 11
+
+			} else if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 2) { // if win8
+
+				PMM_AVL_TABLE_8 pAvlEntry = (PMM_AVL_TABLE_8)((ULONG64)pEProcess + VadRoot);
+				PMMVAD_8 root = (PMMVAD_8)(&pAvlEntry->BalancedRoot);
+
+				SearchVad_NT62(&result, root);
+
+
+			} else { // if win8.1, win10, win11
 
 				PRTL_AVL_TREE pAvlEntry = (PRTL_AVL_TREE)((ULONG64)pEProcess + VadRoot);
 				PMMVAD_10 root = (PMMVAD_10)(pAvlEntry->Root);
@@ -520,11 +580,18 @@ NTSTATUS DriverEntry(
 
 
 	// 获取VadRoot在_EPROCESS中的偏移
-	if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) { // Win 7 (SP0, SP1)
+	if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) {  // Win 7 (SP0, SP1)
 		VadRoot = 0x448;
 
+	} else if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 2) {  // Win 8
+		VadRoot = 0x590;
+
+	} else if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 3) {  // Win 8.1
+		VadRoot = 0x5D8;
+
 	} else if (OSVersion.dwMajorVersion == 10 && OSVersion.dwMinorVersion == 0) {
-		if (OSVersion.dwBuildNumber < 22000) { // Win 10
+
+		if (OSVersion.dwBuildNumber < 22000) {  // Win 10
 			switch (OSVersion.dwBuildNumber) {
 			case 10240:
 				VadRoot = 0x608;
@@ -545,44 +612,46 @@ NTSTATUS DriverEntry(
 				VadRoot = 0x7D8;
 				break;
 			}
-		} else { // if (OSVersion.dwBuildNumber <= 22621) Win 11 latest (22.6.28 beta branch)
+
+		} else { // if (OSVersion.dwBuildNumber <= 22621)  Win 11 latest (22.6.28 beta branch)
 			VadRoot = 0x7D8;
 		}
 	}
 
 	if (!VadRoot) {
-		return STATUS_UNSUCCESSFUL;
+		return STATUS_NOT_SUPPORTED;
 	}
 
 
-	// 手动获取ZwProtectVirtualMemory的位置（NT6.1没有导出）
+	// 手动获取ZwProtectVirtualMemory的地址，该函数仅在win8.1（NT6.3）和之后的系统版本导出。
 	UNICODE_STRING ZwProtectVirtualMemoryName;
 	RtlInitUnicodeString(&ZwProtectVirtualMemoryName, L"ZwProtectVirtualMemory");
 	ZwProtectVirtualMemory = MmGetSystemRoutineAddress(&ZwProtectVirtualMemoryName);
 
 	if (!ZwProtectVirtualMemory) {
 
-		// 如果未导出目标函数，且不是win7（NT6.1），则退出。
-		if (!(OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1)) {
-			return STATUS_UNSUCCESSFUL;
+		// 如果未导出目标函数，且不是win7（NT6.1）或win8（NT6.2），则退出。
+		if (!(OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) &&
+			!(OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 2)) {
+			return STATUS_NOT_IMPLEMENTED;
 		}
 
-		// 若是win7，则尝试手动获取ZwProtectVirtualMemory的虚拟地址。
-		// 幸运的是，尽管win7的nt内核没有导出所有Zw函数，但所有SSDT中标明的服务都在内核中存在镜像入口，
+		// 尝试手动获取ZwProtectVirtualMemory的虚拟地址。
+		// 幸运的是，尽管nt内核没有导出所有Zw函数，但所有SSDT中标明的服务都在内核中存在镜像入口，
 		// 此外所有的Zw函数都按0x20字节对齐，且依据SSDT中的顺序映射到连续的虚拟内存空间。
 		// 只要得到一个必定导出的Zw函数和目标Zw函数的系统服务号，就可以得到目标Zw函数的入口地址。
 
-		// 获取ZwClose的入口地址，该函数必定导出。
+		// 获取系统服务 ZwClose 的入口地址，该函数必定导出。
 		UNICODE_STRING ZwCloseName;
 		RtlInitUnicodeString(&ZwCloseName, L"ZwClose");
 		ULONG64 ZwClose = (ULONG64)MmGetSystemRoutineAddress(&ZwCloseName);
 
-		// 获取ZwClose的系统服务号。
-		// 由于我们知道NT6.1的ZwClose服务号，故这一步可省略。
-		ULONG ZwCloseId = *(ULONG*)(ZwClose + 0x15);
-
-		// 索引到0号系统服务的地址，再索引到0x4D号系统服务的地址。
-		ZwProtectVirtualMemory = (PVOID)(ZwClose - 0x20 * ZwCloseId + 0x20 * 0x4D);
+		// 依据ZwClose的地址，求解ZwProtectVirtualMemory的地址。
+		if (OSVersion.dwMinorVersion == 1) {
+			ZwProtectVirtualMemory = (PVOID)(ZwClose - 0x20 * 0xC + 0x20 * 0x4D); // NT 6.1
+		} else {
+			ZwProtectVirtualMemory = (PVOID)(ZwClose - 0x20 * 0xD + 0x20 * 0x4E); // NT 6.2
+		}
 	}
 
 
