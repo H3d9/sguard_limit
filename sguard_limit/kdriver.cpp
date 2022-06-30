@@ -10,7 +10,7 @@
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
-	: driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
+	: driverReady(false), driverInCurrentDir(true), win11ForceEnable(false), win11CurrentBuild(0),
 	  sysfile{}, hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
 	  errorMessage_ptr(new CHAR[1024]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
@@ -24,12 +24,9 @@ KernelDriver& KernelDriver::getInstance() {
 	return kernelDriver;
 }
 
-bool KernelDriver::init(const std::string& sysfileDir) {
+bool KernelDriver::init(const std::string& profileDir) {
 
 	_resetError();
-
-	sysfile = sysfileDir + "\\SGuardLimit_VMIO.sys";
-
 
 	// import certificate key.
 	HKEY       key;
@@ -123,40 +120,52 @@ bool KernelDriver::init(const std::string& sysfileDir) {
 	}
 
 	if (status != ERROR_SUCCESS) {
-		if (IDYES == MessageBox(NULL, "创建注册表项失败，你可能需要手动安装证书。\n要打开证书下载页面么？", "注意", MB_YESNO)) {
+		if (IDYES == MessageBox(NULL, "driver::init(): 创建注册表项失败，你可能需要手动安装证书。\n要打开证书下载页面么？", "注意", MB_YESNO)) {
 			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_SHOW);
 		}
 	}
 
 
-	// copy sys file to profile dir (if file exists).
-	auto     sysfilePath    = sysfile.c_str();
-	auto     currentPath    = ".\\SGuardLimit_VMIO.sys";
-	FILE*    fp;
-
-	fp = fopen(currentPath, "rb");
-
-	if (fp != NULL) {
-		fclose(fp);
-		if (!CopyFile(currentPath, sysfilePath, FALSE)) {
-			_recordError(GetLastError(), 
-				"拷贝文件失败：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
-				"你可以把附带的sys文件手动放到以下路径：\n\n%s", sysfileDir.c_str());
-			return driverReady = false;
-		} else {
-			DeleteFile(currentPath);
-		}
+	// get sys file location.
+	CHAR sysCurrentPath[0x1000];
+	GetModuleFileName(NULL, sysCurrentPath, 0x1000);
+	if (auto p = strrchr(sysCurrentPath, '\\')) {
+		strcpy(p, "\\SGuardLimit_VMIO.sys");
+	} else {
+		_recordError(0, "driver::init(): 获取当前目录失败。");
+		return false;
 	}
 
-	fp = fopen(sysfilePath, "rb");
+	CHAR sysProfilePath[0x1000];
+	strcpy(sysProfilePath, profileDir.c_str());
+	strcat(sysProfilePath, "\\SGuardLimit_VMIO.sys");
 
-	if (fp == NULL) {
-		_recordError(GetLastError(), 
-			"找不到文件：SGuardLimit_VMIO.sys，与之相关的模块将无法使用。\n"
-			"你可以把附带的sys文件手动放到以下路径：\n\n%s", sysfileDir.c_str());
-		return driverReady = false;
-	} else {
+	// 1. check current directory.
+	if (auto fp = fopen(sysCurrentPath, "rb")) {
+
+		// found: sys file located at current dir.
 		fclose(fp);
+		sysfile = sysCurrentPath;
+		driverInCurrentDir = true;
+
+	} else {
+
+		// 2. check profile directory.
+		if (fp = fopen(sysProfilePath, "rb")) {
+
+			// found: sys file located at profile dir.
+			fclose(fp);
+			sysfile = sysProfilePath;
+			driverInCurrentDir = false;
+		
+		} else {
+
+			// there is no sys file, show error.
+			_recordError(GetLastError(),
+				"driver::init(): 找不到文件“SGuardLimit_VMIO.sys”，与之相关的模块将无法使用。\n\n"
+				"解决办法：关闭杀毒/禁用defender，或者将限制器所在目录加入杀毒信任区，然后重新解压即可。");
+			return driverReady = false;
+		}
 	}
 
 
@@ -177,7 +186,7 @@ bool KernelDriver::load() {
 		hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
 		
 		if (hDriver == INVALID_HANDLE_VALUE) {
-			_recordError(GetLastError(), "CreateFile失败。");
+			_recordError(GetLastError(), "driver::load(): CreateFile失败。");
 			return false;
 		}
 	}
@@ -220,7 +229,7 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
+			_recordError(request.errorCode, "driver::readVM(): from kernel: %s", request.errorFunc);
 			return false;
 		}
 
@@ -256,7 +265,7 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
+			_recordError(request.errorCode, "driver::writeVM(): from kernel: %s", request.errorFunc);
 			return false;
 		}
 	}
@@ -277,7 +286,7 @@ bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::allocVM(): from kernel: %s", request.errorFunc);
 		return false;
 	}
 
@@ -299,7 +308,7 @@ bool KernelDriver::suspend(DWORD pid) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::suspend(): from kernel: %s", request.errorFunc);
 		return false;
 	}
 
@@ -319,7 +328,7 @@ bool KernelDriver::resume(DWORD pid) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::resume(): from kernel: %s", request.errorFunc);
 		return false;
 	}
 
@@ -341,7 +350,7 @@ bool KernelDriver::searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "kernelDriver: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::searchVad(): from kernel: %s", request.errorFunc);
 		return false;
 	}
 

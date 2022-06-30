@@ -251,12 +251,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			}
 
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_KILLACELOADER,   "游戏启动60秒后，结束ace-loader");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_HIDESYSFILE,     "将驱动文件隐藏到系统用户目录");
 			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_UPDATEPAGE, "检查更新【当前版本：" VERSION "】");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_ABOUT,           "查看说明");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_SOURCEPAGE, "查看源代码");
 			if (g_KillAceLoader) {
 				CheckMenuItem(hMenuOthers, IDM_KILLACELOADER, MF_CHECKED);
+			}
+			if (!driver.driverInCurrentDir) {
+				CheckMenuItem(hMenuOthers, IDM_HIDESYSFILE, MF_CHECKED);
 			}
 
 
@@ -720,6 +724,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					g_KillAceLoader = true;
 				}
 				configMgr.writeConfig();
+				break;
+			case IDM_HIDESYSFILE:
+			{
+				char buf[0x1000];
+				sprintf(buf, "点击“是”可以将“SGuardLimit_VMIO.sys”%s（不影响使用）。\n\n建议你先关游戏再进行该操作。",
+					driver.driverInCurrentDir ? "隐藏到系统用户目录" : "恢复到当前目录");
+				if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
+
+					// get path, same as driver::init().
+					CHAR sysCurrentPath[0x1000];
+					GetModuleFileName(NULL, sysCurrentPath, 0x1000);
+					if (auto p = strrchr(sysCurrentPath, '\\')) {
+						strcpy(p, "\\SGuardLimit_VMIO.sys");
+					} else {
+						systemMgr.panic(0, "获取当前目录失败。");
+						break;
+					}
+
+					CHAR sysProfilePath[0x1000];
+					strcpy(sysProfilePath, systemMgr.getProfileDir().c_str());
+					strcat(sysProfilePath, "\\SGuardLimit_VMIO.sys");
+
+					// move sys file through path.
+					auto dirSrc = sysCurrentPath, dirDst = sysProfilePath;  // hide: current => profile 
+					if (!driver.driverInCurrentDir) {
+						dirSrc = sysProfilePath; dirDst = sysCurrentPath;   // show: profile => current
+					}
+
+					if (!MoveFileEx(dirSrc, dirDst, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+						systemMgr.panic("移动文件失败。");
+						break;
+					}
+
+					// re-init kdriver, same as main entry.
+					if (!driver.init(systemMgr.getProfileDir())) {
+
+						limitMgr.useKernelMode = false;
+						configMgr.writeConfig();
+						systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+					}
+				}
+			}
 				break;
 			case IDM_MORE_UPDATEPAGE:
 				ShellExecute(0, "open", "https://bbs.colg.cn/thread-8087898-1-1.html", 0, 0, SW_SHOW);

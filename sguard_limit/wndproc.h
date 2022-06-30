@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "22.6.29 万圣节特别版"
+#define VERSION             "22.6.30 万圣节特别版"
 #define MEMPATCH_VERSION    "V4.5"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
@@ -48,6 +48,7 @@
 
 // other commands
 #define IDM_KILLACELOADER    1000
+#define IDM_HIDESYSFILE      1001
 
 #define IDM_MORE_UPDATEPAGE  1100
 #define IDM_MORE_SOURCEPAGE  1101

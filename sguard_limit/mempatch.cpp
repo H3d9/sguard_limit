@@ -24,7 +24,7 @@ extern win32SystemManager&    systemMgr;
 PatchManager  PatchManager::patchManager;
 
 PatchManager::PatchManager()
-	: patchEnabled(true), patchPid(0), patchFailCount(), 
+	: patchEnabled(true), patchPid(0), patchFailCount(),
 	  patchSwitches{}, patchStatus{}, patchDelay{},
 	  patchDelayRange {
 	   { 1,   1500, 2000 },   /* NtQueryVirtualMemory */

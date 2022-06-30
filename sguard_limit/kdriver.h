@@ -23,7 +23,7 @@ public:
 	static KernelDriver& getInstance();
 
 public:
-	bool     init(const std::string& sysfileDir);
+	bool     init(const std::string& profileDir);
 	bool     load();
 	void     unload();
 	bool     readVM(DWORD pid, PVOID out, PVOID targetAddress);
@@ -34,12 +34,14 @@ public:
 	bool     searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t* moduleName);
 
 public:
-	bool     driverReady;  // driver ready if init() success. load() & unload() is still required.
-	                       // this switch is used for decide accessibility of some menu options.
-	bool     win11ForceEnable;  // assert: use same kernel offset, despite of the risk of BSOD!
-	                            // this switch is loaded from config, to determine whether driverReady is true.
-	DWORD    win11CurrentBuild; // current build number on win11. used to alert user when system updated.
-
+	bool     driverReady;    // true if init() success, which means load() & unload() is ready to use.
+	                         // this switch is used for decide accessibility of some menu options.
+	bool     driverInCurrentDir;  // whether the kernel driver found from current dir.
+	                              // init() will set this flag; hide/show sys file will behave based from this.
+	bool     win11ForceEnable;    // assert: use same kernel offset, despite of the risk of BSOD!
+	                              // this switch is loaded from config, to determine whether driverReady is true.
+	DWORD    win11CurrentBuild;   // current build number on win11.
+	                              // this switch is loaded from config, to alert user after system updated.
 
 private:
 	bool     _startService();
