@@ -612,6 +612,9 @@ NTSTATUS DriverEntry(
 				VadRoot = 0x7D8;
 				break;
 			}
+			if (OSVersion.dwBuildNumber > 19044) { // Win 10 latest (22.6.24 beta, 19045)
+				VadRoot = 0x7D8;
+			}
 
 		} else { // if (OSVersion.dwBuildNumber <= 22621)  Win 11 latest (22.6.28 beta branch)
 			VadRoot = 0x7D8;
