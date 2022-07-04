@@ -24,7 +24,7 @@ KernelDriver& KernelDriver::getInstance() {
 	return kernelDriver;
 }
 
-bool KernelDriver::init(const std::string& profileDir) {
+bool KernelDriver::init(const std::string& currentDir, const std::string& profileDir) {
 
 	_resetError();
 
@@ -127,16 +127,11 @@ bool KernelDriver::init(const std::string& profileDir) {
 
 
 	// get sys file location.
-	CHAR sysCurrentPath[0x1000];
-	GetModuleFileName(NULL, sysCurrentPath, 0x1000);
-	if (auto p = strrchr(sysCurrentPath, '\\')) {
-		strcpy(p, "\\SGuardLimit_VMIO.sys");
-	} else {
-		_recordError(0, "driver::init(): 获取当前目录失败。");
-		return false;
-	}
+	CHAR sysCurrentPath[1024];
+	strcpy(sysCurrentPath, currentDir.c_str());
+	strcat(sysCurrentPath, "\\SGuardLimit_VMIO.sys");
 
-	CHAR sysProfilePath[0x1000];
+	CHAR sysProfilePath[1024];
 	strcpy(sysProfilePath, profileDir.c_str());
 	strcat(sysProfilePath, "\\SGuardLimit_VMIO.sys");
 
@@ -214,12 +209,6 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 	_resetError();
 
 
-	if ((ULONG64)targetAddress & ((ULONG64)0xffff << 48)) { // mask: 0xFFFF...is kernel space. (win7=0xfffff...)
-		_recordError(0, "driver::readVM(): 无效的虚拟地址：0x%llx。", targetAddress);
-		return false;
-	}
-
-
 	for (auto page = 0; page < 4; page++) {
 
 		request.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
@@ -246,12 +235,6 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 	DWORD         Bytes;
 
 	_resetError();
-
-
-	if ((ULONG64)targetAddress & ((ULONG64)0xffff << 48)) {
-		_recordError(0, "driver::writeVM(): 无效的虚拟地址：0x%llx。", targetAddress);
-		return false;
-	}
 
 
 	for (auto page = 0; page < 4; page++) {

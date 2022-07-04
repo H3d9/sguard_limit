@@ -121,15 +121,18 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：新增支持Win8/8.1。\n\n"
-			"1. 新增限制DNF更新110后SG更新导致的额外占用CPU。\n"
-			"2. 增加生效速度并解决旧版某些情况下限制不生效的问题。\n"
-			"3. 加了一些黑魔法 :)\n\n\n"
+			"1. 修复Win10旧版初始化失败的问题。\n"
+			"2. 限制DNF更新110后SG更新导致的额外占用CPU。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
 			"2. 若你第一次使用，请务必仔细阅读说明（可在右下角托盘菜单中找到）\n"
 			"   如果看了说明仍未解决你的问题，可以加群反馈：775176979",
 			VERSION "  by: @H3d9", MB_OK);
+		MessageBox(0,
+			"新版限制器默认不自动移动SYS文件到系统目录；\n"
+			"如果你想像旧版一样隐藏SYS文件，可以手动点一下右键菜单的其他选项。",
+			"提示", MB_OK);
 	}
 
 
@@ -153,7 +156,7 @@ INT WINAPI WinMain(
 	} else {
 
 		status =
-		driver.init(systemMgr.getProfileDir());
+		driver.init(systemMgr.getCurrentDir(), systemMgr.getProfileDir());
 
 		// if driver init failed, and selected related options, show panic.
 		if (!status && DriverOptionsSelected()) {
@@ -217,7 +220,8 @@ INT WINAPI WinMain(
 		systemMgr.panic(0, "“内存补丁 " MEMPATCH_VERSION "”模块初始化失败。\n"
 		                   "查看%s\\log.txt以获得更多信息。", systemMgr.getProfileDir().c_str());
 		
-		// this rarely happens, disable kdriver to stop user from continue.
+		// this rarely happens, disable kdriver to stop user from continue directly.
+		// (even it's considered usable after click move sys file)
 		driver.driverReady = false;
 	}
 

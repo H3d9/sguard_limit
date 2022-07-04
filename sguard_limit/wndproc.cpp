@@ -733,16 +733,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
 
 					// get path, same as driver::init().
-					CHAR sysCurrentPath[0x1000];
-					GetModuleFileName(NULL, sysCurrentPath, 0x1000);
-					if (auto p = strrchr(sysCurrentPath, '\\')) {
-						strcpy(p, "\\SGuardLimit_VMIO.sys");
-					} else {
-						systemMgr.panic(0, "获取当前目录失败。");
-						break;
-					}
+					CHAR sysCurrentPath[1024];
+					strcpy(sysCurrentPath, systemMgr.getCurrentDir().c_str());
+					strcat(sysCurrentPath, "\\SGuardLimit_VMIO.sys");
 
-					CHAR sysProfilePath[0x1000];
+					CHAR sysProfilePath[1024];
 					strcpy(sysProfilePath, systemMgr.getProfileDir().c_str());
 					strcat(sysProfilePath, "\\SGuardLimit_VMIO.sys");
 
@@ -758,7 +753,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					}
 
 					// re-init kdriver, same as main entry.
-					if (!driver.init(systemMgr.getProfileDir())) {
+					if (!driver.init(systemMgr.getCurrentDir(), systemMgr.getProfileDir())) {
 
 						limitMgr.useKernelMode = false;
 						configMgr.writeConfig();

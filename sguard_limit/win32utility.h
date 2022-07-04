@@ -97,6 +97,7 @@ public:
 	void       panic(DWORD errorCode, const char* format, ...);
 	
 public:
+	const std::string&  getCurrentDir();     // xref: kdriver
 	const std::string&  getProfileDir();     // xref: config, kdriver
 	OSVersion           getSystemVersion();  // xref: mempatch
 	DWORD               getSystemBuildNum(); // xref: mempatch
@@ -124,5 +125,6 @@ private:
 	
 	NOTIFYICONDATA      icon;
 	
+	std::string         currentDir;
 	std::string         profileDir;
 };

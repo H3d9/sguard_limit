@@ -23,7 +23,7 @@ public:
 	static KernelDriver& getInstance();
 
 public:
-	bool     init(const std::string& profileDir);
+	bool     init(const std::string& currentDir, const std::string& profileDir);
 	bool     load();
 	void     unload();
 	bool     readVM(DWORD pid, PVOID out, PVOID targetAddress);

@@ -144,8 +144,8 @@ bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadLis
 win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
-	: hWnd(NULL), hInstance(NULL),
-	  hProgram(NULL), osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{}, profileDir{} {}
+	: hInstance(NULL), hProgram(NULL), hWnd(NULL),
+	  osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{}, currentDir{}, profileDir{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -197,13 +197,21 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 	// initialize path vars.
 	HANDLE       hToken;
-	CHAR         buf         [1024];
+	CHAR         buf [1024]  = {};
 	DWORD        size        = 1024;
+
+	GetModuleFileName(NULL, buf, size);
+	if (auto p = strrchr(buf, '\\')) {
+		*p = '\0';
+		currentDir = buf;
+	} else {
+		panic("获取当前可执行文件目录失败：GetModuleFileName = %s", buf);
+		return false;
+	}
 
 	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
 	GetUserProfileDirectory(hToken, buf, &size);
 	CloseHandle(hToken);
-
 	profileDir = std::string(buf) + "\\AppData\\Roaming\\sguard_limit";
 
 
@@ -405,6 +413,10 @@ void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 	va_end(arg);
 
 	_panic(errorCode, buf);
+}
+
+const std::string& win32SystemManager::getCurrentDir() {
+	return currentDir;
 }
 
 const std::string& win32SystemManager::getProfileDir() {

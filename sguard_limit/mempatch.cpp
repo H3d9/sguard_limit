@@ -53,9 +53,15 @@ bool PatchManager::init() {
 
 	if (systemMgr.getSystemVersion() == OSVersion::WIN_10_11) {
 		syscallTable["NtUserGetAsyncKeyState"] = _getSyscallNumber("NtUserGetAsyncKeyState", "win32u.dll");
+		// win10 <= 10586 has no win32u (but long jmp to a syscall stub set in user32, not nearby);
+		// in that case use hard code (old design has deprecated and won't change after all)...
+		if (0 == syscallTable["NtUserGetAsyncKeyState"] && systemMgr.getSystemBuildNum() <= 10586) {
+			syscallTable["NtUserGetAsyncKeyState"] = 0x1047;
+		}
 	} else {
 		syscallTable["GetAsyncKeyState"] = _getSyscallNumber("GetAsyncKeyState", "User32.dll");
 	}
+	
 
 	// check if there's any fail while getting syscall numbers.
 	for (auto& it : syscallTable) {
@@ -224,7 +230,7 @@ DWORD PatchManager::_getSyscallNumber(const char* funcName, const char* libName)
 		if (procAddr) {
 
 			// if is Nt/Zw func (__kernelentry), pattern is at header+0.
-			// otherwise, search in a small range (win7/8/8.1, in user32).
+			// otherwise, search nearby (win7/8/8.1, in user32; ignore win10 <= 10586).
 			for (auto rip = procAddr; rip < procAddr + 0x200; rip++) {
 				if (0 == memcmp(rip, "\x4c\x8b\xd1\xb8", 4) && 0 == memcmp(rip + 6, "\x00\x00", 2)) {
 					callNumber = *(DWORD*)(rip + 4);
