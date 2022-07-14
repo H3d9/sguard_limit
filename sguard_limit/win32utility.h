@@ -105,6 +105,7 @@ public:
 public:
 	void       raiseCleanThread(); // util: get rid of GameLoader.exe
 
+
 private:
 	ATOM     _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);
 	void     _log(DWORD code, const char* logbuf);

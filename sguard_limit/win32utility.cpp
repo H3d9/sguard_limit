@@ -2,7 +2,7 @@
 #include <tlhelp32.h>
 #include <time.h>
 #include <thread>
-#include <memory>
+#include <atomic>
 #include <filesystem>
 #include "win32utility.h"
 
@@ -431,49 +431,64 @@ void win32SystemManager::raiseCleanThread() {
 
 	std::thread cleanThread([this] () {
 
-		// clean thread: 1 min after game starts, end "ace-loader" process.
-		// [note] former thread(s) will give up cleaning if game has re-launched.
-		log("clean thread %u: created.", GetCurrentThreadId());
+		DWORD tid = GetCurrentThreadId();
 
+		// check if clean thread already exist. in that case exit.
+		static std::atomic<DWORD> lock = 0;
+		DWORD expected = 0;
+		
+		// [note] make atomic operation at instruction level (e.g. x86 lock prefix),
+		// is more fast than sync with mutex.
+		if (lock.compare_exchange_strong(expected, tid)) {
+			log("clean thread %u: lock acquired.", tid);
+
+		} else {
+			log("clean thread %u: lock is now held by %u, exiting.", tid, lock.load());
+			return;
+		}
+
+
+		// wait 60 secs after game (SG) start to ensure it's stable to clean.
+		// if game not exist, still wait 60 secs and make clean.
 		win32ThreadManager  threadMgr;
 		DWORD               pid            = threadMgr.getTargetPid();
 		DWORD               timeElapsed    = 0;
 		constexpr auto      timeToWait     = 60;
 
-		if (pid) {
+		while (timeElapsed < timeToWait) {
 
-			// ensure SG pid not changed before we eliminate ace-loader,
-			// here we use pid change to identify game re-launch.
-			log("clean thread %u: 1 min wait begin.", GetCurrentThreadId());
+			Sleep(5000);
+			timeElapsed += 5;
 
-			do {
-				Sleep(5000);
-				timeElapsed += 5;
-			} while ( timeElapsed < timeToWait && pid == threadMgr.getTargetPid() );
+			// every 5 secs, check SG's instance.
+			// if one of (SG not exist || SG pid alive) keeps 60 secs, kill ace-loader.
+			auto pidNow = threadMgr.getTargetPid();
 
-			// if wait success, try kill ace-loader.
-			// [note] check pid at end to ensure kill is immediately after check.
-			// check pid won't execute twice at one time, no matter wait success or fail.
-			if (timeElapsed >= timeToWait && pid == threadMgr.getTargetPid()) {
+			// if pid changed (both pid == 0 or != 0), reset timer.
+			if (pidNow != pid) {
+				log("clean thread %u: SG pid changed to %u, reset timer.", tid, pidNow);
+				pid = pidNow;
+				timeElapsed = 0;
+			}
+		};
 
-				// there maybe multiple procs, so do a while.
-				while ( threadMgr.getTargetPid("GameLoader.exe") ) {
 
-					if (threadMgr.killTarget()) {
-						log("clean thread %u: eliminated GameLoader.exe - pid %u.", GetCurrentThreadId(), threadMgr.pid);
+		// start clean ace-loader process.
+		// there maybe multiple procs, so do a while.
+		while (threadMgr.getTargetPid("GameLoader.exe")) {
 
-					} else {
-						log(GetLastError(), "clean thread %u: clean GameLoader.exe failed.", GetCurrentThreadId());
-						break;
-					}
-				}
+			if (threadMgr.killTarget()) {
+				log("clean thread %u: eliminated GameLoader.exe - pid %u.", tid, threadMgr.pid);
 
 			} else {
-				log("clean thread %u: game re-launched, aborted.", GetCurrentThreadId());
+				log(GetLastError(), "clean thread %u: clean GameLoader.exe failed.", tid);
 			}
 		}
 
-		log("clean thread %u: exit.", GetCurrentThreadId());
+
+		// release lock and exit.
+		log("clean thread %u: exit.", tid);
+		lock = 0;
 	});
 
 	cleanThread.detach();
