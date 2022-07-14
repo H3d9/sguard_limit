@@ -24,6 +24,8 @@ public:
 
 public:
 	bool     init(const std::string& currentDir, const std::string& profileDir);
+	bool     prepareSysfile();
+	
 	bool     load();
 	void     unload();
 	bool     readVM(DWORD pid, PVOID out, PVOID targetAddress);
@@ -34,14 +36,15 @@ public:
 	bool     searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t* moduleName);
 
 public:
-	bool     driverReady;    // true if init() success, which means load() & unload() is ready to use.
-	                         // this switch is used for decide accessibility of some menu options.
-	bool     driverInCurrentDir;  // whether the kernel driver found from current dir.
-	                              // init() will set this flag; hide/show sys file will behave based from this.
-	bool     win11ForceEnable;    // assert: use same kernel offset, despite of the risk of BSOD!
-	                              // this switch is loaded from config, to determine whether driverReady is true.
-	DWORD    win11CurrentBuild;   // current build number on win11.
-	                              // this switch is loaded from config, to alert user after system updated.
+	bool     loadFromProfileDir;  // [in] whether the kernel driver should be loaded from profile dir.
+								  // flag read from config; will instruct init()'s behavior.
+	bool     driverReady;         // [out] whether kdriver is ready to use.
+	                              // flag returned from init(); decide accessibility to some menu options.
+	
+	bool     win11ForceEnable;    // [xref] assert use same kernel offset, despite of the risk of bsod.
+								  // flag read from config; decide if win11 latest check is ignored.
+	DWORD    win11CurrentBuild;   // [xref] current win11 build number.
+								  // num read from config; decide if win11 has updated.
 
 private:
 	bool     _startService();
@@ -69,7 +72,14 @@ private:
 	static constexpr DWORD	 IO_RESUME     = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD	 VM_VADSEARCH  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0706, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
-	std::string     sysfile;
+	std::string     currentPath;  // path without filename
+	std::string     profilePath;  // path without filename
+
+	std::string     sysCurrentPath;  // path with sys filename
+	std::string     sysProfilePath;  // path with sys filename
+
+	std::string*    sysfile;  // real sysfile location
+
 	SC_HANDLE       hSCManager;
 	SC_HANDLE       hService;
 	HANDLE          hDriver;

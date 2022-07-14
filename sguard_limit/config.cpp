@@ -64,6 +64,14 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	}
 
 	// kdriver module
+	res = GetPrivateProfileInt("kdriver", "loadFromProfileDir", -1, profile);
+	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("kdriver", "loadFromProfileDir", "1", profile);
+		driver.loadFromProfileDir = true;
+	} else {
+		driver.loadFromProfileDir = res ? true : false;
+	}
+
 	res = GetPrivateProfileInt("kdriver", "win11ForceEnable", -1, profile);
 	if (!result || res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("kdriver", "win11ForceEnable", "0", profile);
@@ -248,7 +256,10 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, g_KillAceLoader ? "1" : "0");
 	WritePrivateProfileString("Global", "KillAceLoader", buf, profile);
+	
 
+	sprintf(buf, driver.loadFromProfileDir ? "1" : "0");
+	WritePrivateProfileString("kdriver", "loadFromProfileDir", buf, profile);
 
 	sprintf(buf, driver.win11ForceEnable ? "1" : "0");
 	WritePrivateProfileString("kdriver", "win11ForceEnable", buf, profile);

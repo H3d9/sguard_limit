@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <filesystem>
 #include "kdriver.h"
 
 #define DRIVER_VERSION  "22.6.28"
@@ -10,9 +11,10 @@
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
-	: driverReady(false), driverInCurrentDir(true), win11ForceEnable(false), win11CurrentBuild(0),
-	  sysfile{}, hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
-	  errorMessage_ptr(new CHAR[1024]), errorCode(0), errorMessage(NULL) {
+	: loadFromProfileDir(true), driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
+	  currentPath{}, profilePath{}, sysCurrentPath{}, sysProfilePath{}, sysfile(NULL),
+	  hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
+	  errorMessage_ptr(new CHAR[0x1000]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
 }
 
@@ -27,6 +29,14 @@ KernelDriver& KernelDriver::getInstance() {
 bool KernelDriver::init(const std::string& currentDir, const std::string& profileDir) {
 
 	_resetError();
+
+
+	// initialize path for locating sysfile and show hint as fail occurs.
+	currentPath    = currentDir;
+	profilePath    = profileDir;
+	sysCurrentPath = currentDir + "\\SGuardLimit_VMIO.sys";
+	sysProfilePath = profileDir + "\\SGuardLimit_VMIO.sys";
+
 
 	// import certificate key.
 	HKEY       key;
@@ -126,46 +136,104 @@ bool KernelDriver::init(const std::string& currentDir, const std::string& profil
 	}
 
 
-	// get sys file location.
-	CHAR sysCurrentPath[1024];
-	strcpy(sysCurrentPath, currentDir.c_str());
-	strcat(sysCurrentPath, "\\SGuardLimit_VMIO.sys");
+	// make sysfile ready to use.
+	return prepareSysfile();
+}
 
-	CHAR sysProfilePath[1024];
-	strcpy(sysProfilePath, profileDir.c_str());
-	strcat(sysProfilePath, "\\SGuardLimit_VMIO.sys");
+bool KernelDriver::prepareSysfile() {
 
-	// 1. check current directory.
-	if (auto fp = fopen(sysCurrentPath, "rb")) {
+	// move sysfile in/out by config flag 'loadFromProfileDir',
+	// then check sysfile's version.
 
-		// found: sys file located at current dir.
-		fclose(fp);
-		sysfile = sysCurrentPath;
-		driverInCurrentDir = true;
+	// for caller init(): call this after init()'s path initialize.
+	// for caller outside: call init() first.
+	
+	// flag 'driverReady' is set automatically here.
 
-	} else {
+	_resetError();
 
-		// 2. check profile directory.
-		if (fp = fopen(sysProfilePath, "rb")) {
+	bool              checkStatus   = true;
+	DWORD             moveStatus    = 0;
+	std::error_code   ec;
 
-			// found: sys file located at profile dir.
-			fclose(fp);
-			sysfile = sysProfilePath;
-			driverInCurrentDir = false;
+	if (loadFromProfileDir) {
+
+		// 1. should load from profile dir:
 		
+		// check current dir, and move sysfile in if exists.
+		if (std::filesystem::exists(sysCurrentPath, ec)) {
+
+			if (MoveFileEx(sysCurrentPath.c_str(), sysProfilePath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+				sysfile = &sysProfilePath;
+			} else {
+				moveStatus  = GetLastError();
+				checkStatus = false;
+			}
+			
 		} else {
 
-			// there is no sys file, show error.
-			_recordError(GetLastError(),
-				"driver::init(): 找不到文件“SGuardLimit_VMIO.sys”，与之相关的模块将无法使用。\n\n"
-				"解决办法：关闭杀毒/禁用defender，或者将限制器所在目录加入杀毒信任区，然后重新解压即可。");
-			return driverReady = false;
+			// if not exist, check profile dir.
+			if (std::filesystem::exists(sysProfilePath, ec)) {
+				sysfile = &sysProfilePath;
+
+			} else {
+				// file not exist at all.
+				checkStatus = false;
+			}
+		}
+	
+	} else {
+
+		// 2. should load from current dir:
+
+		// check current dir, and load it directly if exists.
+		if (std::filesystem::exists(sysCurrentPath, ec)) {
+			sysfile = &sysCurrentPath;
+
+		} else {
+
+			// if not exist, try move sysfile out of profile dir if exists.
+			if (std::filesystem::exists(sysProfilePath, ec)) {
+
+				if (MoveFileEx(sysProfilePath.c_str(), sysCurrentPath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+					sysfile = &sysCurrentPath;
+				} else {
+					moveStatus  = GetLastError();
+					checkStatus = false;
+				}
+
+			} else {
+				// file not exist at all.
+				checkStatus = false;
+			}
 		}
 	}
 
 
-	// check sys file version to forbid unknown fault.
-	return driverReady = _checkSysVersion();
+	// check if sysfile is ready to load.
+	if (checkStatus) {
+
+		// sysfile is ready, check version to forbid unknown fault.
+		return driverReady = _checkSysVersion();
+	
+	} else {
+
+		// sysfile not ready, record error.
+		_recordError(moveStatus,
+			"driver::prepareSysfile(): %s。\n\n"
+			"【解决办法】禁用defender，把以下2个目录加入杀毒信任区，然后重新解压。\n\n"
+			"1. %s\n"
+			"2. %s\n\n"
+			"【提示】%s。",
+			moveStatus ? "移动sys文件失败"
+			           : "找不到sys文件：“SGuardLimit_VMIO.sys”",
+			currentPath.c_str(),
+			profilePath.c_str(),
+			moveStatus ? "如果不想移动sys文件而是直接从当前目录加载它，可以取消右键菜单“其他选项→将驱动文件隐藏到系统用户目录”，并重启限制器" 
+			           : "先解压再运行，不要直接在压缩包里点开。解压目录不要包含特殊符号");
+
+		return driverReady = false;
+	}
 }
 
 bool KernelDriver::load() {
@@ -376,7 +444,7 @@ bool KernelDriver::_startService() {
 		hService = 
 		CreateService(hSCManager, "SGuardLimit_VMIO", "SGuardLimit_VMIO",
 			SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
-			sysfile.c_str(),  /* no quote here, msdn e.g. is wrong */ /* assert path is valid */
+			sysfile->c_str(),  /* no quote here, msdn e.g. is wrong */ /* assert path is valid */
 			NULL, NULL, NULL, NULL, NULL);
 
 		if (!hService) {
@@ -418,7 +486,7 @@ bool KernelDriver::_startService() {
 	if (!StartService(hService, 0, NULL)) {
 		DWORD errorCode = GetLastError();
 		DeleteService(hService);
-		SVC_ERROR_EXIT(errorCode, "StartService失败。重启电脑应该能解决该问题。");
+		SVC_ERROR_EXIT(errorCode, "StartService失败。你可以尝试关闭杀毒/禁用defender。");
 	}
 
 	return true;
@@ -443,11 +511,13 @@ void KernelDriver::_endService() {
 
 bool KernelDriver::_checkSysVersion() {
 
-	VMIO_REQUEST  request(0);
-	DWORD         Bytes;
+	// determine whether sysfile version matches.
+	// this function don't need load() & unload(). caller should call this directly.
 
 	_resetError();
 
+	VMIO_REQUEST  request(0);
+	DWORD         Bytes;
 
 	if (!this->load()) {
 		return false;
@@ -462,8 +532,8 @@ bool KernelDriver::_checkSysVersion() {
 	this->unload();
 
 	if (0 != strcmp(request.data, DRIVER_VERSION)) {
-		_recordError(0, "driver::_checkSysVersion(): 内核驱动文件“SGuardLimit_VMIO.sys”不是最新的。\n\n"
-		                "解决办法：重新下载，先把sys和exe解压至同一目录下，然后再打开，不要从压缩包里直接点开。");
+		_recordError(0, "driver::checkSysVersion(): 内核驱动文件“SGuardLimit_VMIO.sys”不是最新的。\n\n"
+			"解决办法：先把sys和exe解压至同一目录下，然后再打开，不要从压缩包里直接点开。");
 		return false;
 	}
 

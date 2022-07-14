@@ -1,11 +1,10 @@
 #include <Windows.h>
 #include <tlhelp32.h>
-#include <UserEnv.h>
 #include <time.h>
 #include <thread>
+#include <memory>
+#include <filesystem>
 #include "win32utility.h"
-
-// dependency: Userenv.lib
 
 
 // win32Thread
@@ -196,37 +195,34 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 
 	// initialize path vars.
-	HANDLE       hToken;
-	CHAR         buf [1024]  = {};
-	DWORD        size        = 1024;
+	CHAR     buf [0x1000]  = {};
+	DWORD    size          = 0x1000;
 
 	GetModuleFileName(NULL, buf, size);
 	if (auto p = strrchr(buf, '\\')) {
 		*p = '\0';
 		currentDir = buf;
 	} else {
-		panic("获取当前可执行文件目录失败：GetModuleFileName = %s", buf);
+		panic("获取当前目录失败。");
 		return false;
 	}
 
-	OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
-	GetUserProfileDirectory(hToken, buf, &size);
-	CloseHandle(hToken);
-	profileDir = std::string(buf) + "\\AppData\\Roaming\\sguard_limit";
-
+	if (ExpandEnvironmentStrings("%appdata%\\sguard_limit", buf, size)) {
+		profileDir = buf;
+	} else {
+		panic("获取系统用户目录失败。");
+		return false;
+	}
+	
 
 	// initialize profile directory.
-	DWORD pathAttr = GetFileAttributes(profileDir.c_str());
-	if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
-		if (!CreateDirectory(profileDir.c_str(), NULL)) {
-			// if create dir failed (dir contains special chars), redirect to
-			profileDir = "C:\\sguard_limit";
-			pathAttr = GetFileAttributes(profileDir.c_str());
-			if ((pathAttr == INVALID_FILE_ATTRIBUTES) || !(pathAttr & FILE_ATTRIBUTE_DIRECTORY)) {
-				if (!CreateDirectory(profileDir.c_str(), NULL)) {
-					panic("目录%s创建失败。", profileDir.c_str());
-					return false;
-				}
+	std::error_code ec;
+
+	if (!std::filesystem::is_directory(profileDir, ec)) {
+		if (!std::filesystem::create_directory(profileDir, ec)) {
+			if (!std::filesystem::create_directory(profileDir = "C:\\sguard_limit", ec)) {
+				panic(ec.value(), "创建用户数据目录失败。");
+				return false;
 			}
 		}
 	}
@@ -236,7 +232,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	auto      logfile       = profileDir + "\\log.txt";
 	DWORD     logfileSize   = GetCompressedFileSize(logfile.c_str(), NULL);
 
-	if (logfileSize != INVALID_FILE_SIZE && logfileSize > (1 << 18)) { // 256KB
+	if (logfileSize != INVALID_FILE_SIZE && logfileSize > (1 << 16)) { // 64KB
 		DeleteFile(logfile.c_str());
 	}
 
@@ -247,7 +243,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 		return false;
 	}
 
-	//setbuf(logfp, NULL);
+	setbuf(logfp, NULL);
 
 	time_t t = time(0);
 	tm* local = localtime(&t);

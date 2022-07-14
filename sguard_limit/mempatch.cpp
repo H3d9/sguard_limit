@@ -412,7 +412,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			}
 
 			if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
-				systemMgr.log("patch_ntdll(): trait not found from %%rip/block = %llx", *rip);
+				//systemMgr.log("patch_ntdll(): trait not found from %%rip/block = %llx", *rip);
 				continue;
 			} else {
 				systemMgr.log("patch_ntdll(): trait found from %%rip/block = %llx", *rip);
@@ -1492,7 +1492,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 			}
 
 			if (target_offset == -1) {
-				systemMgr.log("patch_user32(): trait not found from %%rip/block = %llx.", *rip);
+				//systemMgr.log("patch_user32(): trait not found from %%rip/block = %llx.", *rip);
 				continue;
 			} else {
 				systemMgr.log("patch_user32(): trait found from %%rip/block = %llx.", *rip);

@@ -75,6 +75,7 @@ INT WINAPI WinMain(
 	_In_ int nShowCmd) {
 
 	bool status;
+	bool firstRun;
 
 
 	// initialize system module: 
@@ -114,25 +115,21 @@ INT WINAPI WinMain(
 
 	configMgr.init(systemMgr.getProfileDir());
 
-	status =
-	configMgr.loadConfig();
+	firstRun = 
+	!configMgr.loadConfig();
 
-	if (!status) {
+	if (firstRun) {
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：新增支持Win8/8.1。\n\n"
-			"1. 修复Win10旧版初始化失败的问题。\n"
-			"2. 限制DNF更新110后SG更新导致的额外占用CPU。\n\n\n"
+			"1. 限制DNF更新110后SG更新导致的额外占用CPU。\n"
+			"2. 修复找不到模块，有时不结束ace-loader。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
 			"2. 若你第一次使用，请务必仔细阅读说明（可在右下角托盘菜单中找到）\n"
 			"   如果看了说明仍未解决你的问题，可以加群反馈：775176979",
 			VERSION "  by: @H3d9", MB_OK);
-		MessageBox(0,
-			"新版限制器默认不自动移动SYS文件到系统目录；\n"
-			"如果你想像旧版一样隐藏SYS文件，可以手动点一下右键菜单的其他选项。",
-			"提示", MB_OK);
 	}
 
 
@@ -146,7 +143,7 @@ INT WINAPI WinMain(
 
 	if (systemMgr.getSystemVersion() == OSVersion::OTHERS) {
 
-		// driver not supported on this system, don't call driver.init(). 
+		// driver not supported on this system, don't call driver.init().
 		// if selected related options, show panic.
 		if (DriverOptionsSelected()) {
 			systemMgr.panic(0, "内核驱动模块在你的操作系统上不受支持。\n"
@@ -167,7 +164,15 @@ INT WINAPI WinMain(
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 		}
 
-		// if init success but is win11 latest,
+		// if init success and first run, show hint.
+		if (status && firstRun) {
+			MessageBox(0,
+				"限制器默认会自动把SYS文件隐藏到系统目录。\n"
+				"如果你不想隐藏SYS文件，可以自己点一下右键菜单“其他选项”的相关设置。",
+				"提示", MB_OK);
+		}
+
+		// if init success but is win11 latest, show alert.
 		constexpr auto supportedLatestBuildNum = 22621;
 
 		if (status && 

@@ -259,7 +259,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			if (g_KillAceLoader) {
 				CheckMenuItem(hMenuOthers, IDM_KILLACELOADER, MF_CHECKED);
 			}
-			if (!driver.driverInCurrentDir) {
+			if (driver.loadFromProfileDir) {
 				CheckMenuItem(hMenuOthers, IDM_HIDESYSFILE, MF_CHECKED);
 			}
 
@@ -728,35 +728,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			case IDM_HIDESYSFILE:
 			{
 				char buf[0x1000];
-				sprintf(buf, "点击“是”可以将“SGuardLimit_VMIO.sys”%s（不影响使用）。\n\n建议你先关游戏再进行该操作。",
-					driver.driverInCurrentDir ? "隐藏到系统用户目录" : "恢复到当前目录");
+				sprintf(buf, "点击“是”可以将驱动文件的加载位置设置为%s（一般不影响使用）。\n\n建议你先关游戏再进行该操作。",
+					driver.loadFromProfileDir ? "当前目录" : "系统用户目录");
 				if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
 
-					// get path, same as driver::init().
-					CHAR sysCurrentPath[1024];
-					strcpy(sysCurrentPath, systemMgr.getCurrentDir().c_str());
-					strcat(sysCurrentPath, "\\SGuardLimit_VMIO.sys");
-
-					CHAR sysProfilePath[1024];
-					strcpy(sysProfilePath, systemMgr.getProfileDir().c_str());
-					strcat(sysProfilePath, "\\SGuardLimit_VMIO.sys");
-
-					// move sys file through path.
-					auto dirSrc = sysCurrentPath, dirDst = sysProfilePath;  // hide: current => profile 
-					if (!driver.driverInCurrentDir) {
-						dirSrc = sysProfilePath; dirDst = sysCurrentPath;   // show: profile => current
-					}
-
-					if (!MoveFileEx(dirSrc, dirDst, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-						systemMgr.panic("移动文件失败。");
-						break;
-					}
-
-					// re-init kdriver, same as main entry.
-					if (!driver.init(systemMgr.getCurrentDir(), systemMgr.getProfileDir())) {
-
+					// set flag and reload sysfile.
+					driver.loadFromProfileDir = !driver.loadFromProfileDir;
+					configMgr.writeConfig();
+					
+					if (!driver.prepareSysfile()) {
 						limitMgr.useKernelMode = false;
-						configMgr.writeConfig();
 						systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 					}
 				}
