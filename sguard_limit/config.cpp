@@ -2,19 +2,21 @@
 #include <stdio.h>
 #include "config.h"
 
-#include "wndproc.h"    // macro VERSION
-#include "kdriver.h"    // win11 kdriver options
-#include "limitcore.h"  // class LimitManager
-#include "tracecore.h"  // class TraceManager
-#include "mempatch.h"   // class PatchManager
+#include "wndproc.h"       // macro VERSION
+#include "win32utility.h"  // global options
+#include "kdriver.h"       // win11 kdriver options
+#include "limitcore.h"     // class LimitManager
+#include "tracecore.h"     // class TraceManager
+#include "mempatch.h"      // class PatchManager
 
 // objects to write
-extern volatile DWORD    g_Mode;
-extern volatile bool     g_KillAceLoader;
-extern KernelDriver&     driver;
-extern LimitManager&     limitMgr;
-extern TraceManager&     traceMgr;
-extern PatchManager&     patchMgr;
+extern volatile DWORD          g_Mode;
+
+extern win32SystemManager&     systemMgr;
+extern KernelDriver&           driver;
+extern LimitManager&           limitMgr;
+extern TraceManager&           traceMgr;
+extern PatchManager&           patchMgr;
 
 
 // config manager
@@ -55,12 +57,21 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		g_Mode = res;
 	}
 
+
+	res = GetPrivateProfileInt("Global", "autoStartup", -1, profile);
+	if (res == (UINT)-1 || (res != 0 && res != 1)) {
+		WritePrivateProfileString("Global", "autoStartup", "0", profile);
+		systemMgr.autoStartup = false;
+	} else {
+		systemMgr.autoStartup = res ? true : false;
+	}
+
 	res = GetPrivateProfileInt("Global", "KillAceLoader", -1, profile);
 	if (res == (UINT)-1 || (res != 0 && res != 1)) {
 		WritePrivateProfileString("Global", "KillAceLoader", "1", profile);
-		g_KillAceLoader = true;
+		systemMgr.killAceLoader = true;
 	} else {
-		g_KillAceLoader = res ? true : false;
+		systemMgr.killAceLoader = res ? true : false;
 	}
 
 	// kdriver module
@@ -254,7 +265,10 @@ void ConfigManager::writeConfig() {
 	sprintf(buf, "%u", g_Mode);
 	WritePrivateProfileString("Global", "Mode", buf, profile);
 
-	sprintf(buf, g_KillAceLoader ? "1" : "0");
+	sprintf(buf, systemMgr.autoStartup ? "1" : "0");
+	WritePrivateProfileString("Global", "autoStartup", buf, profile);
+
+	sprintf(buf, systemMgr.killAceLoader ? "1" : "0");
 	WritePrivateProfileString("Global", "KillAceLoader", buf, profile);
 	
 

@@ -47,8 +47,9 @@
 
 
 // other commands
-#define IDM_KILLACELOADER    1000
-#define IDM_HIDESYSFILE      1001
+#define IDM_AUTOSTARTUP      1000
+#define IDM_KILLACELOADER    1001
+#define IDM_HIDESYSFILE      1002
 
 #define IDM_MORE_UPDATEPAGE  1100
 #define IDM_MORE_SOURCEPAGE  1101

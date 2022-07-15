@@ -25,8 +25,6 @@ extern PatchManager&            patchMgr;
 extern volatile bool            g_HijackThreadWaiting;
 extern volatile DWORD           g_Mode;
 
-extern volatile bool            g_KillAceLoader;
-
 
 // about func: show about dialog box.
 static void ShowAbout() {
@@ -223,7 +221,14 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
+	static UINT msg_taskbarRestart;
+
 	switch (msg) {
+	case WM_CREATE:
+	{
+		msg_taskbarRestart = RegisterWindowMessage("TaskbarCreated");
+	}
+	break;
 	case WM_TRAYACTIVATE:
 	{
 		if (lParam == WM_LBUTTONUP ||
@@ -250,13 +255,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				CheckMenuItem(hMenuModes, IDM_MODE_PATCH,  MF_CHECKED);
 			}
 
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_AUTOSTARTUP,     "开机自启");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_KILLACELOADER,   "游戏启动60秒后，结束ace-loader");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_HIDESYSFILE,     "将驱动文件隐藏到系统用户目录");
 			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_UPDATEPAGE, "检查更新【当前版本：" VERSION "】");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_ABOUT,           "查看说明");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_SOURCEPAGE, "查看源代码");
-			if (g_KillAceLoader) {
+			if (systemMgr.autoStartup) {
+				CheckMenuItem(hMenuOthers, IDM_AUTOSTARTUP, MF_CHECKED);
+			}
+			if (systemMgr.killAceLoader) {
 				CheckMenuItem(hMenuOthers, IDM_KILLACELOADER, MF_CHECKED);
 			}
 			if (driver.loadFromProfileDir) {
@@ -468,7 +477,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	break;
 	case WM_COMMAND:
 	{
-		UINT id = LOWORD(wParam);
+		char  buf  [0x1000];
+		UINT  id   = LOWORD(wParam);
 
 		switch (id) {
 
@@ -562,7 +572,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			// patch
 			case IDM_SETDELAY:
 			{
-				char buf[0x1000];
 				sprintf(buf, "请设置以下选项的延迟：如果不想设置某选项，可以直接关闭窗口。\n\n"
 					"(高级内存搜索) 开启防扫盘功能前的初始等待时间\n"
 					"(高级内存搜索) 开启防扫盘功能后等待SGUARD稳定的时间\n"
@@ -713,33 +722,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				break;
 
 			// more options
-			case IDM_KILLACELOADER:
-				if (g_KillAceLoader) {
-					if (IDYES == MessageBox(0, "点击“是”将关闭自动结束ace-loader功能。", "注意", MB_YESNO)) {
-						g_KillAceLoader = false;
-					} else {
-						break;
+			case IDM_AUTOSTARTUP:
+			{
+				sprintf(buf, "点击“是”将%s限制器开机自启。", systemMgr.autoStartup ? "禁用" : "启用");
+				if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
+
+					// set flag and modify registry. set back if modify fail.
+					systemMgr.autoStartup = !systemMgr.autoStartup;
+
+					if (!systemMgr.modifyStartupReg()) {
+						systemMgr.autoStartup = !systemMgr.autoStartup;
 					}
-				} else {
-					g_KillAceLoader = true;
+
+					configMgr.writeConfig();
 				}
-				configMgr.writeConfig();
+			}
+				break;
+			case IDM_KILLACELOADER:
+			{
+				sprintf(buf, "点击“是”将%s自动结束ace-loader功能。", systemMgr.killAceLoader ? "禁用" : "启用");
+				if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
+
+					systemMgr.killAceLoader = !systemMgr.killAceLoader;
+					configMgr.writeConfig();
+				}
+			}
 				break;
 			case IDM_HIDESYSFILE:
 			{
-				char buf[0x1000];
 				sprintf(buf, "点击“是”可以将驱动文件的加载位置设置为%s（一般不影响使用）。\n\n建议你先关游戏再进行该操作。",
 					driver.loadFromProfileDir ? "当前目录" : "系统用户目录");
 				if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
 
 					// set flag and reload sysfile.
 					driver.loadFromProfileDir = !driver.loadFromProfileDir;
-					configMgr.writeConfig();
 					
 					if (!driver.prepareSysfile()) {
+						driver.loadFromProfileDir = !driver.loadFromProfileDir;
 						limitMgr.useKernelMode = false;
 						systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 					}
+
+					configMgr.writeConfig();
 				}
 			}
 				break;
@@ -760,6 +784,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	case WM_DESTROY:
 	{
 		PostQuitMessage(0);
+	}
+	break;
+	default:
+	{
+		if (msg == msg_taskbarRestart) {
+			systemMgr.createTray(WM_TRAYACTIVATE);
+		}
 	}
 	break;
 	}

@@ -22,8 +22,6 @@ PatchManager&           patchMgr                = PatchManager::getInstance();
 volatile bool           g_HijackThreadWaiting   = true;
 volatile DWORD          g_Mode                  = 2;      // 0: lim  1: lock  2: patch
 
-volatile bool           g_KillAceLoader         = true;
-
 
 static void HijackThreadWorker() {
 	
@@ -40,7 +38,7 @@ static void HijackThreadWorker() {
 			systemMgr.log("hijack thread: pid found.");
 
 			// launch clean thread to kill GameLoader at appropriate time.
-			if (g_KillAceLoader) {
+			if (systemMgr.killAceLoader) {
 				systemMgr.raiseCleanThread();
 			}
 
@@ -85,6 +83,17 @@ INT WINAPI WinMain(
 
 	systemMgr.setupProcessDpi();
 
+	// [prerequisite: raise privilege] acquire uac manually.
+	// if not do this (but acquire in manifest), win10/11 with uac will refuse auto start-up.
+	// return true if already in admin; false if not (will get admin with a restart).
+
+	status =
+	systemMgr.runWithUac();
+
+	if (!status) {
+		return -1;
+	}
+
 	status =
 	systemMgr.enableDebugPrivilege();
 
@@ -122,8 +131,9 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：新增支持Win8/8.1。\n\n"
-			"1. 限制DNF更新110后SG更新导致的额外占用CPU。\n"
-			"2. 修复找不到模块，有时不结束ace-loader。\n\n\n"
+			"1. 处理DNF更新110后SG更新导致的额外CPU占用。\n"
+			"2. 修复找不到模块，托盘图标消失，不结束ace-loader。\n"
+			"3. 新增开机自启。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -131,6 +141,13 @@ INT WINAPI WinMain(
 			"   如果看了说明仍未解决你的问题，可以加群反馈：775176979",
 			VERSION "  by: @H3d9", MB_OK);
 	}
+
+
+	// initialize system module global funcions depending on config:
+	// modify registry key to make sure auto start or not.
+	// return value here is not critical.
+
+	systemMgr.modifyStartupReg();
 
 
 	// initialize kdriver module:
@@ -166,10 +183,9 @@ INT WINAPI WinMain(
 
 		// if init success and first run, show hint.
 		if (status && firstRun) {
-			MessageBox(0,
-				"限制器默认会自动把SYS文件隐藏到系统目录。\n"
-				"如果你不想隐藏SYS文件，可以自己点一下右键菜单“其他选项”的相关设置。",
-				"提示", MB_OK);
+			MessageBox(0, "限制器默认会自动把SYS文件隐藏到系统目录。\n"
+				          "如果你不想隐藏SYS文件，可以自己点一下右键菜单“其他选项”的相关设置。",
+				          "提示", MB_OK);
 		}
 
 		// if init success but is win11 latest, show alert.
@@ -213,7 +229,7 @@ INT WINAPI WinMain(
 		if (!driver.driverReady) {
 			systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
 							   "内存补丁 " MEMPATCH_VERSION "\n"
-							   "内核态调度器\n");
+							   "内核态调度器");
 		}
 	}
 
@@ -222,12 +238,15 @@ INT WINAPI WinMain(
 	// get all native syscall numbers it should use.
 
 	if (!patchMgr.init()) {
-		systemMgr.panic(0, "“内存补丁 " MEMPATCH_VERSION "”模块初始化失败。\n"
-		                   "查看%s\\log.txt以获得更多信息。", systemMgr.getProfileDir().c_str());
-		
-		// this rarely happens, disable kdriver to stop user from continue directly.
-		// (even it's considered usable after click move sys file)
-		driver.driverReady = false;
+
+		if (MessageBox(0, "“内存补丁 " MEMPATCH_VERSION "”模块初始化失败。\n"
+			              "未能初始化的开关将无法正常工作，建议你把该问题反馈到群里。\n\n"
+			              "仍然要继续吗？", "警告", MB_YESNO) == IDNO) {
+
+			// in some rare case (such as rtlgetversion fails by some kernel internal bug),
+			// function may not work correctly. user can decide to continue or fail.
+			driver.driverReady = false;
+		}
 	}
 
 

@@ -83,6 +83,7 @@ public:
 
 public:
 	bool       systemInit(HINSTANCE hInstance);
+	bool       runWithUac();
 	void       setupProcessDpi();
 	bool       enableDebugPrivilege();
 	bool       createWindow(WNDPROC WndProc, DWORD WndIcon);
@@ -102,14 +103,21 @@ public:
 	OSVersion           getSystemVersion();  // xref: mempatch
 	DWORD               getSystemBuildNum(); // xref: mempatch
 
-public:
-	void       raiseCleanThread(); // util: get rid of GameLoader.exe
-
 
 private:
-	ATOM     _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);
-	void     _log(DWORD code, const char* logbuf);
-	void     _panic(DWORD code, const char* showbuf);
+	ATOM       _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);
+	void       _log(DWORD code, const char* logbuf);
+	void       _panic(DWORD code, const char* showbuf);
+
+
+public:
+	bool       modifyStartupReg();  // add/remove registry based on autoStartup
+	void       raiseCleanThread();  // clean GameLoader as game started
+	
+
+public:
+	bool                autoStartup;
+	bool                killAceLoader;
 
 
 public:

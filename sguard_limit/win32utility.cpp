@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <Shlobj.h>
 #include <tlhelp32.h>
 #include <time.h>
 #include <thread>
@@ -143,7 +144,7 @@ bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadLis
 win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
-	: hInstance(NULL), hProgram(NULL), hWnd(NULL),
+	: autoStartup(false), killAceLoader(true), hInstance(NULL), hProgram(NULL), hWnd(NULL),
 	  osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{}, currentDir{}, profileDir{} {}
 
 win32SystemManager::~win32SystemManager() {
@@ -159,6 +160,28 @@ win32SystemManager::~win32SystemManager() {
 
 win32SystemManager& win32SystemManager::getInstance() {
 	return systemManager;
+}
+
+bool win32SystemManager::runWithUac() {
+
+	if (!IsUserAnAdmin()) {
+
+		char    path        [0x1000];
+		DWORD   errorCode   = 0;
+
+		GetModuleFileName(NULL, path, 0x1000);
+		errorCode = (DWORD)(INT_PTR)
+		ShellExecute(NULL, "runas", path, NULL /* no cmdline here */, NULL, SW_SHOWNORMAL);
+		
+		if (errorCode <= 32) {
+			panic(errorCode, "无法以uac权限启动，路径中是否包含特殊符号？");
+		}
+
+		return false;
+	
+	} else {
+		return true;
+	}
 }
 
 void win32SystemManager::setupProcessDpi() {
@@ -427,6 +450,38 @@ DWORD win32SystemManager::getSystemBuildNum() {
 	return osBuildNum;
 }
 
+bool win32SystemManager::modifyStartupReg() {
+
+	HKEY   hKey;
+	bool   ret    = true;
+
+	if (RegOpenKeyEx(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS) {
+		
+		if (autoStartup) {
+			// should auto start: create key.
+			char path[0x1000];
+			GetModuleFileName(NULL, path, 0x1000);
+			if (RegSetValueEx(hKey, "sguard_limit", 0, REG_SZ, (const BYTE*)path, strlen(path) + 1) != ERROR_SUCCESS) {
+				panic("modifyStartupReg(): RegSetValueEx失败。");
+				ret = false;
+			}
+		
+		} else {
+			// should not auto start: remove key.
+			// if key doesn't exist, will return fail. ignore it.
+			RegDeleteValue(hKey, "sguard_limit");
+		}
+		
+		RegCloseKey(hKey);
+
+	} else {
+		panic("modifyStartupReg(): RegOpenKeyEx失败。");
+		ret = false;
+	}
+
+	return ret;
+}
+
 void win32SystemManager::raiseCleanThread() {
 
 	std::thread cleanThread([this] () {
@@ -437,8 +492,10 @@ void win32SystemManager::raiseCleanThread() {
 		static std::atomic<DWORD> lock = 0;
 		DWORD expected = 0;
 		
-		// [note] make atomic operation at instruction level (e.g. x86 lock prefix),
-		// is more fast than sync with mutex.
+		// [note] make atomic operation at instruction level (e.g. x86 lock cmpxchg)
+		// is more fast than sync with mutex which may trap in kernel,
+		// because cpu cache lock only affect single cache line.
+		// see: https://stackoverflow.com/questions/2538070/atomic-operation-cost
 		if (lock.compare_exchange_strong(expected, tid)) {
 			log("clean thread %u: lock acquired.", tid);
 
@@ -487,7 +544,7 @@ void win32SystemManager::raiseCleanThread() {
 
 
 		// release lock and exit.
-		log("clean thread %u: exit.", tid);
+		log("clean thread %u: exit and release lock.", tid);
 		lock = 0;
 	});
 
