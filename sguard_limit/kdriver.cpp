@@ -14,7 +14,7 @@ KernelDriver::KernelDriver()
 	: loadFromProfileDir(true), driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
 	  currentPath{}, profilePath{}, sysCurrentPath{}, sysProfilePath{}, sysfile(NULL),
 	  hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
-	  errorMessage_ptr(new CHAR[0x1000]), errorCode(0), errorMessage(NULL) {
+	  errorMessage_ptr(new char[0x1000]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
 }
 
@@ -545,7 +545,7 @@ void KernelDriver::_resetError() {
 	errorMessage_ptr.get()[0] = '\0';
 }
 
-void KernelDriver::_recordError(DWORD errorCode, const CHAR* msg, ...) {
+void KernelDriver::_recordError(DWORD errorCode, const char* msg, ...) {
 	
 	this->errorCode = errorCode;
 	

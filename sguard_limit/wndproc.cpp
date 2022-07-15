@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <stdio.h>
+#include <atomic>
 #include "wndproc.h"
 #include "resource.h"
 #include "kdriver.h"
@@ -22,8 +23,9 @@ extern LimitManager&            limitMgr;
 extern TraceManager&            traceMgr;
 extern PatchManager&            patchMgr;
 
-extern volatile bool            g_HijackThreadWaiting;
-extern volatile DWORD           g_Mode;
+extern std::atomic<bool>        g_HijackThreadWaiting;
+extern std::atomic<DWORD>       g_Mode;
+
 
 
 // about func: show about dialog box.
@@ -110,29 +112,29 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 			
 			if (dlgParam == DLGPARAM_PCT) { // set limit percent.
 				SetWindowText(hDlg, "输入限制资源的百分比");
-				sprintf(buf, "输入整数1~99，或999（代表99.9）\n（当前值：%u）", limitMgr.limitPercent);
+				sprintf(buf, "输入整数1~99，或999（代表99.9）\n（当前值：%u）", limitMgr.limitPercent.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
 			} else if (dlgParam == DLGPARAM_TIME) { // set time slice.
 				SetWindowText(hDlg, "输入每100ms从目标线程中强制剥夺的时间（单位：ms）");
-				sprintf(buf, "\n输入1~99的整数（当前值：%u）", traceMgr.lockRound);
+				sprintf(buf, "\n输入1~99的整数（当前值：%u）", traceMgr.lockRound.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
 			} else if (dlgParam == DLGPARAM_PATCHWAIT1) { // set advanced patch wait for ntdll ioctl.
 				SetWindowText(hDlg, "输入开启防扫盘功能前的初始等待时间（单位：秒）");
-				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdllioctl);
+				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdllioctl.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 				SetDlgItemText(hDlg, IDC_TEXT2, "【提示】你没有必要修改这一项。");
 				
 			} else if (dlgParam == DLGPARAM_PATCHWAIT2) { // set advanced patch wait for ntdll etc.
 				SetWindowText(hDlg, "输入开启防扫盘功能后等待SGUARD稳定的时间（单位：秒）");
-				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdlletc);
+				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdlletc.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 				
 			} else { // set patch delay switches.
 				auto id = dlgParam - DLGPARAM_DELAY1;
 				SetWindowText(hDlg, "输入SGUARD每次执行当前系统调用的强制延迟（单位：ms）");
-				sprintf(buf, "\n输入%u~%u的整数（当前值：%u）", delayRange[id].low, delayRange[id].high, delay[id]);
+				sprintf(buf, "\n输入%u~%u的整数（当前值：%u）", delayRange[id].low, delayRange[id].high, delay[id].load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
 				if (dlgParam == DLGPARAM_DELAY1) {
@@ -239,7 +241,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			auto    drvMenuType    = driver.driverReady ? MFT_STRING : MF_GRAYED;
 
 
-			CHAR    buf   [0x1000] = {};
+			char    buf   [0x1000] = {};
 			HMENU   hMenu          = CreatePopupMenu();
 			HMENU   hMenuModes     = CreatePopupMenu();
 			HMENU   hMenuOthers    = CreatePopupMenu();
@@ -287,7 +289,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (limitMgr.limitPercent == 999) {
 					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, "限制资源：99.9%");
 				} else {
-					sprintf(buf, "限制资源：%u%%", limitMgr.limitPercent);
+					sprintf(buf, "限制资源：%u%%", limitMgr.limitPercent.load());
 					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, buf);
 				}
 				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT,       "停止限制");
@@ -317,19 +319,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 						switch (traceMgr.lockMode) {
 						case 0:
 							for (auto i = 0; i < 3; i++) {
-								sprintf(buf + strlen(buf), "%x[%c] ", traceMgr.lockedThreads[i].tid, traceMgr.lockedThreads[i].locked ? 'O' : 'X');
+								sprintf(buf + strlen(buf), "%x[%c] ", traceMgr.lockedThreads[i].tid.load(), traceMgr.lockedThreads[i].locked ? 'O' : 'X');
 							}
 							break;
 						case 1:
 							for (auto i = 0; i < 3; i++) {
-								sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[i].tid);
+								sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[i].tid.load());
 							}
 							break;
 						case 2:
-							sprintf(buf + strlen(buf), "%x[%c] ", traceMgr.lockedThreads[0].tid, traceMgr.lockedThreads[0].locked ? 'O' : 'X');
+							sprintf(buf + strlen(buf), "%x[%c] ", traceMgr.lockedThreads[0].tid.load(), traceMgr.lockedThreads[0].locked ? 'O' : 'X');
 							break;
 						case 3:
-							sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[0].tid);
+							sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[0].tid.load());
 							break;
 						}
 						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
@@ -344,7 +346,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK,   "解除锁定");
 				if (traceMgr.lockMode == 1 || traceMgr.lockMode == 3) {
 					AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-					sprintf(buf, "设置时间切分（当前：%d）", traceMgr.lockRound);
+					sprintf(buf, "设置时间切分（当前：%d）", traceMgr.lockRound.load());
 					AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
 				}
 				if (traceMgr.lockEnabled) {
@@ -396,7 +398,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							if (patchMgr.patchFailCount == 0) {
 								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
 							} else {
-								sprintf(buf, "SGuard限制器 - 正在重试（第%d次）... << [点击查看详细信息]", patchMgr.patchFailCount);
+								sprintf(buf, "SGuard限制器 - 正在重试（第%d次）... << [点击查看详细信息]", patchMgr.patchFailCount.load());
 								AppendMenu(hMenu, MFT_STRING, IDM_PATCHFAILHINT, buf);
 							}
 						} else {
@@ -419,18 +421,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH7,  "[防扫盘2] 执行失败的文件系统记录枚举");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索");
-				sprintf(buf, "设置延迟（当前：%u/%u", patchMgr.patchDelayBeforeNtdllioctl, patchMgr.patchDelayBeforeNtdlletc);
+				sprintf(buf, "设置延迟（当前：%u/%u", patchMgr.patchDelayBeforeNtdllioctl.load(), patchMgr.patchDelayBeforeNtdlletc.load());
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
-					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[0]);
+					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[0].load());
 				}
 				if (patchMgr.patchSwitches.GetAsyncKeyState) {
-					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[1]);
+					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[1].load());
 				}
 				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
-					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[2]);
+					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[2].load());
 				}
 				if (patchMgr.patchSwitches.NtDelayExecution) {
-					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[3]);
+					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[3].load());
 				}
 				strcat(buf, "）");
 				AppendMenu(hMenu, drvMenuType, IDM_SETDELAY, buf);
@@ -489,9 +491,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			case IDM_EXIT:
 				if (g_Mode == 0 && limitMgr.limitEnabled) {
 					limitMgr.disable();
-					while (!g_HijackThreadWaiting) {
-						Sleep(1); // spin; wait till hijack release target.
-					}
+					g_HijackThreadWaiting.wait(false); // block till hijack release target.
 				} else if (g_Mode == 1 && traceMgr.lockEnabled) {
 					traceMgr.disable();
 				} else if (g_Mode == 2 && patchMgr.patchEnabled) {

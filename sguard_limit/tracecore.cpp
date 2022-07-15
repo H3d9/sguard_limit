@@ -112,7 +112,7 @@ void TraceManager::chase() {   // trace maybe, but i like that word.
 
 			// diff: remove thread which have been identified before.
 			if (lockedThreads[0].tid) {
-				threadMap.erase(const_cast<const DWORD&>(lockedThreads[0].tid));
+				threadMap.erase(lockedThreads[0].tid.load());
 			}
 
 			// target have less than 3 thread, break out.

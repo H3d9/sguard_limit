@@ -9,7 +9,6 @@
 
 extern KernelDriver&          driver;
 extern win32SystemManager&    systemMgr;
-extern volatile bool          g_HijackThreadWaiting;  // xref: limit::disable()
 
 
 // Limit Manager
@@ -65,7 +64,7 @@ void LimitManager::hijack() {
 					// nt!pssuspend failed if only proc not exist.
 					// in that case, do not log.
 					if (driver.errorCode != 0x5 /* access denied */) {
-						systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+						systemMgr.log(driver.errorCode, "%s", driver.errorMessage);
 					}
 				}
 
@@ -74,7 +73,7 @@ void LimitManager::hijack() {
 
 				if (!driver.resume(pid)) {
 					if (driver.errorCode != 0x5) {
-						systemMgr.log("%s(0x%x)", driver.errorMessage, driver.errorCode);
+						systemMgr.log(driver.errorCode, "%s", driver.errorMessage);
 					}
 				}
 

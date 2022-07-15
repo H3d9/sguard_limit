@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <atomic>
 
 
 // driver io module (sington)
@@ -86,13 +87,13 @@ private:
 
 
 public:
-	volatile DWORD  errorCode;     // module's errors recorded here (if method returns false).
-	const CHAR*     errorMessage;  // caller can decide to log, panic, or ignore.
+	std::atomic<DWORD>  errorCode;     // module's errors recorded here (if method returns false).
+	const char*         errorMessage;  // caller can decide to log, panic, or ignore.
 
 private:
 	void            _resetError();
-	void            _recordError(DWORD errorCode, const CHAR* msg, ...);
+	void            _recordError(DWORD errorCode, const char* msg, ...);
 
 private:
-	std::unique_ptr<CHAR[]>  errorMessage_ptr;
+	std::unique_ptr<char[]>  errorMessage_ptr;
 };

@@ -3,6 +3,7 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>  // std::unique_ptr
+#include <atomic>
 
 
 // mempatch module (sington)
@@ -24,32 +25,32 @@ public:
 
 public:
 	typedef struct tagPatchSwitches_t {
-		bool NtQueryVirtualMemory    = false;
-		bool NtReadVirtualMemory     = false; // no delay
-		bool GetAsyncKeyState        = false;
-		bool NtWaitForSingleObject   = false;
-		bool NtDelayExecution        = false;
-		bool DeviceIoControl_1       = false; // no delay
-		bool DeviceIoControl_2       = false; // no delay
+		std::atomic<bool>   NtQueryVirtualMemory     = false;
+		std::atomic<bool>   NtReadVirtualMemory      = false; // no delay
+		std::atomic<bool>   GetAsyncKeyState         = false;
+		std::atomic<bool>   NtWaitForSingleObject    = false;
+		std::atomic<bool>   NtDelayExecution         = false;
+		std::atomic<bool>   DeviceIoControl_1        = false; // no delay
+		std::atomic<bool>   DeviceIoControl_2        = false; // no delay
 	} patchSwitches_t, patchStatus_t;
 
 	struct patchDelayRange_t {
 		DWORD low, def, high;
 	};
 
-	volatile bool                 patchEnabled;
+	std::atomic<bool>             patchEnabled;
 
-	volatile patchSwitches_t      patchSwitches;
-	volatile DWORD                patchDelay[4];
+	patchSwitches_t               patchSwitches;
+	std::atomic<DWORD>            patchDelay[4];
 	const patchDelayRange_t       patchDelayRange[4];
 
-	volatile DWORD                patchPid;
-	volatile patchStatus_t        patchStatus;
-	volatile int                  patchFailCount;
+	std::atomic<DWORD>            patchPid;
+	patchStatus_t                 patchStatus;
+	std::atomic<int>              patchFailCount;
 
-	volatile bool                 useAdvancedSearch;
-	volatile DWORD                patchDelayBeforeNtdllioctl;
-	volatile DWORD                patchDelayBeforeNtdlletc;
+	std::atomic<bool>             useAdvancedSearch;
+	std::atomic<DWORD>            patchDelayBeforeNtdllioctl;
+	std::atomic<DWORD>            patchDelayBeforeNtdlletc;
 
 public:
 	bool      init();
@@ -60,14 +61,14 @@ public:
 
 private:
 	DWORD                     _getSyscallNumber(const char* funcName, const char* libName);
-	bool                      _patch_ntdll(DWORD pid, patchSwitches_t switches);
-	bool                      _patch_user32(DWORD pid, patchSwitches_t switches);
+	bool                      _patch_ntdll(DWORD pid, patchSwitches_t& switches);
+	bool                      _patch_user32(DWORD pid, patchSwitches_t& switches);
 	std::vector<ULONG64>      _findRip(bool useAll = false);
 	void                      _outVmbuf(ULONG64, const char*);
 
 private:
 	std::unordered_map<std::string, DWORD>   syscallTable;  // func name -> native syscall num
 	ULONG64                                  vmStartAddress;
-	std::unique_ptr<CHAR[]>                  vmbuf_ptr;
-	std::unique_ptr<CHAR[]>                  vmalloc_ptr;
+	std::unique_ptr<char[]>                  vmbuf_ptr;
+	std::unique_ptr<char[]>                  vmalloc_ptr;
 };

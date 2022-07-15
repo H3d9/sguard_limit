@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <atomic>
 
 
 // limit module (sington)
@@ -20,9 +21,9 @@ public:
 	static LimitManager&   getInstance();
 
 public:
-	volatile bool          limitEnabled;
-	volatile DWORD         limitPercent;
-	volatile bool          useKernelMode;
+	std::atomic<bool>      limitEnabled;
+	std::atomic<DWORD>     limitPercent;
+	std::atomic<bool>      useKernelMode;
 
 public:
 	void     hijack();

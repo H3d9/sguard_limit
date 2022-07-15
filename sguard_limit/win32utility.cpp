@@ -218,7 +218,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 
 	// initialize path vars.
-	CHAR     buf [0x1000]  = {};
+	char     buf [0x1000]  = {};
 	DWORD    size          = 0x1000;
 
 	GetModuleFileName(NULL, buf, size);
@@ -385,26 +385,26 @@ void win32SystemManager::removeTray() {
 
 void win32SystemManager::log(const char* format, ...) {
 
-	CHAR logbuf[0x1000];
+	char buf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
-	vsprintf(logbuf, format, arg);
+	vsprintf(buf, format, arg);
 	va_end(arg);
 
-	_log(0, logbuf);
+	_log(0, buf);
 }
 
 void win32SystemManager::log(DWORD errorCode, const char* format, ...) {
 	
-	CHAR logbuf[0x1000];
+	char buf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
-	vsprintf(logbuf, format, arg);
+	vsprintf(buf, format, arg);
 	va_end(arg);
 
-	_log(errorCode, logbuf);
+	_log(errorCode, buf);
 }
 
 void win32SystemManager::panic(const char* format, ...) {
@@ -412,7 +412,7 @@ void win32SystemManager::panic(const char* format, ...) {
 	// call GetLastError first; to avoid errors in current function.
 	DWORD errorCode = GetLastError();
 
-	CHAR buf[0x1000];
+	char buf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
@@ -424,7 +424,7 @@ void win32SystemManager::panic(const char* format, ...) {
 
 void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 
-	CHAR buf[0x1000];
+	char buf[0x1000];
 
 	va_list arg;
 	va_start(arg, format);
@@ -461,7 +461,7 @@ bool win32SystemManager::modifyStartupReg() {
 			// should auto start: create key.
 			char path[0x1000];
 			GetModuleFileName(NULL, path, 0x1000);
-			if (RegSetValueEx(hKey, "sguard_limit", 0, REG_SZ, (const BYTE*)path, strlen(path) + 1) != ERROR_SUCCESS) {
+			if (RegSetValueEx(hKey, "sguard_limit", 0, REG_SZ, (const BYTE*)path, (DWORD)strlen(path) + 1) != ERROR_SUCCESS) {
 				panic("modifyStartupReg(): RegSetValueEx ß∞‹°£");
 				ret = false;
 			}
@@ -575,7 +575,7 @@ void win32SystemManager::_log(DWORD code, const char* logbuf) {
 		return;
 	}
 
-	CHAR result[0x1000];
+	char result[0x1000];
 
 	// put timestamp to result.
 	time_t t = time(0);
@@ -615,7 +615,7 @@ void win32SystemManager::_log(DWORD code, const char* logbuf) {
 
 void win32SystemManager::_panic(DWORD code, const char* showbuf) {
 
-	CHAR result[0x1000];
+	char result[0x1000];
 
 	// before panic, log first.
 	_log(code, showbuf);

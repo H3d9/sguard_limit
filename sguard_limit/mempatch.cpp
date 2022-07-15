@@ -33,7 +33,7 @@ PatchManager::PatchManager()
 	   { 500, 1250, 2000 }    /* NtDelayExecution */
 	  }, 
 	  useAdvancedSearch(true), patchDelayBeforeNtdllioctl(0), patchDelayBeforeNtdlletc(20), 
-	  syscallTable{}, vmStartAddress(0), vmbuf_ptr(new CHAR[0x4000]), vmalloc_ptr(new CHAR[0x4000]) {}
+	  syscallTable{}, vmStartAddress(0), vmbuf_ptr(new char[0x4000]), vmalloc_ptr(new char[0x4000]) {}
 
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
@@ -120,7 +120,7 @@ void PatchManager::patch() {
 
 		// wait if adv search: before patch ioctl.
 		if (useAdvancedSearch) {
-			systemMgr.log("patch(): waiting %us before manip ntdll ioctl.", patchDelayBeforeNtdllioctl);
+			systemMgr.log("patch(): waiting %us before manip ntdll ioctl.", patchDelayBeforeNtdllioctl.load());
 
 			for (DWORD time = 0; time < patchDelayBeforeNtdllioctl; time++) {
 				Sleep(1000);
@@ -135,8 +135,8 @@ void PatchManager::patch() {
 		if (patchSwitches.DeviceIoControl_1 || patchSwitches.DeviceIoControl_2) {
 
 			patchSwitches_t switches;
-			switches.DeviceIoControl_1      = patchSwitches.DeviceIoControl_1;
-			switches.DeviceIoControl_2      = patchSwitches.DeviceIoControl_2;
+			switches.DeviceIoControl_1      = patchSwitches.DeviceIoControl_1.load();
+			switches.DeviceIoControl_2      = patchSwitches.DeviceIoControl_2.load();
 
 			if (!_patch_ntdll(pid, switches)) {
 				driver.unload(); // if _patch_ntdll() fails, stop driver and quit (to retry).
@@ -146,7 +146,7 @@ void PatchManager::patch() {
 
 		// wait if adv search: before patch ntdll etc.
 		if (useAdvancedSearch) {
-			systemMgr.log("patch(): waiting %us before manip ntdll etc.", patchDelayBeforeNtdlletc);
+			systemMgr.log("patch(): waiting %us before manip ntdll etc.", patchDelayBeforeNtdlletc.load());
 
 			for (DWORD time = 0; time < patchDelayBeforeNtdlletc; time++) {
 				Sleep(1000);
@@ -162,10 +162,10 @@ void PatchManager::patch() {
 			patchSwitches.NtWaitForSingleObject || patchSwitches.NtDelayExecution) {
 
 			patchSwitches_t switches;
-			switches.NtQueryVirtualMemory   = patchSwitches.NtQueryVirtualMemory;
-			switches.NtReadVirtualMemory    = patchSwitches.NtReadVirtualMemory;
-			switches.NtWaitForSingleObject  = patchSwitches.NtWaitForSingleObject;
-			switches.NtDelayExecution       = patchSwitches.NtDelayExecution;
+			switches.NtQueryVirtualMemory   = patchSwitches.NtQueryVirtualMemory.load();
+			switches.NtReadVirtualMemory    = patchSwitches.NtReadVirtualMemory.load();
+			switches.NtWaitForSingleObject  = patchSwitches.NtWaitForSingleObject.load();
+			switches.NtDelayExecution       = patchSwitches.NtDelayExecution.load();
 
 			if (!_patch_ntdll(pid, switches)) {
 				driver.unload(); // if _patch_ntdll() fails, stop driver and quit (to retry).
@@ -178,7 +178,7 @@ void PatchManager::patch() {
 		if (patchSwitches.GetAsyncKeyState) {
 
 			patchSwitches_t switches;
-			switches.GetAsyncKeyState = patchSwitches.GetAsyncKeyState;
+			switches.GetAsyncKeyState = patchSwitches.GetAsyncKeyState.load();
 
 			if (!_patch_user32(pid, switches)) {
 				systemMgr.log("patch(): warning: _patch_user32() failed!");
@@ -245,7 +245,7 @@ DWORD PatchManager::_getSyscallNumber(const char* funcName, const char* libName)
 	return callNumber;
 }
 
-bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
+bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 
 	win32ThreadManager     threadMgr;
 	auto                   osVersion         = systemMgr.getSystemVersion();
@@ -435,7 +435,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 	// in case patch_stage1() success / fail, inc failcount / xor failcount.
 	if (offset0 < 0) {
 		patchFailCount ++;
-		systemMgr.log("patch_ntdll(): search failed too many times, abort. (retry: %d)", patchFailCount);
+		systemMgr.log("patch_ntdll(): search failed too many times, abort. (retry: %d)", patchFailCount.load());
 		return false;
 	} else {
 		patchFailCount = 0;
@@ -460,14 +460,14 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.NtQueryVirtualMemory) {
 
-			CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+			char patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
 			/*
 				0:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
 				7:  00 00 00
 				a:  ff e0                   jmp    rax
 			*/
 
-			CHAR working_bytes[] =
+			char working_bytes[] =
 				"\x49\x89\xCA\xB8\x23\x00\x00\x00\x0F\x05"
 				"\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
 				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
@@ -537,7 +537,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[0];
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[0].load();
 			memcpy(working_bytes + 0x25, &delay_param, 4);
 
 			// delay num => working_bytes.
@@ -575,7 +575,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.NtReadVirtualMemory) {
 
-			CHAR patch_bytes[] = "\xB8\x22\x00\x00\xC0\xC3";
+			char patch_bytes[] = "\xB8\x22\x00\x00\xC0\xC3";
 			/*
 				0:  b8 22 00 00 c0          mov    eax, 0xc0000022
 				5:  c3                      ret
@@ -595,7 +595,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.NtWaitForSingleObject) {
 
-			CHAR patch_bytes[] = "\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\xC3";
+			char patch_bytes[] = "\x50\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\xC3";
 			/*
 				; for simplicity we assert there's no jinx thread between +0~+14 (otherwise target'll crash)
 				; treat them as they're waiting at +0x14.
@@ -614,7 +614,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 				14: c3                      ret        ; previous syscall rip expected returning here.
 			*/
 
-			CHAR working_bytes[] =
+			char working_bytes[] =
 				"\x58\x49\x89\xCA\xB8\x04\x00\x00\x00\x0F\x05\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
 				"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
 				"\x9D\x41\x5F\x41\x5E\x41\x5D\x41\x5C\x41\x5B\x41\x5A\x41\x59\x41\x58\x5D\x5F\x5E\x5A\x59\x5B"
@@ -686,7 +686,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			memcpy(patch_bytes + 0x3, &allocAddress, 8);
 
 			// delay => working_bytes.
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[2].load();
 			memcpy(working_bytes + 0x26, &delay_param, 4);
 
 			// delay num => working_bytes.
@@ -713,7 +713,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.NtDelayExecution) {
 
-			CHAR patch_bytes[] =
+			char patch_bytes[] =
 				"\x49\xC7\xC2\xE0\x43\x41\xFF\x4C\x89\x12\x49\x89\xCA\xB8\x34\x00\x00\x00\x0F\x05\xC3";
 			/*
 				mov r10, 0xFFFFFFFFFF4143E0 ; 1250
@@ -728,7 +728,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			LONG offset = offset0 + 0x20 /* win10 syscall align */ * callNum_delay;
 
 			// modify delay.
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[3];
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[3].load();
 			memcpy(patch_bytes + 3, &delay_param, 4);
 
 			// syscall num => patch_bytes.
@@ -743,14 +743,14 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.DeviceIoControl_1) { // NtDeviceIoControlFile
 
-			CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+			char patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
 			/*
 				0:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
 				7:  00 00 00
 				a:  ff e0                   jmp    rax
 			*/
 
-			CHAR working_bytes[] =
+			char working_bytes[] =
 				"\x8B\x44\x24\x30\x3D\x2C\x1C\x22\x00\x75\x11\x48\x8B\x44\x24\x28\x48\xC7\x40\x08\x34\x00\x00\x00\x48\x31\xC0\xC3"
 				"\x3D\x24\x1C\x22\x00\x75\x11\x48\x8B\x44\x24\x28\x48\xC7\x40\x08\x30\x08\x00\x00\x48\x31\xC0\xC3"
 				"\x49\x89\xCA\xB8\x07\x00\x00\x00\x0F\x05\xC3";
@@ -836,14 +836,14 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.DeviceIoControl_2) { // NtFsControlFile
 
-			CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
+			char patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0";
 			/*
 				0:  48 b8 00 00 00 00 00    movabs rax, <AllocAddress>
 				7:  00 00 00
 				a:  ff e0                   jmp    rax
 			*/
 
-			CHAR working_bytes[] =
+			char working_bytes[] =
 				"\x8B\x44\x24\x30\x3D\xF4\x00\x09\x00\x75\x06\xB8\x01\x00\x00\xC0\xC3"
 				"\x3D\xBB\x00\x09\x00\x75\x06\xB8\x01\x00\x00\xC0\xC3"
 				"\x49\x89\xCA\xB8\x39\x00\x00\x00\x0F\x05\xC3";
@@ -915,7 +915,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 		// 0x0: use mov eax instead of rax. (rax's high 32-bit is 0 due to x86_64 isa convention)
 		// 0xa: [caution] original 'ret' cannot change, for some threads to return correctly from previous syscall.
 
-		CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
+		char patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
 		/*
 			0:  b8 00 00 00 00          mov    eax, <AllocAddress>
 			5:  ff e0                   jmp    rax
@@ -925,7 +925,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			a:  c3                      ret        ; previous syscall rip expected returning here.
 		*/
 
-		CHAR working_bytes[] =
+		char working_bytes[] =
 			"\x49\x89\xCA\xB8\x00\x00\x00\x00\x0F\x05"
 			"\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
 			"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x31\x00\x00\x00\x0F\x05\x41\x5A"
@@ -1003,7 +1003,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[0];
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[0].load();
 			memcpy(working_bytes + 0x25, &delay_param, 4);
 
 			// returnAddress => working_bytes.
@@ -1027,7 +1027,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.NtReadVirtualMemory) {
 
-			CHAR patch_bytes[] = "\xB8\x22\x00\x00\xC0\xC3";
+			char patch_bytes[] = "\xB8\x22\x00\x00\xC0\xC3";
 			/*
 				0:  b8 22 00 00 c0          mov    eax, 0xc0000022
 				5:  c3                      ret
@@ -1067,7 +1067,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[2];
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[2].load();
 			memcpy(working_bytes + 0x25, &delay_param, 4);
 
 			// returnAddress => working_bytes.
@@ -1111,7 +1111,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[3];
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[3].load();
 			memcpy(working_bytes + 0x25, &delay_param, 4);
 
 			// returnAddress => working_bytes.
@@ -1135,13 +1135,13 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.DeviceIoControl_1) { // NtDeviceIoControlFile
 
-			CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0";
+			char patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0";
 			/*
 				0:  b8 00 00 00 00          mov    eax, <AllocAddress>
 				5:  ff e0                   jmp    rax
 			*/
 
-			CHAR working_bytes[] =
+			char working_bytes[] =
 				"\x8B\x44\x24\x30\x3D\x2C\x1C\x22\x00\x75\x11\x48\x8B\x44\x24\x28\x48\xC7\x40\x08\x34\x00\x00\x00\x48\x31\xC0\xC3"
 				"\x3D\x24\x1C\x22\x00\x75\x11\x48\x8B\x44\x24\x28\x48\xC7\x40\x08\x30\x08\x00\x00\x48\x31\xC0\xC3"
 				"\x49\x89\xCA\xB8\x04\x00\x00\x00\x0F\x05\xC3";
@@ -1189,13 +1189,13 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 
 		if (switches.DeviceIoControl_2) { // NtFsControlFile
 
-			CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0";
+			char patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0";
 			/*
 				0:  b8 00 00 00 00          mov    eax, <AllocAddress>
 				5:  ff e0                   jmp    rax
 			*/
 
-			CHAR working_bytes[] =
+			char working_bytes[] =
 				"\x8B\x44\x24\x30\x3D\xF4\x00\x09\x00\x75\x06\xB8\x01\x00\x00\xC0\xC3"
 				"\x3D\xBB\x00\x09\x00\x75\x06\xB8\x01\x00\x00\xC0\xC3"
 				"\x49\x89\xCA\xB8\x36\x00\x00\x00\x0F\x05\xC3";
@@ -1272,7 +1272,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t switches) {
 	return true;
 }
 
-bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
+bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 
 	win32ThreadManager       threadMgr;
 	auto                     osVersion         = systemMgr.getSystemVersion();
@@ -1430,7 +1430,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 
 					if (0 == memcmp(vmbuf + offset, user32_traits, 3)) {
 
-						auto vmrelate_ptr = std::make_unique<CHAR[]>(0x4000);
+						auto vmrelate_ptr = std::make_unique<char[]>(0x4000);
 						auto vmrelate = vmrelate_ptr.get();
 
 						// parse instruction: rex.w call.
@@ -1526,7 +1526,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 
 	// V3 feature (detour user32/win32u).
 
-	CHAR working_bytes[] =
+	char working_bytes[] =
 		"\x49\x89\xCA\xB8\x44\x10\x00\x00\x0F\x05"
 		"\x50\x53\x51\x52\x56\x57\x55\x41\x50\x41\x51\x41\x52\x41\x53\x41\x54\x41\x55\x41\x56\x41\x57\x9C"
 		"\x49\xC7\xC2\xE0\x43\x41\xFF\x41\x52\x48\x89\xE2\xB8\x34\x00\x00\x00\x0F\x05\x41\x5A"
@@ -1585,7 +1585,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 
 	if (osVersion == OSVersion::WIN_10_11) {
 
-		CHAR patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\x90\xC3";
+		char patch_bytes[] = "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xE0\x58\xC3\x90\x90\x90\x90\x90\x90\xC3";
 		/*
 			0:  48 b8 00 00 00 00 00    movabs rax,  <AllocAddress>
 			7:  00 00 00
@@ -1620,7 +1620,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[1].load();
 			memcpy(working_bytes + 0x25, &delay_param, 4);
 
 			// returnAddress => working_bytes.
@@ -1645,7 +1645,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 
 	} else { // if WIN_7 / WIN_8 / WIN_81
 
-		CHAR patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
+		char patch_bytes[] = "\xB8\x00\x00\x00\x00\xFF\xE0\x58\x90\x90\xC3";
 		/*
 			0:  b8 00 00 00 00          mov    eax, <AllocAddress>
 			5:  ff e0                   jmp    rax
@@ -1674,7 +1674,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t switches) {
 			memcpy(working_bytes + 0x4, &callNum_this, 4);
 
 			// delay => working_bytes.
-			LONG64 delay_param = (LONG64)-10000 * patchDelay[1];
+			LONG64 delay_param = (LONG64)-10000 * patchDelay[1].load();
 			memcpy(working_bytes + 0x25, &delay_param, 4);
 
 			// returnAddress => working_bytes.

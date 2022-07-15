@@ -1,6 +1,7 @@
 #pragma once
 #include <Windows.h>
 #include <unordered_map>
+#include <atomic>
 
 
 // Trace module (sington)
@@ -28,16 +29,16 @@ public:
 
 public:
 	struct lockedThreads_t {
-		DWORD     tid        = 0;
-		HANDLE    handle     = NULL;   // handle == NULL : not locked.
-		bool      locked     = false;
+		std::atomic<DWORD>     tid        = 0;
+		std::atomic<HANDLE>    handle     = NULL;   // handle == NULL : not locked.
+		std::atomic<bool>      locked     = false;
 	};
 
-	volatile bool               lockEnabled;
-	volatile DWORD              lockMode;
-	volatile DWORD              lockRound;
-	volatile DWORD              lockPid;
-	volatile lockedThreads_t    lockedThreads[3];
+	std::atomic<bool>          lockEnabled;
+	std::atomic<DWORD>         lockMode;
+	std::atomic<DWORD>         lockRound;
+	std::atomic<DWORD>         lockPid;
+	lockedThreads_t            lockedThreads[3];
 
 private:
 	struct threadinfo {

@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <stdio.h>
+#include <atomic>
 #include "config.h"
 
 #include "wndproc.h"       // macro VERSION
@@ -10,7 +11,7 @@
 #include "mempatch.h"      // class PatchManager
 
 // objects to write
-extern volatile DWORD          g_Mode;
+extern std::atomic<DWORD>      g_Mode;
 
 extern win32SystemManager&     systemMgr;
 extern KernelDriver&           driver;
@@ -260,9 +261,9 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 void ConfigManager::writeConfig() {
 
 	auto    profile   = this->profile.c_str();
-	char    buf       [128];
+	char    buf       [0x1000];
 
-	sprintf(buf, "%u", g_Mode);
+	sprintf(buf, "%u", g_Mode.load());
 	WritePrivateProfileString("Global", "Mode", buf, profile);
 
 	sprintf(buf, systemMgr.autoStartup ? "1" : "0");
@@ -282,30 +283,30 @@ void ConfigManager::writeConfig() {
 	WritePrivateProfileString("kdriver", "win11CurrentBuild", buf, profile);
 
 
-	sprintf(buf, "%u", limitMgr.limitPercent);
+	sprintf(buf, "%u", limitMgr.limitPercent.load());
 	WritePrivateProfileString("Limit", "Percent", buf, profile);
 
 	sprintf(buf, limitMgr.useKernelMode ? "1" : "0");
 	WritePrivateProfileString("Limit", "useKernelMode", buf, profile);
 
 
-	sprintf(buf, "%u", traceMgr.lockMode);
+	sprintf(buf, "%u", traceMgr.lockMode.load());
 	WritePrivateProfileString("Lock", "Mode", buf, profile);
 
-	sprintf(buf, "%u", traceMgr.lockRound);
+	sprintf(buf, "%u", traceMgr.lockRound.load());
 	WritePrivateProfileString("Lock", "Round", buf, profile);
 
 
-	sprintf(buf, "%u", patchMgr.patchDelay[0]);
+	sprintf(buf, "%u", patchMgr.patchDelay[0].load());
 	WritePrivateProfileString("Patch", "Delay0", buf, profile);
 
-	sprintf(buf, "%u", patchMgr.patchDelay[1]);
+	sprintf(buf, "%u", patchMgr.patchDelay[1].load());
 	WritePrivateProfileString("Patch", "Delay1", buf, profile);
 
-	sprintf(buf, "%u", patchMgr.patchDelay[2]);
+	sprintf(buf, "%u", patchMgr.patchDelay[2].load());
 	WritePrivateProfileString("Patch", "Delay2", buf, profile);
 
-	sprintf(buf, "%u", patchMgr.patchDelay[3]);
+	sprintf(buf, "%u", patchMgr.patchDelay[3].load());
 	WritePrivateProfileString("Patch", "Delay3", buf, profile);
 
 	sprintf(buf, patchMgr.patchSwitches.NtQueryVirtualMemory ? "1" : "0");
@@ -332,9 +333,9 @@ void ConfigManager::writeConfig() {
 	sprintf(buf, patchMgr.useAdvancedSearch ? "1" : "0");
 	WritePrivateProfileString("Patch", "useAdvancedSearch", buf, profile);
 
-	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdllioctl);
+	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdllioctl.load());
 	WritePrivateProfileString("Patch", "DelayBeforeNtdllioctl", buf, profile);
 
-	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdlletc);
+	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdlletc.load());
 	WritePrivateProfileString("Patch", "DelayBeforeNtdlletc", buf, profile);
 }

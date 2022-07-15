@@ -2,6 +2,7 @@
 // H3d9, 写于2021.2.5晚。
 #include <Windows.h>
 #include <thread>
+#include <atomic>
 #include "resource.h"
 #include "wndproc.h"
 #include "win32utility.h"
@@ -19,8 +20,8 @@ LimitManager&           limitMgr                = LimitManager::getInstance();
 TraceManager&           traceMgr                = TraceManager::getInstance();
 PatchManager&           patchMgr                = PatchManager::getInstance();
 
-volatile bool           g_HijackThreadWaiting   = true;
-volatile DWORD          g_Mode                  = 2;      // 0: lim  1: lock  2: patch
+std::atomic<bool>       g_HijackThreadWaiting   = true;
+std::atomic<DWORD>      g_Mode                  = 2;      // 0: lim  1: lock  2: patch
 
 
 static void HijackThreadWorker() {
@@ -31,7 +32,7 @@ static void HijackThreadWorker() {
 
 	while (1) {
 
-		// scan per 5 seconds when idle; 
+		// scan per 5 seconds when idle;
 		// if process is found, trap into usr-selected mode.
 		if (threadMgr.getTargetPid()) {
 
@@ -60,8 +61,8 @@ static void HijackThreadWorker() {
 			}
 		}
 
-		Sleep(3000); // call sys schedule | no target found, wait.
-		// note: volatiles are written by single thread and read by multi thread. no need to sync.
+		g_HijackThreadWaiting.notify_all();  // inform main thread for blocked actions.
+		Sleep(3000);  // call sys schedule | no target found, wait.
 	}
 }
 
@@ -73,8 +74,7 @@ INT WINAPI WinMain(
 	_In_ int nShowCmd) {
 
 	bool status;
-	bool firstRun;
-
+	
 
 	// initialize system module: 
 	// setup dpi and raise privilege (must do first)
@@ -83,7 +83,7 @@ INT WINAPI WinMain(
 
 	systemMgr.setupProcessDpi();
 
-	// [prerequisite: raise privilege] acquire uac manually.
+	// [prerequisite for raise privilege] acquire uac manually:
 	// if not do this (but acquire in manifest), win10/11 with uac will refuse auto start-up.
 	// return true if already in admin; false if not (will get admin with a restart).
 
@@ -124,26 +124,30 @@ INT WINAPI WinMain(
 
 	configMgr.init(systemMgr.getProfileDir());
 
-	firstRun = 
-	!configMgr.loadConfig();
+	status =
+	configMgr.loadConfig();
 
-	if (firstRun) {
+	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：新增支持Win8/8.1。\n\n"
-			"1. 处理DNF更新110后SG更新导致的额外CPU占用。\n"
-			"2. 修复找不到模块，托盘图标消失，不结束ace-loader。\n"
-			"3. 新增开机自启。\n\n\n"
+			"1. 新增开机自启。\n"
+			"2. 修复：找不到模块，托盘图标消失，不结束ace-loader。\n"
+			"3. 使用C++20重构。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
 			"2. 若你第一次使用，请务必仔细阅读说明（可在右下角托盘菜单中找到）\n"
 			"   如果看了说明仍未解决你的问题，可以加群反馈：775176979",
 			VERSION "  by: @H3d9", MB_OK);
+
+		MessageBox(0, "限制器默认会自动把SYS文件隐藏到系统目录。\n"
+			          "如果你不想隐藏SYS文件，可以自己点一下右键菜单“其他选项”的相关设置。",
+			          "注意", MB_OK);
 	}
 
 
-	// initialize system module global funcions depending on config:
+	// initialize system module global funcions (depending on config):
 	// modify registry key to make sure auto start or not.
 	// return value here is not critical.
 
@@ -156,7 +160,6 @@ INT WINAPI WinMain(
 	auto DriverOptionsSelected = [&] ()->bool {
 		return g_Mode == 2 || (g_Mode == 0 && limitMgr.useKernelMode);
 	};
-
 
 	if (systemMgr.getSystemVersion() == OSVersion::OTHERS) {
 
@@ -172,20 +175,15 @@ INT WINAPI WinMain(
 		status =
 		driver.init(systemMgr.getCurrentDir(), systemMgr.getProfileDir());
 
-		// if driver init failed, and selected related options, show panic.
+		// if driver init failed, and selected related options,
+		// turn off related config flags and show error hint.
 		if (!status && DriverOptionsSelected()) {
-
-			// turn off related config flags and alert usr to switch options manually.
 			limitMgr.useKernelMode = false;
 			configMgr.writeConfig();
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-		}
-
-		// if init success and first run, show hint.
-		if (status && firstRun) {
-			MessageBox(0, "限制器默认会自动把SYS文件隐藏到系统目录。\n"
-				          "如果你不想隐藏SYS文件，可以自己点一下右键菜单“其他选项”的相关设置。",
-				          "提示", MB_OK);
+			systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
+							   "内存补丁 " MEMPATCH_VERSION "\n"
+							   "内核态调度器");
 		}
 
 		// if init success but is win11 latest, show alert.
@@ -196,10 +194,10 @@ INT WINAPI WinMain(
 			systemMgr.getSystemBuildNum() > supportedLatestBuildNum) {
 
 			// if force enable bit not set, but user selected related options (first run default),
-			// or force enable bit set, but build num not match (system updated) :
+			// or force enable bit set, but build num not match (system updated),
 			if ((!driver.win11ForceEnable && DriverOptionsSelected()) ||
 				(driver.win11ForceEnable && systemMgr.getSystemBuildNum() != driver.win11CurrentBuild)) {
-
+				
 				// alert user to confirm potential bsod threat.
 				char buf[0x1000];
 				sprintf(buf, "【！！！请仔细阅读：潜在的蓝屏风险！！！】\n\n\n"
@@ -223,13 +221,6 @@ INT WINAPI WinMain(
 
 				configMgr.writeConfig();
 			}
-		}
-
-		// show error if driver not init correctly.
-		if (!driver.driverReady) {
-			systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
-							   "内存补丁 " MEMPATCH_VERSION "\n"
-							   "内核态调度器");
 		}
 	}
 
@@ -263,7 +254,7 @@ INT WINAPI WinMain(
 
 
 	// enter primary msg loop:
-	// main thread will wait for window msgs from usr, while working thread do actual works.
+	// main thread will wait for window msgs from user, while working thread do actual works.
 
 	auto result =
 	systemMgr.messageLoop();
