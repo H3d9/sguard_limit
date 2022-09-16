@@ -154,6 +154,7 @@
     <ResourceCompile Include="sguard_limit.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="donate.bmp" />
     <Image Include="logo.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

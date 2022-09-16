@@ -32,7 +32,7 @@ static void HijackThreadWorker() {
 
 	while (1) {
 
-		// scan per 5 seconds when idle;
+		// scan 1~5 seconds when idle;
 		// if process is found, trap into usr-selected mode.
 		if (threadMgr.getTargetPid()) {
 
@@ -61,8 +61,8 @@ static void HijackThreadWorker() {
 			}
 		}
 
-		g_HijackThreadWaiting.notify_all();  // inform main thread for blocked actions.
-		Sleep(3000);  // call sys schedule | no target found, wait.
+		g_HijackThreadWaiting.notify_all();   // inform main thread for blocked actions.
+		Sleep(systemMgr.scanDelay.load());    // call sys schedule | no target found, wait.
 	}
 }
 
@@ -130,10 +130,10 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			" 内存补丁 " MEMPATCH_VERSION "：新增支持Win8/8.1。\n\n"
-			"1. 新增开机自启。\n"
-			"2. 修复：找不到模块，托盘图标消失，不结束ace-loader。\n"
-			"3. 使用C++20重构。\n\n\n"
+			" 内存补丁 " MEMPATCH_VERSION "：修复“安全组件运行异常”。\n\n"
+			"1. 重写内存补丁模块以增加稳定性。\n"
+			"2. 添加ZwProtectVirtualMemory参数错误的解决方法。\n"
+			"3. 修复旧版Win10限制不生效。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"

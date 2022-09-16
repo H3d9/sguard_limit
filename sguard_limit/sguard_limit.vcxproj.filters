@@ -45,6 +45,7 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="logo.ico" />
+    <Image Include="donate.bmp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="limit">

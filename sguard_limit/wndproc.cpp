@@ -1,6 +1,7 @@
-#include <Windows.h>
+ï»¿#include <Windows.h>
 #include <stdio.h>
 #include <atomic>
+#include <random>
 #include "wndproc.h"
 #include "resource.h"
 #include "kdriver.h"
@@ -32,63 +33,64 @@ extern std::atomic<DWORD>       g_Mode;
 static void ShowAbout() {
 
 	if (IDOK == MessageBox(0,
-		"±¾¹¤¾ß×¨ÓÃÓÚÔ¼ÊøTXÓÎÏ·ºóÌ¨É¨ÅÌ²å¼şACE-Guard Client EXEÕ¼ÓÃCPUºÍÉ¨ÅÌ¡£\n"
-		"¸Ã¹¤¾ß½ö¹©ÑĞ¾¿½»Á÷ÓÎÏ·ÓÅ»¯Ê¹ÓÃ£¬½«À´¿ÉÄÜÊ§Ğ§£¬²»±£Ö¤ÎÈ¶¨ĞÔ¡£\n"
-		"Èç¹ûÄã·¢ÏÖÎŞ·¨Õı³£Ê¹ÓÃ£¬Çë¸ü»»Ä£Ê½»òÑ¡Ïî£»Èô»¹²»ĞĞÇëÍ£Ö¹Ê¹ÓÃ²¢µÈ´ı¸üĞÂ¡£\n\n"
+		"æœ¬å·¥å…·ä¸“ç”¨äºçº¦æŸTXæ¸¸æˆæ‰«ç›˜æ’ä»¶ACE-Guard Client EXEå ç”¨CPUå’Œæ‰«ç›˜ã€‚\n"
+		"è¯¥å·¥å…·ä»…ä¾›ç ”ç©¶äº¤æµæ¸¸æˆä¼˜åŒ–ä½¿ç”¨ï¼Œå°†æ¥å¯èƒ½å¤±æ•ˆï¼Œä¸ä¿è¯ç¨³å®šæ€§ã€‚\n"
+		"å¦‚æœä½ å‘ç°æ— æ³•æ­£å¸¸ä½¿ç”¨ï¼Œè¯·æ›´æ¢æ¨¡å¼æˆ–é€‰é¡¹ï¼›è‹¥è¿˜ä¸è¡Œè¯·åœæ­¢ä½¿ç”¨å¹¶ç­‰å¾…æ›´æ–°ã€‚\n\n"
 
-		"¡¾Ê¹ÓÃ·½·¨¡¿Ë«»÷´ò¿ª¼´¿É¡£ÈôÎŞ±¨´íÔòÎŞĞèÆäËûÉèÖÃ¡£\n\n\n"
+		"ã€ä½¿ç”¨æ–¹æ³•ã€‘åŒå‡»æ‰“å¼€å³å¯ã€‚è‹¥æ— æŠ¥é”™åˆ™æ— éœ€å…¶ä»–è®¾ç½®ã€‚\n\n\n"
 		
-		"¡¾ÌáÊ¾¡¿ ²»ÒªÊ¹ÓÃ¹¤¾ßÇ¿ĞĞ¹Ø±ÕÉÏÊöÉ¨ÅÌ²å¼ş£¬Õâ»áµ¼ÖÂÓÎÏ·µôÏß¡£\n\n"
-		"¡¾ÌáÊ¾¡¿ ±¾¹¤¾ßÊÇÃâ·ÑÈí¼ş£¬ÈÎºÎ³öÊÛ±¾¹¤¾ßµÄÈË¶¼ÊÇÆ­×ÓÅ¶£¡\n\n\n"
+		"ã€æç¤ºã€‘ ä¸è¦ä½¿ç”¨å·¥å…·å¼ºè¡Œå…³é—­ä¸Šè¿°æ‰«ç›˜æ’ä»¶ï¼Œè¿™ä¼šå¯¼è‡´æ¸¸æˆæ‰çº¿ã€‚\n\n"
+		"ã€æç¤ºã€‘ æœ¬å·¥å…·æ˜¯å…è´¹è½¯ä»¶ï¼Œä»»ä½•å‡ºå”®æœ¬å·¥å…·çš„äººéƒ½æ˜¯éª—å­å“¦ï¼\n\n\n"
 
-		"SGUARDÌÖÂÛÈº£º775176979\n"
-		"¸üĞÂÁ´½Ó/Ô´´úÂë£º¼ûÓÒ¼ü²Ëµ¥¡úÆäËûÑ¡Ïî¡£\n\n"
-		"µã»÷¡°È·¶¨¡±·­µ½ÏÂÒ»Ò³£»µã»÷¡°È¡Ïû¡±½áÊø²é¿´ËµÃ÷¡£",
-		"SGuardÏŞÖÆÆ÷ " VERSION "  by: @H3d9",
+		"SGUARDè®¨è®ºç¾¤ï¼š775176979ï¼ˆå·²æ»¡ï¼‰ï¼Œ877315766\n"
+		"æ›´æ–°é“¾æ¥/æºä»£ç ï¼šè§å³é”®èœå•â†’å…¶ä»–é€‰é¡¹ã€‚\n\n"
+		"ç‚¹å‡»â€œç¡®å®šâ€ç¿»åˆ°ä¸‹ä¸€é¡µï¼›ç‚¹å‡»â€œå–æ¶ˆâ€ç»“æŸæŸ¥çœ‹è¯´æ˜ã€‚",
+		"SGuardé™åˆ¶å™¨ " VERSION "  by: @H3d9",
 		MB_OKCANCEL)) {
 
 		if (IDOK == MessageBox(0,
-			"¡¾¹¤×÷Ä£Ê½ËµÃ÷ P1¡¿\n\n"
-			"ÄÚ´æ²¹¶¡ " MEMPATCH_VERSION "£¨21.10.6£©£º\n\n"
-			"ÕâÊÇÄ¬ÈÏÄ£Ê½£¬½¨ÒéÓÅÏÈÊ¹ÓÃ£¬Èç¹û²»ºÃÓÃÔÙ»»ÆäËûÄ£Ê½¡£\n\n"
+			"ã€å·¥ä½œæ¨¡å¼è¯´æ˜ P1ã€‘\n\n"
+			"å†…å­˜è¡¥ä¸ " MEMPATCH_VERSION "ï¼ˆ21.10.6ï¼‰ï¼š\n\n"
+			"è¿™æ˜¯é»˜è®¤æ¨¡å¼ï¼Œå»ºè®®ä¼˜å…ˆä½¿ç”¨ï¼Œå¦‚æœä¸å¥½ç”¨å†æ¢å…¶ä»–æ¨¡å¼ã€‚\n\n"
 
-			">1 NtQueryVirtualMemory(V2): ÁîSGUARDÉ¨ÄÚ´æµÄËÙ¶È±äÂı¡£\n\n"
-			">2 NtReadVirtualMemory(V4.3): ¾Ü¾øSGUARDÔÚÓ¦ÓÃ²ã¿ç½ø³Ì¶ÁÄÚ´æ¡£\n\n"
-			">3 GetAsyncKeyState(V3): ÁîSGUARD¶ÁÈ¡¼üÅÌ°´¼üµÄËÙ¶È±äÂı¡£\n\n"
-			">4 NtWaitForSingleObject, NtDelayExecution: ÒÑÆúÓÃ£¬²»ÒªÊ¹ÓÃ¡£\n\n"
-			">5 Î±ÔìACE-BASE.sysµÄMDL¿ØÖÆ´úÂë(V4.2): ·ÀÖ¹¼äĞªĞÔ¿¨Ó²ÅÌ£¨¾­³£³öÏÖ£©¡£\n"
-			">6 Ö´ĞĞÊ§°ÜµÄÎÄ¼şÏµÍ³¼ÇÂ¼Ã¶¾Ù(V4.2): ·ÀÖ¹¸ßÇ¿¶ÈÉ¨Ó²ÅÌ£¨Å¼¶û³öÏÖ£©¡£\n"
-			"¡¾×¢¡¿ÓÎÏ·¸ÕÆô¶¯Ê±SG¶ÁÅÌÊÇ²»¿É±ÜÃâµÄ£¬ÈôÆÁ±ÎÔòÓÎÏ·»áÆô¶¯Ê§°Ü¡£\n"
-			" ¼äĞªĞÔ¿¨Ó²ÅÌÔ­ÒòÎªSGÊ¹ÓÃMDL¶ÁÆäËû½ø³ÌÄÚ´æ¶øÕâĞ©ÄÚ´æ¸ÕºÃÎ»ÓÚÒ³ÃæÎÄ¼ş¡£\n\n\n"
+			">1 NtQueryVirtualMemory(V2): ä»¤SGUARDæ‰«å†…å­˜çš„é€Ÿåº¦å˜æ…¢ã€‚\n\n"
+			">2 NtReadVirtualMemory(V4.3): æ‹’ç»SGUARDåœ¨åº”ç”¨å±‚è·¨è¿›ç¨‹è¯»å†…å­˜ã€‚\n\n"
+			">3 GetAsyncKeyState(V3): ä»¤SGUARDè¯»å–é”®ç›˜æŒ‰é”®çš„é€Ÿåº¦å˜æ…¢ã€‚\n\n"
+			">4 NtWaitForSingleObject, NtDelayExecution: å·²å¼ƒç”¨ï¼Œä¸è¦ä½¿ç”¨ã€‚\n\n"
+			">5 ä¼ªé€ ACE-BASE.sysçš„MDLæ§åˆ¶ä»£ç (V4.2): å¼ºåŒ–é˜²æ‰«ç›˜ï¼Œé˜²æ­¢é—´æ­‡æ€§å¡ç¡¬ç›˜\n"
+			">5 ç¼“è§£æŒ‡å‘ACE-BASEçš„CPL0é€šä¿¡é€Ÿåº¦(V4.6): å¼±åŒ–é˜²æ‰«ç›˜ï¼Œé¿å…å®‰å…¨ç»„ä»¶è¿è¡Œå¼‚å¸¸\n\n"
+			">6 æ‰§è¡Œå¤±è´¥çš„æ–‡ä»¶ç³»ç»Ÿè®°å½•æšä¸¾(V4.2): é˜²æ­¢é«˜å¼ºåº¦æ‰«ç¡¬ç›˜ï¼ˆå¶å°”å‡ºç°ï¼‰ã€‚\n\n"
+			"ã€æ³¨ã€‘æ¸¸æˆåˆšå¯åŠ¨æ—¶SGè¯»ç›˜æ˜¯ä¸å¯é¿å…çš„ï¼Œè‹¥å±è”½åˆ™æ¸¸æˆä¼šå¯åŠ¨å¤±è´¥ã€‚\n"
+			" é—´æ­‡æ€§å¡ç¡¬ç›˜åŸå› ä¸ºSGä½¿ç”¨MDLè¯»å…¶ä»–è¿›ç¨‹å†…å­˜è€Œè¿™äº›å†…å­˜åˆšå¥½ä½äºé¡µé¢æ–‡ä»¶ã€‚\n\n\n"
 			
-			"> ¸ß¼¶ÄÚ´æËÑË÷(V4)£ºÆôÓÃºóĞŞ¸ÄÄÚ´æ¿ÉÒÔË²¼äÍê³É¡£\n"
-			"¡¾×¢¡¿Äã¿ÉÒÔÔÚ¡°ÉèÖÃÑÓ³Ù¡±ÖĞ¸ü¸Ä¡°µÈ´ıSGÎÈ¶¨µÄÊ±¼ä¡±£¨µÚ¶ş¸ö£¬Ä¬ÈÏ20ÃëÄÇ¸ö£©\n"
-			" À´¾ö¶¨ĞŞ¸ÄÄÚ´æµÄÊ±»ú¡£·Ç³£²»½¨Òé½«¸ÃÊıÖµµ÷ÕûµÄ¹ıĞ¡£¬ÒÔÃâÓÎÏ·Æô¶¯Ê§°Ü¡£\n"
-			" Èç¹ûÄãÓÎÏ·Æô¶¯½ÏÂı£¬¿ÉÒÔµ÷¸ßÕâÒ»Ïî£¬»òÏÈ¿ªÓÎÏ·ÔÙ¿ªÏŞÖÆÆ÷¡£\n\n"
+			"> é«˜çº§å†…å­˜æœç´¢(V4)ï¼šå¯ç”¨åä¿®æ”¹å†…å­˜å¯ä»¥ç¬é—´å®Œæˆã€‚\n"
+			"ã€æ³¨ã€‘ä½ å¯ä»¥åœ¨â€œè®¾ç½®å»¶è¿Ÿâ€ä¸­æ›´æ”¹â€œç­‰å¾…SGç¨³å®šçš„æ—¶é—´â€ï¼ˆç¬¬äºŒä¸ªï¼Œé»˜è®¤20ç§’é‚£ä¸ªï¼‰\n"
+			" æ¥å†³å®šä¿®æ”¹å†…å­˜çš„æ—¶æœºã€‚éå¸¸ä¸å»ºè®®å°†è¯¥æ•°å€¼è°ƒæ•´çš„è¿‡å°ï¼Œä»¥å…æ¸¸æˆå¯åŠ¨å¤±è´¥ã€‚\n"
+			" å¦‚æœä½ æ¸¸æˆå¯åŠ¨è¾ƒæ…¢ï¼Œå¯ä»¥è°ƒé«˜è¿™ä¸€é¡¹ï¼Œæˆ–å…ˆå¼€æ¸¸æˆå†å¼€é™åˆ¶å™¨ã€‚\n\n"
 
-			"¡¾ËµÃ÷¡¿¸ÃÄ£Ê½ĞèÒªÁÙÊ±×°ÔØÒ»´ÎÇı¶¯£¬ĞŞ¸ÄÄÚ´æºó»áÁ¢¼´Ğ¶ÔØÇı¶¯¡£\n"
-			" ÈôÄãÊ¹ÓÃÊ±³öÏÖÎÊÌâ£¬¿ÉÒÔÈ¥¸üĞÂÁ´½ÓÏÂÔØÖ¤Êé¡£\n\n\n"
-			"µã»÷¡°È·¶¨¡±·­µ½ÏÂÒ»Ò³£»µã»÷¡°È¡Ïû¡±½áÊø²é¿´ËµÃ÷¡£",
-			"SGuardÏŞÖÆÆ÷ " VERSION "  by: @H3d9",
+			"ã€è¯´æ˜ã€‘è¯¥æ¨¡å¼éœ€è¦ä¸´æ—¶è£…è½½ä¸€æ¬¡é©±åŠ¨ï¼Œä¿®æ”¹å†…å­˜åä¼šç«‹å³å¸è½½é©±åŠ¨ã€‚\n"
+			" è‹¥ä½ ä½¿ç”¨æ—¶å‡ºç°é—®é¢˜ï¼Œå¯ä»¥å»æ›´æ–°é“¾æ¥ä¸‹è½½è¯ä¹¦ã€‚\n\n\n"
+			"ç‚¹å‡»â€œç¡®å®šâ€ç¿»åˆ°ä¸‹ä¸€é¡µï¼›ç‚¹å‡»â€œå–æ¶ˆâ€ç»“æŸæŸ¥çœ‹è¯´æ˜ã€‚",
+			"SGuardé™åˆ¶å™¨ " VERSION "  by: @H3d9",
 			MB_OKCANCEL)) {
 
 			if (IDOK == MessageBox(0,
-				"¡¾¹¤×÷Ä£Ê½ËµÃ÷ P2¡¿\n\n"
-				"Ïß³Ì×·×Ù£¨21.7.17£©£º\n\n"
-				"¸ÃÄ£Ê½½öÕë¶ÔDNF£¬ÇÒ½öÍÆ¼öÊ¹ÓÃ-rrºó×ºµÄ¹¦ÄÜ¡£\n"
-				"Äã¿ÉÒÔµã»÷¡°ÉèÖÃÊ±¼äÇĞ·Ö¡±²¢³¢ÊÔÖîÈç90£¬85£¬80...Ö±µ½ºÏÊÊ¼´¿É¡£\n\n"
-				"¡¾×¢¡¿¡°Ê±¼äÇĞ·Ö¡±ÉèÖÃµÄÖµÔ½´ó£¬ÔòÔ¼ÊøµÈ¼¶Ô½¸ß£»ÉèÖÃµÄÖµÔ½Ğ¡£¬ÔòÔ½ÎÈ¶¨¡£\n"
-				"¡¾×¢¡¿¸ù¾İÍ³¼Æ·´À¡£¬Ä¿Ç°¸ÃÄ£Ê½ÖĞ×îºÃÓÃµÄÑ¡ÏîÎª¡¾ÈõËø¶¨-rr¡¿¡£\n\n\n"
-				"µã»÷¡°È·¶¨¡±·­µ½ÏÂÒ»Ò³£»µã»÷¡°È¡Ïû¡±½áÊø²é¿´ËµÃ÷¡£",
-				"SGuardÏŞÖÆÆ÷ " VERSION "  by: @H3d9",
+				"ã€å·¥ä½œæ¨¡å¼è¯´æ˜ P2ã€‘\n\n"
+				"çº¿ç¨‹è¿½è¸ªï¼ˆ21.7.17ï¼‰ï¼ˆå·²å¼ƒç”¨ï¼‰ï¼š\n\n"
+				"è¯¥æ¨¡å¼ä»…é’ˆå¯¹DNFï¼Œä¸”ä»…æ¨èä½¿ç”¨-rråç¼€çš„åŠŸèƒ½ã€‚\n"
+				"ä½ å¯ä»¥ç‚¹å‡»â€œè®¾ç½®æ—¶é—´åˆ‡åˆ†â€å¹¶å°è¯•è¯¸å¦‚90ï¼Œ85ï¼Œ80...ç›´åˆ°åˆé€‚å³å¯ã€‚\n\n"
+				"ã€æ³¨ã€‘â€œæ—¶é—´åˆ‡åˆ†â€è®¾ç½®çš„å€¼è¶Šå¤§ï¼Œåˆ™çº¦æŸç­‰çº§è¶Šé«˜ï¼›è®¾ç½®çš„å€¼è¶Šå°ï¼Œåˆ™è¶Šç¨³å®šã€‚\n"
+				"ã€æ³¨ã€‘æ ¹æ®ç»Ÿè®¡åé¦ˆï¼Œç›®å‰è¯¥æ¨¡å¼ä¸­æœ€å¥½ç”¨çš„é€‰é¡¹ä¸ºã€å¼±é”å®š-rrã€‘ã€‚\n\n\n"
+				"ç‚¹å‡»â€œç¡®å®šâ€ç¿»åˆ°ä¸‹ä¸€é¡µï¼›ç‚¹å‡»â€œå–æ¶ˆâ€ç»“æŸæŸ¥çœ‹è¯´æ˜ã€‚",
+				"SGuardé™åˆ¶å™¨ " VERSION "  by: @H3d9",
 				MB_OKCANCEL)) {
 
 				MessageBox(0,
-					"¡¾¹¤×÷Ä£Ê½ËµÃ÷ P3¡¿\n\n"
-					"Ê±¼äÆ¬ÂÖ×ª£¨21.2.6£©£º\n\n"
-					"¸ÃÄ£Ê½Ô­ÀíÓëBESÏàÍ¬£¬²»½¨ÒéDNFºÍLOLÊ¹ÓÃ£¨¿ÉÄÜ³öÉÏ±¨Òì³£ºÍÖØĞÂÁ¬½Ó£©¡£\n\n"
-					"¡¾×¢¡¿Ê±¼ä×ªÂÖÎŞ·¨ÏŞÖÆÉ¨Ó²ÅÌ£¬Ö»ÄÜÏŞÖÆcpuÊ¹ÓÃ¡£",
-					"SGuardÏŞÖÆÆ÷ " VERSION "  by: @H3d9",
+					"ã€å·¥ä½œæ¨¡å¼è¯´æ˜ P3ã€‘\n\n"
+					"æ—¶é—´ç‰‡è½®è½¬ï¼ˆ21.2.6ï¼‰ï¼ˆå·²å¼ƒç”¨ï¼‰ï¼š\n\n"
+					"è¯¥æ¨¡å¼åŸç†ä¸BESç›¸åŒï¼Œä¸å»ºè®®ä½¿ç”¨ï¼ˆå¯èƒ½å‡ºä¸ŠæŠ¥å¼‚å¸¸å’Œé‡æ–°è¿æ¥ï¼‰ã€‚\n\n"
+					"ã€æ³¨ã€‘æ—¶é—´è½¬è½®æ— æ³•é™åˆ¶æ‰«ç¡¬ç›˜ï¼Œåªèƒ½é™åˆ¶cpuä½¿ç”¨ã€‚",
+					"SGuardé™åˆ¶å™¨ " VERSION "  by: @H3d9",
 					MB_OK);
 			}
 		}
@@ -110,41 +112,47 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 			char buf [0x1000];
 			dlgParam = (DWORD)lParam;
 			
-			if (dlgParam == DLGPARAM_PCT) { // set limit percent.
-				SetWindowText(hDlg, "ÊäÈëÏŞÖÆ×ÊÔ´µÄ°Ù·Ö±È");
-				sprintf(buf, "ÊäÈëÕûÊı1~99£¬»ò999£¨´ú±í99.9£©\n£¨µ±Ç°Öµ£º%u£©", limitMgr.limitPercent.load());
+			if (dlgParam == DLGPARAM_SCANDELAY) { // set scan delay.
+				SetWindowText(hDlg, "è¾“å…¥æ£€æµ‹SGUARDè¿›ç¨‹çš„æ—¶é—´é—´éš”ï¼ˆå•ä½ï¼šç§’ï¼‰");
+				sprintf(buf, "è¾“å…¥1~5çš„æ•´æ•°ï¼ˆå½“å‰æ‰«æé—´éš”ï¼š%uç§’ï¼‰", systemMgr.scanDelay.load() / 1000);
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
-			} else if (dlgParam == DLGPARAM_TIME) { // set time slice.
-				SetWindowText(hDlg, "ÊäÈëÃ¿100ms´ÓÄ¿±êÏß³ÌÖĞÇ¿ÖÆ°ş¶áµÄÊ±¼ä£¨µ¥Î»£ºms£©");
-				sprintf(buf, "\nÊäÈë1~99µÄÕûÊı£¨µ±Ç°Öµ£º%u£©", traceMgr.lockRound.load());
+			} else if (dlgParam == DLGPARAM_RRPCT) { // set limit percent.
+				SetWindowText(hDlg, "è¾“å…¥é™åˆ¶èµ„æºçš„ç™¾åˆ†æ¯”");
+				sprintf(buf, "è¾“å…¥æ•´æ•°1~99ï¼Œæˆ–999ï¼ˆä»£è¡¨99.9ï¼‰\nï¼ˆå½“å‰å€¼ï¼š%uï¼‰", limitMgr.limitPercent.load());
+				SetDlgItemText(hDlg, IDC_TEXT1, buf);
+
+			} else if (dlgParam == DLGPARAM_LOCKTIME) { // set time slice.
+				SetWindowText(hDlg, "è¾“å…¥æ¯100msä»ç›®æ ‡çº¿ç¨‹ä¸­å¼ºåˆ¶å‰¥å¤ºçš„æ—¶é—´ï¼ˆå•ä½ï¼šmsï¼‰");
+				sprintf(buf, "\nè¾“å…¥1~99çš„æ•´æ•°ï¼ˆå½“å‰å€¼ï¼š%uï¼‰", traceMgr.lockRound.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
 			} else if (dlgParam == DLGPARAM_PATCHWAIT1) { // set advanced patch wait for ntdll ioctl.
-				SetWindowText(hDlg, "ÊäÈë¿ªÆô·ÀÉ¨ÅÌ¹¦ÄÜÇ°µÄ³õÊ¼µÈ´ıÊ±¼ä£¨µ¥Î»£ºÃë£©");
-				sprintf(buf, "\nÊäÈëÒ»¸öÕûÊı£¨µ±Ç°µÈ´ıÊ±¼ä£º%uÃë£©", patchMgr.patchDelayBeforeNtdllioctl.load());
-				SetDlgItemText(hDlg, IDC_TEXT1, buf);
-				SetDlgItemText(hDlg, IDC_TEXT2, "¡¾ÌáÊ¾¡¿ÄãÃ»ÓĞ±ØÒªĞŞ¸ÄÕâÒ»Ïî¡£");
+				/*SetWindowText(hDlg, "è¾“å…¥å¼€å¯å…¨éƒ¨åŠŸèƒ½å‰çš„åˆå§‹ç­‰å¾…æ—¶é—´ï¼ˆå•ä½ï¼šç§’ï¼‰");
+				sprintf(buf, "\nè¾“å…¥ä¸€ä¸ªæ•´æ•°ï¼ˆå½“å‰ç­‰å¾…æ—¶é—´ï¼š%uç§’ï¼‰", patchMgr.patchDelayBeforeNtdllioctl.load());
+				SetDlgItemText(hDlg, IDC_TEXT1, buf);*/
 				
 			} else if (dlgParam == DLGPARAM_PATCHWAIT2) { // set advanced patch wait for ntdll etc.
-				SetWindowText(hDlg, "ÊäÈë¿ªÆô·ÀÉ¨ÅÌ¹¦ÄÜºóµÈ´ıSGUARDÎÈ¶¨µÄÊ±¼ä£¨µ¥Î»£ºÃë£©");
-				sprintf(buf, "\nÊäÈëÒ»¸öÕûÊı£¨µ±Ç°µÈ´ıÊ±¼ä£º%uÃë£©", patchMgr.patchDelayBeforeNtdlletc.load());
+				SetWindowText(hDlg, "è¾“å…¥å¼€å¯é˜²æ‰«ç›˜åç­‰å¾…SGUARDç¨³å®šçš„æ—¶é—´ï¼ˆå•ä½ï¼šç§’ï¼‰");
+				sprintf(buf, "\nè¾“å…¥ä¸€ä¸ªæ•´æ•°ï¼ˆå½“å‰ç­‰å¾…æ—¶é—´ï¼š%uç§’ï¼‰", patchMgr.patchDelayBeforeNtdlletc.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 				
 			} else { // set patch delay switches.
-				auto id = dlgParam - DLGPARAM_DELAY1;
-				SetWindowText(hDlg, "ÊäÈëSGUARDÃ¿´ÎÖ´ĞĞµ±Ç°ÏµÍ³µ÷ÓÃµÄÇ¿ÖÆÑÓ³Ù£¨µ¥Î»£ºms£©");
-				sprintf(buf, "\nÊäÈë%u~%uµÄÕûÊı£¨µ±Ç°Öµ£º%u£©", delayRange[id].low, delayRange[id].high, delay[id].load());
+				auto id = dlgParam - DLGPARAM_PATCHDELAY1;
+				SetWindowText(hDlg, "è¾“å…¥SGUARDæ¯æ¬¡æ‰§è¡Œç›®æ ‡ç³»ç»Ÿè°ƒç”¨çš„å¼ºåˆ¶å»¶è¿Ÿï¼ˆå•ä½ï¼šmsï¼‰");
+				sprintf(buf, "\nè¾“å…¥%u~%uçš„æ•´æ•°ï¼ˆå½“å‰å€¼ï¼š%uï¼‰", delayRange[id].low, delayRange[id].high, delay[id].load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
-				if (dlgParam == DLGPARAM_DELAY1) {
-					SetDlgItemText(hDlg, IDC_TEXT2, "µ±Ç°ÉèÖÃ£ºNtQueryVirtualMemory");
-				} else if (dlgParam == DLGPARAM_DELAY2) {
-					SetDlgItemText(hDlg, IDC_TEXT2, "µ±Ç°ÉèÖÃ£ºGetAsyncKeyState");
-				} else if (dlgParam == DLGPARAM_DELAY3) {
-					SetDlgItemText(hDlg, IDC_TEXT2, "µ±Ç°ÉèÖÃ£ºNtWaitForSingleObject\n¡¾×¢Òâ¡¿²»½¨ÒéÉèÖÃ´óÓÚ100µÄÊıÖµ¡£");
-				} else if (dlgParam == DLGPARAM_DELAY4) {
-					SetDlgItemText(hDlg, IDC_TEXT2, "µ±Ç°ÉèÖÃ£ºNtDelayExecution");
+				if (dlgParam == DLGPARAM_PATCHDELAY1) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "å½“å‰è®¾ç½®ï¼šNtQueryVirtualMemory");
+				} else if (dlgParam == DLGPARAM_PATCHDELAY2) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "å½“å‰è®¾ç½®ï¼šGetAsyncKeyState");
+				} else if (dlgParam == DLGPARAM_PATCHDELAY3) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "å½“å‰è®¾ç½®ï¼šNtWaitForSingleObject");
+				} else if (dlgParam == DLGPARAM_PATCHDELAY4) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "å½“å‰è®¾ç½®ï¼šNtDelayExecution");
+				} else if (dlgParam == DLGPARAM_PATCHDELAY5) {
+					SetDlgItemText(hDlg, IDC_TEXT2, "å½“å‰è®¾ç½®ï¼šæŒ‡å‘ACE-BASEçš„CPL0é€šä¿¡æ—¶é—´");
 				}
 			}
 
@@ -158,19 +166,28 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 			if (LOWORD(wParam) == IDC_OK) {
 				BOOL translated;
 				UINT res = GetDlgItemInt(hDlg, IDC_EDIT, &translated, FALSE);
+				
+				if (dlgParam == DLGPARAM_SCANDELAY) {
+					if (!translated || res < 1 || res > 5) {
+						systemMgr.panic("è¾“å…¥1~5çš„æ•´æ•°");
+					} else {
+						systemMgr.scanDelay = res * 1000;
+						EndDialog(hDlg, LOWORD(wParam));
+						return (INT_PTR)TRUE;
+					}
 
-				if (dlgParam == DLGPARAM_PCT) {
+				} else if (dlgParam == DLGPARAM_RRPCT) {
 					if (!translated || res < 1 || (res > 99 && res != 999)) {
-						systemMgr.panic("ÊäÈë1~99»ò999");
+						systemMgr.panic("è¾“å…¥1~99æˆ–999");
 					} else {
 						limitMgr.setPercent(res);
 						EndDialog(hDlg, LOWORD(wParam));
 						return (INT_PTR)TRUE;
 					}
 
-				} else if (dlgParam == DLGPARAM_TIME) {
+				} else if (dlgParam == DLGPARAM_LOCKTIME) {
 					if (!translated || res < 1 || res > 99) {
-						systemMgr.panic("ÊäÈë1~99µÄÕûÊı");
+						systemMgr.panic("è¾“å…¥1~99çš„æ•´æ•°");
 					} else {
 						traceMgr.lockRound = res;
 						EndDialog(hDlg, LOWORD(wParam));
@@ -178,17 +195,17 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 					}
 
 				} else if (dlgParam == DLGPARAM_PATCHWAIT1) {
-					if (!translated) {
-						systemMgr.panic("ÊäÈë¸ñÊ½´íÎó");
+					/*if (!translated) {
+						systemMgr.panic("è¾“å…¥æ ¼å¼é”™è¯¯");
 					} else {
 						patchMgr.patchDelayBeforeNtdllioctl = res;
 						EndDialog(hDlg, LOWORD(wParam));
 						return (INT_PTR)TRUE;
-					}
+					}*/
 
 				} else if (dlgParam == DLGPARAM_PATCHWAIT2) {
 					if (!translated) {
-						systemMgr.panic("ÊäÈë¸ñÊ½´íÎó");
+						systemMgr.panic("è¾“å…¥æ ¼å¼é”™è¯¯");
 					} else {
 						patchMgr.patchDelayBeforeNtdlletc = res;
 						EndDialog(hDlg, LOWORD(wParam));
@@ -196,9 +213,9 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 					}
 
 				} else {
-					auto id = dlgParam - DLGPARAM_DELAY1;
+					auto id = dlgParam - DLGPARAM_PATCHDELAY1;
 					if (!translated || res < delayRange[id].low || res > delayRange[id].high) {
-						systemMgr.panic("ÊäÈë%u~%uµÄÕûÊı", delayRange[id].low, delayRange[id].high);
+						systemMgr.panic("è¾“å…¥%u~%uçš„æ•´æ•°", delayRange[id].low, delayRange[id].high);
 					} else {
 						patchMgr.patchDelay[id] = res;
 						EndDialog(hDlg, LOWORD(wParam));
@@ -220,6 +237,45 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 	return (INT_PTR)FALSE;
 }
 
+static INT_PTR CALLBACK DlgProc2(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+
+	switch (message) {
+
+	case WM_INITDIALOG:
+	{
+		std::random_device rd;
+		std::default_random_engine e(rd());
+		
+		const wchar_t* emoji[] = {
+			L":.ï¾Ÿãƒ½(ï½¡â—•â€¿â—•ï½¡)ï¾‰ï¾Ÿ.:ï½¡+ï¾Ÿ",L"â—” â€¸â—”ï¼Ÿ",L"â•®(à¹‘â€¢Ì â‚ƒâ€¢Ì€à¹‘)â•­",L"à¸…Ê•â€¢Ì«Í¡â€¢Ê”à¸… ",L"Ù©(à¹‘Â´0`à¹‘)Û¶",L"ï¼ˆ//â–½//ï¼‰",L"Ô¾â€¸Ô¾",L"( Â´â—” â€¸â—”`)",
+			L"<(ï¿£ï¸¶ï¿£)>",L"(â€¢â€¾Ì‘âŒ£â€¾Ì‘â€¢)âœ§Ë–Â°",L"(à¹‘Ë˜ Ë˜à¹‘) ",L"(Â¦3[â–“â–“]",L"âœ§Ê•Ì¢Ì£Ì£Ì£Ì£Ì©Ì©Ì©Ì©Â·Í¡Ë”Â·à½¼ÉÌ¡Ì£Ì£Ì£Ì£Ì©Ì©Ì©Ì©âœ§",L"*:à®Ù©(à¹‘Â´áµ•`)Û¶à®:*",L"(à¹‘Â¯â—¡Â¯à¹‘)",
+			L"( *ï¿£â–½ï¿£)o â”€â•â‰¡â€»:â˜†",L"(ï½ï¹ƒï½)~zZ",L"à¹Â·Â°(à§¹ËƒÌµï¹Ë‚Ìµà§¹)Â°Â·à¹",L"(à¹‘âœ¦Ë‘Ì«âœ¦)âœ¨",L"à¬˜(à©­ËŠáµ•Ë‹)à©­* à©ˆâœ©â€§â‚ŠËš",L"(â—â™¡â—¡â™¡â—)",
+		};
+		std::uniform_int_distribution<> u(0, sizeof(emoji) / sizeof(const wchar_t*) - 1);
+
+		SetDlgItemTextW(hDlg, IDC_BONUS, emoji[u(e)]);
+		SetWindowPos(hDlg, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+		return (INT_PTR)TRUE;
+	}
+
+	case WM_COMMAND:
+	{
+		if (LOWORD(wParam) == IDC_AFDIAN) {
+			ShellExecute(0, "open", "https://afdian.net/a/sguard_limit", 0, 0, SW_SHOW);
+		}
+	}
+	break;
+
+	case WM_CLOSE:
+	{
+		EndDialog(hDlg, LOWORD(wParam));
+		return (INT_PTR)TRUE;
+	}
+	break;
+	}
+
+	return (INT_PTR)FALSE;
+}
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
@@ -239,31 +295,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			// for driver-depending options: 
 			// auto select MFT_STRING or MF_GRAYED.
 			auto    drvMenuType    = driver.driverReady ? MFT_STRING : MF_GRAYED;
+			auto    drvPopMenuType = driver.driverReady ? MF_POPUP   : MF_GRAYED;
 
 
-			char    buf   [0x1000] = {};
-			HMENU   hMenu          = CreatePopupMenu();
-			HMENU   hMenuModes     = CreatePopupMenu();
-			HMENU   hMenuOthers    = CreatePopupMenu();
+			char    buf[0x1000] = {};
+			HMENU   hMenu       = CreatePopupMenu();
+			HMENU   hMenuModes  = CreatePopupMenu();
+			HMENU   hMenuOthers = CreatePopupMenu();
 
-			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_HIJACK,  "ÇĞ»»µ½£ºÊ±¼äÆ¬ÂÖ×ª");
-			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_TRACE,   "ÇĞ»»µ½£ºÏß³Ì×·×Ù");
-			AppendMenu(hMenuModes,  MFT_STRING, IDM_MODE_PATCH,   "ÇĞ»»µ½£ºÄÚ´æ²¹¶¡ " MEMPATCH_VERSION);
+			AppendMenu(hMenuModes, MFT_STRING, IDM_MODE_HIJACK, "åˆ‡æ¢åˆ°ï¼šæ—¶é—´ç‰‡è½®è½¬");
+			AppendMenu(hMenuModes, MFT_STRING, IDM_MODE_TRACE,  "åˆ‡æ¢åˆ°ï¼šçº¿ç¨‹è¿½è¸ª");
+			AppendMenu(hMenuModes, MFT_STRING, IDM_MODE_PATCH,  "åˆ‡æ¢åˆ°ï¼šå†…å­˜è¡¥ä¸ " MEMPATCH_VERSION);
 			if (g_Mode == 0) {
 				CheckMenuItem(hMenuModes, IDM_MODE_HIJACK, MF_CHECKED);
 			} else if (g_Mode == 1) {
-				CheckMenuItem(hMenuModes, IDM_MODE_TRACE,  MF_CHECKED);
+				CheckMenuItem(hMenuModes, IDM_MODE_TRACE, MF_CHECKED);
 			} else { // if g_Mode == 2
-				CheckMenuItem(hMenuModes, IDM_MODE_PATCH,  MF_CHECKED);
+				CheckMenuItem(hMenuModes, IDM_MODE_PATCH, MF_CHECKED);
 			}
 
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_AUTOSTARTUP,     "¿ª»ú×ÔÆô");
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_KILLACELOADER,   "ÓÎÏ·Æô¶¯60Ãëºó£¬½áÊøace-loader");
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_HIDESYSFILE,     "½«Çı¶¯ÎÄ¼şÒş²Øµ½ÏµÍ³ÓÃ»§Ä¿Â¼");
+			sprintf(buf, "è®¾ç½®æ‰«æé—´éš”ï¼ˆå½“å‰ï¼š%uç§’ï¼‰", systemMgr.scanDelay.load() / 1000);
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_SCANDELAY, buf);
 			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_UPDATEPAGE, "¼ì²é¸üĞÂ¡¾µ±Ç°°æ±¾£º" VERSION "¡¿");
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_ABOUT,           "²é¿´ËµÃ÷");
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_SOURCEPAGE, "²é¿´Ô´´úÂë");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_AUTOSTARTUP,     "å¼€æœºè‡ªå¯");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_KILLACELOADER,   "æ¸¸æˆå¯åŠ¨60ç§’åï¼Œç»“æŸace-loader");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_HIDESYSFILE,     "å°†é©±åŠ¨æ–‡ä»¶éšè—åˆ°ç³»ç»Ÿç”¨æˆ·ç›®å½•");
+			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_UPDATEPAGE, "æ£€æŸ¥æ›´æ–°ã€å½“å‰ç‰ˆæœ¬ï¼š" VERSION "ã€‘");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_ABOUT,           "æŸ¥çœ‹è¯´æ˜");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_SOURCEPAGE, "æŸ¥çœ‹æºä»£ç ");
 			if (systemMgr.autoStartup) {
 				CheckMenuItem(hMenuOthers, IDM_AUTOSTARTUP, MF_CHECKED);
 			}
@@ -278,24 +338,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			if (g_Mode == 0) {
 
 				if (!limitMgr.limitEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardÏŞÖÆÆ÷ - ÓÃ»§ÊÖ¶¯ÔİÍ£");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardé™åˆ¶å™¨ - ç”¨æˆ·æ‰‹åŠ¨æš‚åœ");
 				} else if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardÏŞÖÆÆ÷ - µÈ´ıÓÎÏ·ÔËĞĞ");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardé™åˆ¶å™¨ - ç­‰å¾…æ¸¸æˆè¿è¡Œ");
 				} else {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardÏŞÖÆÆ÷ - Õì²âµ½SGuard");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardé™åˆ¶å™¨ - ä¾¦æµ‹åˆ°SGuard");
 				}
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "µ±Ç°Ä£Ê½£ºÊ±¼äÆ¬ÂÖ×ª  [µã»÷ÇĞ»»]");
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "å½“å‰æ¨¡å¼ï¼šæ—¶é—´ç‰‡è½®è½¬  [ç‚¹å‡»åˆ‡æ¢]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				if (limitMgr.limitPercent == 999) {
-					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, "ÏŞÖÆ×ÊÔ´£º99.9%");
+					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, "é™åˆ¶èµ„æºï¼š99.9%");
 				} else {
-					sprintf(buf, "ÏŞÖÆ×ÊÔ´£º%u%%", limitMgr.limitPercent.load());
+					sprintf(buf, "é™åˆ¶èµ„æºï¼š%u%%", limitMgr.limitPercent.load());
 					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, buf);
 				}
-				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT,       "Í£Ö¹ÏŞÖÆ");
-				AppendMenu(hMenu, MFT_STRING, IDM_SETPERCENT,      "ÉèÖÃÏŞÖÆ×ÊÔ´µÄ°Ù·Ö±È");
+				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT,    "åœæ­¢é™åˆ¶");
+				AppendMenu(hMenu, MFT_STRING, IDM_SETPERCENT,   "è®¾ç½®é™åˆ¶èµ„æºçš„ç™¾åˆ†æ¯”");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, drvMenuType, IDM_KERNELLIMIT,    "Ê¹ÓÃÄÚºËÌ¬µ÷¶ÈÆ÷");
+				AppendMenu(hMenu, drvMenuType, IDM_KERNELLIMIT, "ä½¿ç”¨å†…æ ¸æ€è°ƒåº¦å™¨");
 				if (limitMgr.limitEnabled) {
 					CheckMenuItem(hMenu, IDM_STARTLIMIT, MF_CHECKED);
 				} else {
@@ -308,14 +368,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			} else if (g_Mode == 1) {
 
 				if (!traceMgr.lockEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuardÏŞÖÆÆ÷ - ÓÃ»§ÊÖ¶¯ÔİÍ£");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuardé™åˆ¶å™¨ - ç”¨æˆ·æ‰‹åŠ¨æš‚åœ");
 				} else if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuardÏŞÖÆÆ÷ - µÈ´ıÓÎÏ·ÔËĞĞ");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuardé™åˆ¶å™¨ - ç­‰å¾…æ¸¸æˆè¿è¡Œ");
 				} else {
 					if (traceMgr.lockPid == 0) {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardÏŞÖÆÆ÷ - ÕıÔÚ·ÖÎö");
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardé™åˆ¶å™¨ - æ­£åœ¨åˆ†æ");
 					} else {
-						sprintf(buf, "SGuardÏŞÖÆÆ÷ - ");
+						sprintf(buf, "SGuardé™åˆ¶å™¨ - ");
 						switch (traceMgr.lockMode) {
 						case 0:
 							for (auto i = 0; i < 3; i++) {
@@ -337,16 +397,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 					}
 				}
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "µ±Ç°Ä£Ê½£ºÏß³Ì×·×Ù  [µã»÷ÇĞ»»]");
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "å½“å‰æ¨¡å¼ï¼šçº¿ç¨‹è¿½è¸ª  [ç‚¹å‡»åˆ‡æ¢]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3,    "Ëø¶¨");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1,    "ÈõËø¶¨");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR,  "Ëø¶¨-rr");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR,  "ÈõËø¶¨-rr");
-				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK,   "½â³ıËø¶¨");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3,   "é”å®š");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1,   "å¼±é”å®š");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR, "é”å®š-rr");
+				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR, "å¼±é”å®š-rr");
+				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK,  "è§£é™¤é”å®š");
 				if (traceMgr.lockMode == 1 || traceMgr.lockMode == 3) {
 					AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-					sprintf(buf, "ÉèÖÃÊ±¼äÇĞ·Ö£¨µ±Ç°£º%d£©", traceMgr.lockRound.load());
+					sprintf(buf, "è®¾ç½®æ—¶é—´åˆ‡åˆ†ï¼ˆå½“å‰ï¼š%dï¼‰", traceMgr.lockRound.load());
 					AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
 				}
 				if (traceMgr.lockEnabled) {
@@ -371,57 +431,76 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			} else { // if (g_Mode == 2) 
 
 				if (!driver.driverReady) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,      "SGuardÏŞÖÆÆ÷ - Ä£Ê½ÎŞĞ§£¨Çı¶¯Î´³õÊ¼»¯£©");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuardé™åˆ¶å™¨ - æ¨¡å¼æ— æ•ˆï¼ˆé©±åŠ¨æœªåˆå§‹åŒ–ï¼‰");
 				} else {
 					if (g_HijackThreadWaiting) {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,  "SGuardÏŞÖÆÆ÷ - µÈ´ıÓÎÏ·ÔËĞĞ");
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardé™åˆ¶å™¨ - ç­‰å¾…æ¸¸æˆè¿è¡Œ");
 					} else {
-						int total = 
-							patchMgr.patchSwitches.NtQueryVirtualMemory + 
-							patchMgr.patchSwitches.NtReadVirtualMemory + 
-							patchMgr.patchSwitches.GetAsyncKeyState + 
-							patchMgr.patchSwitches.NtWaitForSingleObject + 
-							patchMgr.patchSwitches.NtDelayExecution + 
-							patchMgr.patchSwitches.DeviceIoControl_1 + 
+						int total =
+							patchMgr.patchSwitches.NtQueryVirtualMemory +
+							patchMgr.patchSwitches.NtReadVirtualMemory +
+							patchMgr.patchSwitches.GetAsyncKeyState +
+							patchMgr.patchSwitches.NtWaitForSingleObject +
+							patchMgr.patchSwitches.NtDelayExecution +
+							patchMgr.patchSwitches.DeviceIoControl_1 +
 							patchMgr.patchSwitches.DeviceIoControl_2;
 
-						int finished = 
-							patchMgr.patchStatus.NtQueryVirtualMemory + 
-							patchMgr.patchStatus.NtReadVirtualMemory + 
-							patchMgr.patchStatus.GetAsyncKeyState + 
-							patchMgr.patchStatus.NtWaitForSingleObject + 
-							patchMgr.patchStatus.NtDelayExecution + 
-							patchMgr.patchStatus.DeviceIoControl_1 + 
+						int finished =
+							patchMgr.patchStatus.NtQueryVirtualMemory +
+							patchMgr.patchStatus.NtReadVirtualMemory +
+							patchMgr.patchStatus.GetAsyncKeyState +
+							patchMgr.patchStatus.NtWaitForSingleObject +
+							patchMgr.patchStatus.NtDelayExecution +
+							patchMgr.patchStatus.DeviceIoControl_1 +
 							patchMgr.patchStatus.DeviceIoControl_2;
 
 						if (finished == 0) {
 							if (patchMgr.patchFailCount == 0) {
-								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardÏŞÖÆÆ÷ - ÇëµÈ´ı");
+								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuardé™åˆ¶å™¨ - è¯·ç­‰å¾…");
 							} else {
-								sprintf(buf, "SGuardÏŞÖÆÆ÷ - ÕıÔÚÖØÊÔ£¨µÚ%d´Î£©... << [µã»÷²é¿´ÏêÏ¸ĞÅÏ¢]", patchMgr.patchFailCount.load());
+								sprintf(buf, "SGuardé™åˆ¶å™¨ - æ­£åœ¨é‡è¯•ï¼ˆç¬¬%dæ¬¡ï¼‰... << [ç‚¹å‡»æŸ¥çœ‹è¯¦ç»†ä¿¡æ¯]", patchMgr.patchFailCount.load());
 								AppendMenu(hMenu, MFT_STRING, IDM_PATCHFAILHINT, buf);
 							}
 						} else {
-							sprintf(buf, "SGuardÏŞÖÆÆ÷ - ÒÑÌá½»  [%d/%d]", finished, total);
+							sprintf(buf, "SGuardé™åˆ¶å™¨ - å·²æäº¤  [%d/%d]", finished, total);
 							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 						}
 					}
 				}
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "µ±Ç°Ä£Ê½£ºÄÚ´æ²¹¶¡ " MEMPATCH_VERSION "  [µã»÷ÇĞ»»]");
+
+				HMENU  hMenuPatch = CreatePopupMenu();
+				AppendMenu(hMenuPatch, drvMenuType, IDM_PATCHSWITCH6_1, "åˆ‡æ¢åˆ°ï¼šé˜²æ‰«ç›˜1å¼±åŒ–æ¨¡å¼");
+				AppendMenu(hMenuPatch, drvMenuType, IDM_PATCHSWITCH6_2, "åˆ‡æ¢åˆ°ï¼šé˜²æ‰«ç›˜1å¼ºåŠ›æ¨¡å¼");
+				AppendMenu(hMenuPatch, drvMenuType, IDM_PATCHSWITCH6_3, "å…³é—­é˜²æ‰«ç›˜1é€‰é¡¹");
+				if (patchMgr.patchSwitches.DeviceIoControl_1) {
+					if (patchMgr.patchSwitches.DeviceIoControl_1x) {
+						CheckMenuItem(hMenuPatch, IDM_PATCHSWITCH6_1, MF_CHECKED);
+					} else {
+						CheckMenuItem(hMenuPatch, IDM_PATCHSWITCH6_2, MF_CHECKED);
+					}
+				} else {
+					CheckMenuItem(hMenuPatch, IDM_PATCHSWITCH6_3, MF_CHECKED);
+				}
+
+				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "å½“å‰æ¨¡å¼ï¼šå†…å­˜è¡¥ä¸ " MEMPATCH_VERSION "  [ç‚¹å‡»åˆ‡æ¢]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, drvMenuType, IDM_DOPATCH,       "×Ô¶¯");
-				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH,       "³·ÏúĞŞ¸Ä");
+				AppendMenu(hMenu, drvMenuType, IDM_DOPATCH, "è‡ªåŠ¨");
+				AppendMenu(hMenu, MF_GRAYED, IDM_UNDOPATCH, "æ’¤é”€ä¿®æ”¹");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH1,  "inline Ntdll!NtQueryVirtualMemory");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH2,  "inline Ntdll!NtReadVirtualMemory");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH3,  "inline User32!GetAsyncKeyState");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH4,  "inline Ntdll!NtWaitForSingleObject");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH5,  "re-write Ntdll!NtDelayExecution");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH6,  "[·ÀÉ¨ÅÌ1] Î±ÔìACE-BASE.sysµÄMDL¿ØÖÆ´úÂë");
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH7,  "[·ÀÉ¨ÅÌ2] Ö´ĞĞÊ§°ÜµÄÎÄ¼şÏµÍ³¼ÇÂ¼Ã¶¾Ù");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH1, "inline Ntdll!NtQueryVirtualMemory");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH2, "inline Ntdll!NtReadVirtualMemory");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH3, "inline User32!GetAsyncKeyState");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH4, "inline Ntdll!NtWaitForSingleObject");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH5, "re-write Ntdll!NtDelayExecution");
+				if (patchMgr.patchSwitches.DeviceIoControl_1x) {
+					AppendMenu(hMenu, drvPopMenuType, (UINT_PTR)hMenuPatch, "[é˜²æ‰«ç›˜1] ç¼“è§£æŒ‡å‘ACE-BASEçš„CPL0é€šä¿¡é€Ÿåº¦");
+				} else {
+					AppendMenu(hMenu, drvPopMenuType, (UINT_PTR)hMenuPatch, "[é˜²æ‰«ç›˜1] ä¼ªé€ ACE-BASE.sysçš„MDLæ§åˆ¶ä»£ç ");
+				}
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH7, "[é˜²æ‰«ç›˜2] æ‰§è¡Œå¤±è´¥çš„æ–‡ä»¶ç³»ç»Ÿè®°å½•æšä¸¾");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "ÆôÓÃ¸ß¼¶ÄÚ´æËÑË÷");
-				sprintf(buf, "ÉèÖÃÑÓ³Ù£¨µ±Ç°£º%u/%u", patchMgr.patchDelayBeforeNtdllioctl.load(), patchMgr.patchDelayBeforeNtdlletc.load());
+				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "å¯ç”¨é«˜çº§å†…å­˜æœç´¢");
+				sprintf(buf, "è®¾ç½®å»¶è¿Ÿï¼ˆå½“å‰ï¼š%u/%u", patchMgr.patchDelayBeforeNtdllioctl.load(), patchMgr.patchDelayBeforeNtdlletc.load());
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
 					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[0].load());
 				}
@@ -434,7 +513,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (patchMgr.patchSwitches.NtDelayExecution) {
 					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[3].load());
 				}
-				strcat(buf, "£©");
+				if (patchMgr.patchSwitches.DeviceIoControl_1) {
+					if (patchMgr.patchSwitches.DeviceIoControl_1x) {
+						sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[4].load());
+					}
+				}
+				strcat(buf, "ï¼‰");
 				AppendMenu(hMenu, drvMenuType, IDM_SETDELAY, buf);
 
 				CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
@@ -454,7 +538,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH5, MF_CHECKED);
 				}
 				if (patchMgr.patchSwitches.DeviceIoControl_1) {
-					CheckMenuItem(hMenu, IDM_PATCHSWITCH6, MF_CHECKED);
+					CheckMenuItem(hMenu, (UINT)(UINT_PTR)hMenuPatch, MF_CHECKED);
 				}
 				if (patchMgr.patchSwitches.DeviceIoControl_2) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH7, MF_CHECKED);
@@ -464,9 +548,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 
-			AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-			AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuOthers, "²é¿´ËµÃ÷/ÆäËûÑ¡Ïî");
-			AppendMenu(hMenu, MFT_STRING, IDM_EXIT,            "ÍË³ö");
+			AppendMenu(hMenu,  MF_SEPARATOR, 0, NULL);
+			AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hMenuOthers, L"æŸ¥çœ‹è¯´æ˜/å…¶ä»–é€‰é¡¹");
+			AppendMenuW(hMenu, MFT_STRING, IDM_DONATE,          L"âœ¨ èµåŠ©ä¸€ä¸‹ï¼Œçˆ±ä½ å“¦~");
+			AppendMenuW(hMenu, MFT_STRING, IDM_EXIT,            L"é€€å‡º");
 
 
 			POINT pt;
@@ -479,300 +564,322 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	break;
 	case WM_COMMAND:
 	{
-		char  buf  [0x1000];
-		UINT  id   = LOWORD(wParam);
+		char  buf[0x1000];
+		UINT  id = LOWORD(wParam);
 
 		switch (id) {
 
 			// general
-			case IDM_ABOUT:
-				ShowAbout();
-				break;
-			case IDM_EXIT:
-				if (g_Mode == 0 && limitMgr.limitEnabled) {
-					limitMgr.disable();
-					g_HijackThreadWaiting.wait(false); // block till hijack release target.
-				} else if (g_Mode == 1 && traceMgr.lockEnabled) {
-					traceMgr.disable();
-				} else if (g_Mode == 2 && patchMgr.patchEnabled) {
-					patchMgr.disable();
-				}
-				PostMessage(hWnd, WM_CLOSE, 0, 0);
-				break;
-			
-			// mode
-			case IDM_MODE_HIJACK:
-				if (IDYES == MessageBox(0, "¡°Ê±¼äÆ¬ÂÖ×ª¡±ÊÇ¾É°æ¹¦ÄÜ£¬¿ÉÄÜµ¼ÖÂÓÎÏ·µôÏß£¡\n½¨ÒéÄ¬ÈÏÄ£Ê½ÎŞ·¨Ê¹ÓÃÊ±ÔÙ»»¡£ÄãÈ·¶¨ÒªÇĞ»»Âğ£¿", "×¢Òâ", MB_YESNO)) {
-					traceMgr.disable();
-					patchMgr.disable();
-					limitMgr.enable();
-					g_Mode = 0;
-					configMgr.writeConfig();
-				}
-				break;
-			case IDM_MODE_TRACE:
-				if (IDYES == MessageBox(0, "¡°Ïß³Ì×·×Ù¡±ÊÇ¾É°æ¹¦ÄÜ£¬¿ÉÄÜµ¼ÖÂÓÎÏ·µôÏß£¡\n²»½¨ÒéÊ¹ÓÃ¸Ã¹¦ÄÜ£¬ÄãÈ·¶¨ÒªÇĞ»»Âğ£¿", "×¢Òâ£ºÒÑÆúÓÃµÄ¹¦ÄÜ£¡", MB_YESNO)) {
-					limitMgr.disable();
-					patchMgr.disable();
-					traceMgr.enable();
-					g_Mode = 1;
-					configMgr.writeConfig();
-				}
-				break;
-			case IDM_MODE_PATCH:
+		case IDM_ABOUT:
+			ShowAbout();
+			break;
+		case IDM_EXIT:
+			if (g_Mode == 0 && limitMgr.limitEnabled) {
 				limitMgr.disable();
+				g_HijackThreadWaiting.wait(false); // block till hijack release target.
+			} else if (g_Mode == 1 && traceMgr.lockEnabled) {
 				traceMgr.disable();
-				patchMgr.enable();
-				g_Mode = 2;
+			} else if (g_Mode == 2 && patchMgr.patchEnabled) {
+				patchMgr.disable();
+			}
+			PostMessage(hWnd, WM_CLOSE, 0, 0);
+			break;
+
+			// mode
+		case IDM_MODE_HIJACK:
+			if (IDYES == MessageBox(0, "â€œæ—¶é—´ç‰‡è½®è½¬â€æ˜¯æ—§ç‰ˆåŠŸèƒ½ï¼Œå¯èƒ½å¯¼è‡´æ¸¸æˆæ‰çº¿ï¼\nä¸å»ºè®®ä½¿ç”¨è¯¥åŠŸèƒ½ï¼Œä½ ç¡®å®šè¦åˆ‡æ¢å—ï¼Ÿ", "æ³¨æ„ï¼šå·²å¼ƒç”¨çš„åŠŸèƒ½ï¼", MB_YESNO)) {
+				traceMgr.disable();
+				patchMgr.disable();
+				limitMgr.enable();
+				g_Mode = 0;
 				configMgr.writeConfig();
-				break;
+			}
+			break;
+		case IDM_MODE_TRACE:
+			if (IDYES == MessageBox(0, "â€œçº¿ç¨‹è¿½è¸ªâ€æ˜¯æ—§ç‰ˆåŠŸèƒ½ï¼Œå¯èƒ½å¯¼è‡´æ¸¸æˆæ‰çº¿ï¼\nä¸å»ºè®®ä½¿ç”¨è¯¥åŠŸèƒ½ï¼Œä½ ç¡®å®šè¦åˆ‡æ¢å—ï¼Ÿ", "æ³¨æ„ï¼šå·²å¼ƒç”¨çš„åŠŸèƒ½ï¼", MB_YESNO)) {
+				limitMgr.disable();
+				patchMgr.disable();
+				traceMgr.enable();
+				g_Mode = 1;
+				configMgr.writeConfig();
+			}
+			break;
+		case IDM_MODE_PATCH:
+			limitMgr.disable();
+			traceMgr.disable();
+			patchMgr.enable();
+			g_Mode = 2;
+			configMgr.writeConfig();
+			break;
 
 			// limit
-			case IDM_STARTLIMIT:
-				limitMgr.enable();
-				break;
-			case IDM_STOPLIMIT:
-				limitMgr.disable();
-				break;
-			case IDM_SETPERCENT:
-				DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_PCT);
-				configMgr.writeConfig();
-				break;
-			case IDM_KERNELLIMIT:
-				limitMgr.useKernelMode = !limitMgr.useKernelMode;
-				configMgr.writeConfig();
-				MessageBox(0, "ÇĞ»»¸ÃÑ¡ÏîĞèÒªÄãÖØÆôÏŞÖÆÆ÷¡£", "×¢Òâ", MB_OK);
-				break;
-			
+		case IDM_STARTLIMIT:
+			limitMgr.enable();
+			break;
+		case IDM_STOPLIMIT:
+			limitMgr.disable();
+			break;
+		case IDM_SETPERCENT:
+			DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_RRPCT);
+			configMgr.writeConfig();
+			break;
+		case IDM_KERNELLIMIT:
+			limitMgr.useKernelMode = !limitMgr.useKernelMode;
+			configMgr.writeConfig();
+			MessageBox(0, "åˆ‡æ¢è¯¥é€‰é¡¹éœ€è¦ä½ é‡å¯é™åˆ¶å™¨ã€‚", "æ³¨æ„", MB_OK);
+			break;
+
 			// lock
-			case IDM_LOCK3:
-				traceMgr.setMode(0);
-				configMgr.writeConfig();
-				break;
-			case IDM_LOCK3RR:
-				traceMgr.setMode(1);
-				configMgr.writeConfig();
-				break;
-			case IDM_LOCK1:
-				traceMgr.setMode(2);
-				configMgr.writeConfig();
-				break;
-			case IDM_LOCK1RR:
-				traceMgr.setMode(3);
-				configMgr.writeConfig();
-				break;
-			case IDM_SETRRTIME:
-				DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_TIME);
-				configMgr.writeConfig();
-				break;
-			case IDM_UNLOCK:
-				traceMgr.disable();
-				break;
-				
+		case IDM_LOCK3:
+			traceMgr.setMode(0);
+			configMgr.writeConfig();
+			break;
+		case IDM_LOCK3RR:
+			traceMgr.setMode(1);
+			configMgr.writeConfig();
+			break;
+		case IDM_LOCK1:
+			traceMgr.setMode(2);
+			configMgr.writeConfig();
+			break;
+		case IDM_LOCK1RR:
+			traceMgr.setMode(3);
+			configMgr.writeConfig();
+			break;
+		case IDM_SETRRTIME:
+			DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_LOCKTIME);
+			configMgr.writeConfig();
+			break;
+		case IDM_UNLOCK:
+			traceMgr.disable();
+			break;
+
 			// patch
-			case IDM_SETDELAY:
-			{
-				sprintf(buf, "ÇëÉèÖÃÒÔÏÂÑ¡ÏîµÄÑÓ³Ù£ºÈç¹û²»ÏëÉèÖÃÄ³Ñ¡Ïî£¬¿ÉÒÔÖ±½Ó¹Ø±Õ´°¿Ú¡£\n\n"
-					"(¸ß¼¶ÄÚ´æËÑË÷) ¿ªÆô·ÀÉ¨ÅÌ¹¦ÄÜÇ°µÄ³õÊ¼µÈ´ıÊ±¼ä\n"
-					"(¸ß¼¶ÄÚ´æËÑË÷) ¿ªÆô·ÀÉ¨ÅÌ¹¦ÄÜºóµÈ´ıSGUARDÎÈ¶¨µÄÊ±¼ä\n"
-					"%s%s%s%s\n\n"
-					"¡¾ÌáÊ¾¡¿Èç¹û²»ÖªµÀÄ³Ñ¡ÏîµÄ×÷ÓÃ£¬ÇëÎğºúÂÒÉèÖÃ£¬·ñÔò¿ÉÄÜÓÎÏ·µôÏß/ÎŞ·¨Æô¶¯¡£\n",
-					patchMgr.patchSwitches.NtQueryVirtualMemory   ? "NtQueryVirtualMemory\n"   : "",
-					patchMgr.patchSwitches.GetAsyncKeyState       ? "GetAsyncKeyState\n"       : "",
-					patchMgr.patchSwitches.NtWaitForSingleObject  ? "NtWaitForSingleObject\n"  : "",
-					patchMgr.patchSwitches.NtDelayExecution       ? "NtDelayExecution\n"       : "");
+		case IDM_SETDELAY:
+		{
+			sprintf(buf, "è¯·è®¾ç½®ä»¥ä¸‹é€‰é¡¹çš„å»¶è¿Ÿï¼šå¦‚æœä¸æƒ³è®¾ç½®æŸé€‰é¡¹ï¼Œå¯ä»¥ç›´æ¥å…³é—­çª—å£ã€‚\n\n"
+				//"(é«˜çº§å†…å­˜æœç´¢) å¼€å¯å…¨éƒ¨åŠŸèƒ½å‰çš„åˆå§‹ç­‰å¾…æ—¶é—´\n"
+				"(é«˜çº§å†…å­˜æœç´¢) å¼€å¯é˜²æ‰«ç›˜åŠŸèƒ½åç­‰å¾…SGUARDç¨³å®šçš„æ—¶é—´\n"
+				"%s%s%s%s%s\n\n"
+				"ã€æç¤ºã€‘å¦‚æœä¸çŸ¥é“æŸé€‰é¡¹çš„ä½œç”¨ï¼Œè¯·å‹¿èƒ¡ä¹±è®¾ç½®ï¼Œå¦åˆ™å¯èƒ½æ¸¸æˆæ‰çº¿/æ— æ³•å¯åŠ¨ã€‚\n",
+				patchMgr.patchSwitches.NtQueryVirtualMemory ?  "NtQueryVirtualMemory\n" : "",
+				patchMgr.patchSwitches.GetAsyncKeyState ?      "GetAsyncKeyState\n" : "",
+				patchMgr.patchSwitches.NtWaitForSingleObject ? "NtWaitForSingleObject\n" : "",
+				patchMgr.patchSwitches.NtDelayExecution ?      "NtDelayExecution\n" : "",
+				patchMgr.patchSwitches.DeviceIoControl_1x ?    "æŒ‡å‘ACE-BASEçš„CPL0é€šä¿¡æ—¶é—´\n" : "");
 
-				if (IDYES == MessageBox(0, buf, "ÉèÖÃÑÓ³Ù", MB_YESNO)) {
+			if (IDYES == MessageBox(0, buf, "è®¾ç½®å»¶è¿Ÿ", MB_YESNO)) {
 
-					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT1);
-					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT2);
-					if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
-						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_DELAY1);
-					}
-					if (patchMgr.patchSwitches.GetAsyncKeyState) {
-						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_DELAY2);
-					}
-					if (patchMgr.patchSwitches.NtWaitForSingleObject) {
-						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_DELAY3);
-					}
-					if (patchMgr.patchSwitches.NtDelayExecution) {
-						DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_DELAY4);
-					}
+				//DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT1);
+				DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT2);
+				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY1);
+				}
+				if (patchMgr.patchSwitches.GetAsyncKeyState) {
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY2);
+				}
+				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY3);
+				}
+				if (patchMgr.patchSwitches.NtDelayExecution) {
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY4);
+				}
+				if (patchMgr.patchSwitches.DeviceIoControl_1x) {
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY5);
+				}
 
-					configMgr.writeConfig();
-					MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
+				configMgr.writeConfig();
+				MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			}
+		}
+		break;
+		case IDM_PATCHSWITCH1:
+			if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
+				if (IDYES == MessageBox(0, "ç‚¹å‡»â€œæ˜¯â€å°†å…³é—­NtQueryVirtualMemoryå¼€å…³ã€‚\nè‹¥ä½ ä¸çŸ¥é“å¦‚ä½•é€‰æ‹©ï¼Œè¯·å›ç­”â€œå¦â€ã€‚", "æ³¨æ„", MB_YESNO)) {
+					patchMgr.patchSwitches.NtQueryVirtualMemory = false;
+				} else {
+					break;
+				}
+			} else {
+				patchMgr.patchSwitches.NtQueryVirtualMemory = true;
+			}
+			configMgr.writeConfig();
+			MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			break;
+		case IDM_PATCHSWITCH2:
+			if (patchMgr.patchSwitches.NtReadVirtualMemory) {
+				if (IDYES == MessageBox(0, "ç‚¹å‡»â€œæ˜¯â€å°†å…³é—­NtReadVirtualMemoryå¼€å…³ã€‚\nè‹¥ä½ ä¸çŸ¥é“å¦‚ä½•é€‰æ‹©ï¼Œè¯·å›ç­”â€œå¦â€ã€‚", "æ³¨æ„", MB_YESNO)) {
+					patchMgr.patchSwitches.NtReadVirtualMemory = false;
+				} else {
+					break;
+				}
+			} else {
+				patchMgr.patchSwitches.NtReadVirtualMemory = true;
+			}
+			configMgr.writeConfig();
+			MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			break;
+		case IDM_PATCHSWITCH3:
+			if (patchMgr.patchSwitches.GetAsyncKeyState) {
+				if (IDYES == MessageBox(0, "ç‚¹å‡»â€œæ˜¯â€å°†å…³é—­GetAsyncKeyStateå¼€å…³ã€‚\nè‹¥ä½ ä¸çŸ¥é“å¦‚ä½•é€‰æ‹©ï¼Œè¯·å›ç­”â€œå¦â€ã€‚", "æ³¨æ„", MB_YESNO)) {
+					patchMgr.patchSwitches.GetAsyncKeyState = false;
+				} else {
+					break;
+				}
+			} else {
+				patchMgr.patchSwitches.GetAsyncKeyState = true;
+			}
+			configMgr.writeConfig();
+			MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			break;
+		case IDM_PATCHSWITCH4:
+			if (patchMgr.patchSwitches.NtWaitForSingleObject) {
+				patchMgr.patchSwitches.NtWaitForSingleObject = false;
+			} else {
+				if (IDYES == MessageBox(0, "è­¦å‘Šï¼šéšæ„è®¾ç½®è¯¥é€‰é¡¹å¯èƒ½å¯¼è‡´æ¸¸æˆå¼‚å¸¸ï¼\n\nä¸è¦å¯ç”¨è¿™ä¸€é€‰é¡¹ï¼Œé™¤éä½ çŸ¥é“ä½ åœ¨åšä»€ä¹ˆï¼Œè¦ç»§ç»­ä¹ˆï¼Ÿ", "è­¦å‘Šï¼šåŠŸèƒ½å·²å¼ƒç”¨ï¼", MB_YESNO)) {
+					patchMgr.patchSwitches.NtWaitForSingleObject = true;
+				} else {
+					break;
 				}
 			}
-				break;
-			case IDM_PATCHSWITCH1:
-				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
-					if (IDYES == MessageBox(0, "µã»÷¡°ÊÇ¡±½«¹Ø±ÕNtQueryVirtualMemory¿ª¹Ø¡£\nÈôÄã²»ÖªµÀÈçºÎÑ¡Ôñ£¬Çë»Ø´ğ¡°·ñ¡±¡£", "×¢Òâ", MB_YESNO)) {
-						patchMgr.patchSwitches.NtQueryVirtualMemory = false;
-					} else {
-						break;
-					}
+			configMgr.writeConfig();
+			MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			break;
+		case IDM_PATCHSWITCH5:
+			if (patchMgr.patchSwitches.NtDelayExecution) {
+				patchMgr.patchSwitches.NtDelayExecution = false;
+			} else {
+				if (IDYES == MessageBox(0, "è­¦å‘Šï¼šéšæ„è®¾ç½®è¯¥é€‰é¡¹å¯èƒ½å¯¼è‡´æ¸¸æˆå¼‚å¸¸ï¼\n\nä¸è¦å¯ç”¨è¿™ä¸€é€‰é¡¹ï¼Œé™¤éä½ çŸ¥é“ä½ åœ¨åšä»€ä¹ˆï¼Œè¦ç»§ç»­ä¹ˆï¼Ÿ", "è­¦å‘Šï¼šåŠŸèƒ½å·²å¼ƒç”¨ï¼", MB_YESNO)) {
+					patchMgr.patchSwitches.NtDelayExecution = true;
 				} else {
-					patchMgr.patchSwitches.NtQueryVirtualMemory = true;
+					break;
 				}
+			}
+			configMgr.writeConfig();
+			MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			break;
+		case IDM_PATCHSWITCH6_1: // weak ioctl_1
+			if (!patchMgr.patchSwitches.DeviceIoControl_1x) {
+				patchMgr.patchSwitches.DeviceIoControl_1 = true;
+				patchMgr.patchSwitches.DeviceIoControl_1x = true;
+
 				configMgr.writeConfig();
-				MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
-				break;
-			case IDM_PATCHSWITCH2:
-				if (patchMgr.patchSwitches.NtReadVirtualMemory) {
-					if (IDYES == MessageBox(0, "µã»÷¡°ÊÇ¡±½«¹Ø±ÕNtReadVirtualMemory¿ª¹Ø¡£\nÈôÄã²»ÖªµÀÈçºÎÑ¡Ôñ£¬Çë»Ø´ğ¡°·ñ¡±¡£", "×¢Òâ", MB_YESNO)) {
-						patchMgr.patchSwitches.NtReadVirtualMemory = false;
-					} else {
-						break;
-					}
-				} else {
-					patchMgr.patchSwitches.NtReadVirtualMemory = true;
-				}
-				configMgr.writeConfig();
-				MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
-				break;
-			case IDM_PATCHSWITCH3:
-				if (patchMgr.patchSwitches.GetAsyncKeyState) {
-					if (IDYES == MessageBox(0, "µã»÷¡°ÊÇ¡±½«¹Ø±ÕGetAsyncKeyState¿ª¹Ø¡£\nÈôÄã²»ÖªµÀÈçºÎÑ¡Ôñ£¬Çë»Ø´ğ¡°·ñ¡±¡£", "×¢Òâ", MB_YESNO)) {
-						patchMgr.patchSwitches.GetAsyncKeyState = false;
-					} else {
-						break;
-					}
-				} else {
-					patchMgr.patchSwitches.GetAsyncKeyState = true;
-				}
-				configMgr.writeConfig();
-				MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
-				break;
-			case IDM_PATCHSWITCH4:
-				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
-					patchMgr.patchSwitches.NtWaitForSingleObject = false;
-				} else {
-					if (IDYES == MessageBox(0, "¾¯¸æ£º¸ÃÑ¡ÏîÒÑ·ÏÆú£¡\n\nÒÑÖªÆôÓÃºó¿ÉÄÜµ¼ÖÂ¡°3009¡±£¬¡°96¡±£¬¡°lolµôÏß¡±µÈÓÎÏ·Òì³£¡£\n²»ÒªÆôÓÃÕâÒ»Ñ¡Ïî£¬³ı·ÇÄãÖªµÀÄãÔÚ×öÊ²Ã´£¬Òª¼ÌĞøÃ´£¿", "¾¯¸æ£º¹¦ÄÜÒÑÆúÓÃ£¡", MB_YESNO)) {
-						patchMgr.patchSwitches.NtWaitForSingleObject = true;
-					} else {
-						break;
-					}
-				}
-				configMgr.writeConfig();
-				MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
-				break;
-			case IDM_PATCHSWITCH5:
-				if (patchMgr.patchSwitches.NtDelayExecution) {
-					patchMgr.patchSwitches.NtDelayExecution = false;
-				} else {
-					if (IDYES == MessageBox(0, "¾¯¸æ£º¸ÃÑ¡ÏîÒÑ·ÏÆú£¡\n\nÒÑÖªÆôÓÃºó¿ÉÄÜ³öÏÖ¡°3009¡±£¬¡°96¡±£¬¡°Å¼¶û¿¨¶Ù¡±µÈÎÊÌâ¡£\n²»ÒªÆôÓÃÕâÒ»Ñ¡Ïî£¬³ı·ÇÄãÖªµÀÄãÔÚ×öÊ²Ã´£¬Òª¼ÌĞøÃ´£¿", "¾¯¸æ£º¹¦ÄÜÒÑÆúÓÃ£¡", MB_YESNO)) {
-						patchMgr.patchSwitches.NtDelayExecution = true;
-					} else {
-						break;
-					}
-				}
-				configMgr.writeConfig();
-				MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
-				break;
-			case IDM_PATCHSWITCH6:
-				if (patchMgr.patchSwitches.DeviceIoControl_1) {
-					if (IDYES == MessageBox(0, "µã»÷¡°ÊÇ¡±½«¹Ø±ÕNtDeviceIoControlFile¿ª¹Ø¡£\nÈôÄã²»ÖªµÀÈçºÎÑ¡Ôñ£¬Çë»Ø´ğ¡°·ñ¡±¡£", "×¢Òâ", MB_YESNO)) {
-						patchMgr.patchSwitches.DeviceIoControl_1 = false;
-					} else {
-						break;
-					}
-				} else {
+				MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			}
+			break;
+		case IDM_PATCHSWITCH6_2: // strong ioctl_1
+			if (!(patchMgr.patchSwitches.DeviceIoControl_1 && !patchMgr.patchSwitches.DeviceIoControl_1x)) {
+				if (IDYES == MessageBox(0, "å¼ºåŠ›æ¨¡å¼å¯èƒ½å¯¼è‡´å®‰å…¨ç»„ä»¶è¿è¡Œå¼‚å¸¸ï¼Œå»ºè®®ä½ ä¼˜å…ˆä½¿ç”¨å¼±åŒ–æ¨¡å¼ã€‚\n\nä»è¦ç»§ç»­å—ï¼Ÿ", "æ³¨æ„", MB_YESNO)) {
 					patchMgr.patchSwitches.DeviceIoControl_1 = true;
+					patchMgr.patchSwitches.DeviceIoControl_1x = false;
+
+					configMgr.writeConfig();
+					MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
 				}
-				configMgr.writeConfig();
-				MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
-				break;
-			case IDM_PATCHSWITCH7:
-				if (patchMgr.patchSwitches.DeviceIoControl_2) {
-					if (IDYES == MessageBox(0, "µã»÷¡°ÊÇ¡±½«¹Ø±ÕNtFsControlFile¿ª¹Ø¡£\nÈôÄã²»ÖªµÀÈçºÎÑ¡Ôñ£¬Çë»Ø´ğ¡°·ñ¡±¡£", "×¢Òâ", MB_YESNO)) {
-						patchMgr.patchSwitches.DeviceIoControl_2 = false;
-					} else {
-						break;
-					}
+			}
+			break;
+		case IDM_PATCHSWITCH6_3: // close ioctl_1
+			if (patchMgr.patchSwitches.DeviceIoControl_1) {
+				if (IDYES == MessageBox(0, "ç‚¹å‡»â€œæ˜¯â€å°†å…³é—­NtDeviceIoControlFileå¼€å…³ã€‚\nè‹¥ä½ ä¸çŸ¥é“å¦‚ä½•é€‰æ‹©ï¼Œè¯·å›ç­”â€œå¦â€ã€‚", "æ³¨æ„", MB_YESNO)) {
+					patchMgr.patchSwitches.DeviceIoControl_1 = false;
+					patchMgr.patchSwitches.DeviceIoControl_1x = false;
+
+					configMgr.writeConfig();
+					MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+				}
+			}
+			break;
+		case IDM_PATCHSWITCH7:
+			if (patchMgr.patchSwitches.DeviceIoControl_2) {
+				if (IDYES == MessageBox(0, "ç‚¹å‡»â€œæ˜¯â€å°†å…³é—­NtFsControlFileå¼€å…³ã€‚\nè‹¥ä½ ä¸çŸ¥é“å¦‚ä½•é€‰æ‹©ï¼Œè¯·å›ç­”â€œå¦â€ã€‚", "æ³¨æ„", MB_YESNO)) {
+					patchMgr.patchSwitches.DeviceIoControl_2 = false;
 				} else {
-					patchMgr.patchSwitches.DeviceIoControl_2 = true;
+					break;
 				}
-				configMgr.writeConfig();
-				MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
-				break;
-			case IDM_PATCHFAILHINT:
-				MessageBox(0, 
-					"³öÏÖ¡°ÕıÔÚÖØÊÔ¡±×ÖÑù±íÊ¾ÏŞÖÆÆ÷ÎŞ·¨²ÉÑùµ½SGUARDÉ¨ÄÚ´æµÄÖ¸Áî¡£\n"
-					"ÕâÒ»°ãÓÉÓÚSGUARDÔÚ×î½üµÄÊ±¼ä²¢Ã»ÓĞÉ¨ÄÚ´æµ¼ÖÂ¡£\n"
-					"½¨ÒéµÄ½â¾ö·½·¨£º\n\n"
-					"1 ´ò¿ª¸ß¼¶ÄÚ´æËÑË÷¹¦ÄÜ¡£\n"
-					"2 Ö±½ÓµÈ´ıÏŞÖÆÆ÷×Ô¶¯ÖØÊÔ¡£\n"
-					"3 ÖØÆôÓÎÏ·»òÖØÆôµçÄÔ¡£\n"
-					"4 ¹ıÒ»»á¶ùÔÙÊ¹ÓÃÏŞÖÆÆ÷¡£\n"
-					"5 Å¼¶û³öÏÖÊÇÕı³£µÄ¡£µ«ÈôÃ¿´ÎÆô¶¯ÓÎÏ·¶¼³öÏÖÇÒ¾ù³¤Ê±¼äÖØÊÔÎŞĞ§£¬Ó¦Í£Ö¹Ê¹ÓÃÏŞÖÆÆ÷"
-					, "ĞÅÏ¢", MB_OK);
-				break;
-			case IDM_ADVMEMSEARCH:
-				if (patchMgr.useAdvancedSearch) {
-					if (IDYES == MessageBox(0, "µã»÷¡°ÊÇ¡±½«¹Ø±Õ¸ß¼¶ÄÚ´æËÑË÷¹¦ÄÜ¡£\nÈôÄã²»ÖªµÀÈçºÎÑ¡Ôñ£¬Çë»Ø´ğ¡°·ñ¡±¡£", "×¢Òâ", MB_YESNO)) {
-						patchMgr.useAdvancedSearch = false;
-					} else {
-						break;
-					}
+			} else {
+				patchMgr.patchSwitches.DeviceIoControl_2 = true;
+			}
+			configMgr.writeConfig();
+			MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			break;
+		case IDM_PATCHFAILHINT:
+			MessageBox(0,
+				"å‡ºç°â€œæ­£åœ¨é‡è¯•â€å­—æ ·è¡¨ç¤ºé™åˆ¶å™¨æ— æ³•é‡‡æ ·åˆ°SGUARDæ‰«å†…å­˜çš„æŒ‡ä»¤ã€‚\nè¿™ä¸€èˆ¬ç”±äºSGUARDåœ¨æœ€è¿‘çš„æ—¶é—´å¹¶æ²¡æœ‰æ‰«å†…å­˜å¯¼è‡´ã€‚\n"
+				"å»ºè®®çš„è§£å†³æ–¹æ³•ï¼š\n\n1 æ‰“å¼€é«˜çº§å†…å­˜æœç´¢åŠŸèƒ½ã€‚\n2 é‡å¯æ¸¸æˆæˆ–é‡å¯ç”µè„‘ã€‚", "ä¿¡æ¯", MB_OK);
+			break;
+		case IDM_ADVMEMSEARCH:
+			if (patchMgr.useAdvancedSearch) {
+				if (IDYES == MessageBox(0, "ç‚¹å‡»â€œæ˜¯â€å°†å…³é—­é«˜çº§å†…å­˜æœç´¢åŠŸèƒ½ã€‚\nè‹¥ä½ ä¸çŸ¥é“å¦‚ä½•é€‰æ‹©ï¼Œè¯·å›ç­”â€œå¦â€ã€‚", "æ³¨æ„", MB_YESNO)) {
+					patchMgr.useAdvancedSearch = false;
 				} else {
-					patchMgr.useAdvancedSearch = true;
+					break;
 				}
-				configMgr.writeConfig();
-				MessageBox(0, "ÖØÆôÓÎÏ·ºóÉúĞ§", "×¢Òâ", MB_OK);
-				break;
+			} else {
+				patchMgr.useAdvancedSearch = true;
+			}
+			configMgr.writeConfig();
+			MessageBox(0, "é‡å¯æ¸¸æˆåç”Ÿæ•ˆ", "æ³¨æ„", MB_OK);
+			break;
 
 			// more options
-			case IDM_AUTOSTARTUP:
-			{
-				sprintf(buf, "µã»÷¡°ÊÇ¡±½«%sÏŞÖÆÆ÷¿ª»ú×ÔÆô¡£", systemMgr.autoStartup ? "½ûÓÃ" : "ÆôÓÃ");
-				if (IDYES == MessageBox(0, buf, "ÌáÊ¾", MB_YESNO)) {
+		case IDM_AUTOSTARTUP:
+		{
+			sprintf(buf, "ç‚¹å‡»â€œæ˜¯â€å°†%sé™åˆ¶å™¨å¼€æœºè‡ªå¯ã€‚", systemMgr.autoStartup ? "ç¦ç”¨" : "å¯ç”¨");
+			if (IDYES == MessageBox(0, buf, "æç¤º", MB_YESNO)) {
 
-					// set flag and modify registry. set back if modify fail.
+				// set flag and modify registry. set back if modify fail.
+				systemMgr.autoStartup = !systemMgr.autoStartup;
+
+				if (!systemMgr.modifyStartupReg()) {
 					systemMgr.autoStartup = !systemMgr.autoStartup;
-
-					if (!systemMgr.modifyStartupReg()) {
-						systemMgr.autoStartup = !systemMgr.autoStartup;
-					}
-
-					configMgr.writeConfig();
 				}
-			}
-				break;
-			case IDM_KILLACELOADER:
-			{
-				sprintf(buf, "µã»÷¡°ÊÇ¡±½«%s×Ô¶¯½áÊøace-loader¹¦ÄÜ¡£", systemMgr.killAceLoader ? "½ûÓÃ" : "ÆôÓÃ");
-				if (IDYES == MessageBox(0, buf, "ÌáÊ¾", MB_YESNO)) {
 
-					systemMgr.killAceLoader = !systemMgr.killAceLoader;
-					configMgr.writeConfig();
-				}
+				configMgr.writeConfig();
 			}
-				break;
-			case IDM_HIDESYSFILE:
-			{
-				sprintf(buf, "µã»÷¡°ÊÇ¡±¿ÉÒÔ½«Çı¶¯ÎÄ¼şµÄ¼ÓÔØÎ»ÖÃÉèÖÃÎª%s£¨Ò»°ã²»Ó°ÏìÊ¹ÓÃ£©¡£\n\n½¨ÒéÄãÏÈ¹ØÓÎÏ·ÔÙ½øĞĞ¸Ã²Ù×÷¡£",
-					driver.loadFromProfileDir ? "µ±Ç°Ä¿Â¼" : "ÏµÍ³ÓÃ»§Ä¿Â¼");
-				if (IDYES == MessageBox(0, buf, "ÌáÊ¾", MB_YESNO)) {
+		}
+		break;
+		case IDM_KILLACELOADER:
+		{
+			sprintf(buf, "ç‚¹å‡»â€œæ˜¯â€å°†%sè‡ªåŠ¨ç»“æŸace-loaderåŠŸèƒ½ã€‚", systemMgr.killAceLoader ? "ç¦ç”¨" : "å¯ç”¨");
+			if (IDYES == MessageBox(0, buf, "æç¤º", MB_YESNO)) {
 
-					// set flag and reload sysfile.
+				systemMgr.killAceLoader = !systemMgr.killAceLoader;
+				configMgr.writeConfig();
+			}
+		}
+		break;
+		case IDM_HIDESYSFILE:
+		{
+			sprintf(buf, "ç‚¹å‡»â€œæ˜¯â€å¯ä»¥å°†é©±åŠ¨æ–‡ä»¶çš„åŠ è½½ä½ç½®è®¾ç½®ä¸º%sï¼ˆä¸€èˆ¬ä¸å½±å“ä½¿ç”¨ï¼‰ã€‚\n\nå»ºè®®ä½ å…ˆå…³æ¸¸æˆå†è¿›è¡Œè¯¥æ“ä½œã€‚",
+				driver.loadFromProfileDir ? "å½“å‰ç›®å½•" : "ç³»ç»Ÿç”¨æˆ·ç›®å½•");
+			if (IDYES == MessageBox(0, buf, "æç¤º", MB_YESNO)) {
+
+				// set flag and reload sysfile.
+				driver.loadFromProfileDir = !driver.loadFromProfileDir;
+
+				if (!driver.prepareSysfile()) {
 					driver.loadFromProfileDir = !driver.loadFromProfileDir;
-					
-					if (!driver.prepareSysfile()) {
-						driver.loadFromProfileDir = !driver.loadFromProfileDir;
-						limitMgr.useKernelMode = false;
-						systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-					}
-
-					configMgr.writeConfig();
+					limitMgr.useKernelMode = false;
+					systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
 				}
+
+				configMgr.writeConfig();
 			}
-				break;
-			case IDM_MORE_UPDATEPAGE:
-				ShellExecute(0, "open", "https://bbs.colg.cn/thread-8087898-1-1.html", 0, 0, SW_SHOW);
-				break;
-			case IDM_MORE_SOURCEPAGE:
-				ShellExecute(0, "open", "https://github.com/H3d9/sguard_limit", 0, 0, SW_SHOW);
-				break;
+		}
+		break;
+		case IDM_SCANDELAY:
+			DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_SCANDELAY);
+			configMgr.writeConfig();
+			break;
+		case IDM_MORE_UPDATEPAGE:
+			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8087898-1-1.html", 0, 0, SW_SHOW);
+			break;
+		case IDM_MORE_SOURCEPAGE:
+			ShellExecute(0, "open", "https://github.com/H3d9/sguard_limit", 0, 0, SW_SHOW);
+			break;
+		case IDM_DONATE:
+			DialogBox(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DONATE), NULL, DlgProc2);
+			break;
 		}
 	}
 	break;

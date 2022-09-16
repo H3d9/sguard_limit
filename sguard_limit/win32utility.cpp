@@ -144,7 +144,7 @@ bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadLis
 win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
-	: autoStartup(false), killAceLoader(true), hInstance(NULL), hProgram(NULL), hWnd(NULL),
+	: autoStartup(false), killAceLoader(true), scanDelay(3000), hInstance(NULL), hProgram(NULL), hWnd(NULL),
 	  osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{}, currentDir{}, profileDir{} {}
 
 win32SystemManager::~win32SystemManager() {
@@ -154,7 +154,7 @@ win32SystemManager::~win32SystemManager() {
 	}
 
 	if (hProgram) {
-		CloseHandle(hProgram);
+		ReleaseMutex(hProgram);
 	}
 }
 
@@ -206,7 +206,7 @@ void win32SystemManager::setupProcessDpi() {
 
 bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
-	this->hInstance      = hInstance;
+	this->hInstance        = hInstance;
 
 
 	// decide whether it's single instance.
@@ -243,9 +243,11 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 	if (!std::filesystem::is_directory(profileDir, ec)) {
 		if (!std::filesystem::create_directory(profileDir, ec)) {
-			if (!std::filesystem::create_directory(profileDir = "C:\\sguard_limit", ec)) {
-				panic(ec.value(), "创建用户数据目录失败。");
-				return false;
+			if (!std::filesystem::is_directory(profileDir = "C:\\sguard_limit", ec)) {
+				if (!std::filesystem::create_directory(profileDir, ec)) {
+					panic(ec.value(), "创建用户数据目录失败。");
+					return false;
+				}
 			}
 		}
 	}
@@ -262,7 +264,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	logfp = fopen(logfile.c_str(), "a+");
 
 	if (!logfp) {
-		panic("打开log文件%s失败。", logfile.c_str());
+		panic("打开log文件失败。");
 		return false;
 	}
 
@@ -301,9 +303,12 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 			}  // else default to:  OSVersion::OTHERS
 
 			osBuildNum = osInfo.dwBuildNumber;
+
+			log("systemInit(): Running Windows NT %u.%u.%u", 
+				osInfo.dwMajorVersion, osInfo.dwMinorVersion, osInfo.dwBuildNumber);
 		}
 	}
-
+	
 
 	return true;
 }

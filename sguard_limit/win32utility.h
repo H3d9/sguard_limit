@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <vector>
 #include <string>
+#include <atomic>
 
 
 // system version (kdriver support)
@@ -118,6 +119,7 @@ public:
 public:
 	bool                autoStartup;
 	bool                killAceLoader;
+	std::atomic<DWORD>  scanDelay;
 
 
 public:

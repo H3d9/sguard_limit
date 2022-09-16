@@ -71,6 +71,19 @@ BEGIN
     LTEXT           "",IDC_TEXT2,80,58,175,17
 END
 
+IDD_DONATE DIALOGEX 0, 0, 268, 154
+STYLE DS_ABSALIGN | DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_WINDOWEDGE
+CAPTION "你的支持是更新本软件的动力~"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "爱发电（按月赞助）",IDC_AFDIAN,62,132,92,14
+    LTEXT           "其他方式：",IDC_STATIC,12,135,48,8
+    GROUPBOX        "Donate",IDC_STATIC,6,3,256,122
+    CONTROL         IDD_DONATE,IDC_STATIC,"Static",SS_BITMAP | SS_CENTERIMAGE | SS_REALSIZEIMAGE,13,13,242,105
+    RTEXT           "",IDC_BONUS,177,135,81,10
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -82,6 +95,12 @@ GUIDELINES DESIGNINFO
 BEGIN
     IDD_DIALOG, DIALOG
     BEGIN
+    END
+
+    IDD_DONATE, DIALOG
+    BEGIN
+        RIGHTMARGIN, 227
+        BOTTOMMARGIN, 153
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -96,6 +115,24 @@ IDD_DIALOG AFX_DIALOG_LAYOUT
 BEGIN
     0
 END
+
+IDD_DONATE AFX_DIALOG_LAYOUT
+BEGIN
+    0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    100, 100, 100, 100,
+    0, 0, 0, 0
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDB_DONATE              BITMAP                  "donate.bmp"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////
