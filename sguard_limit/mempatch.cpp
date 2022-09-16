@@ -536,8 +536,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -557,8 +559,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -605,8 +609,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -621,8 +627,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -694,8 +702,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -715,8 +725,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -764,8 +776,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -910,8 +924,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 				status = driver.writeVM(pid, vmalloc, allocAddress);
 				if (!status) {
+					DWORD errorCode = driver.errorCode;
+					std::string errorMsg = driver.errorMessage;
 					driver.resume(pid);
-					systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+					systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 					return false;
 				}
 
@@ -964,8 +980,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -980,8 +998,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1066,8 +1086,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1087,8 +1109,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1120,8 +1144,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1136,8 +1162,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1209,8 +1237,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1230,8 +1260,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1279,8 +1311,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1408,8 +1442,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 				memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 				status = driver.writeVM(pid, vmalloc, allocAddress);
 				if (!status) {
+					DWORD errorCode = driver.errorCode;
+					std::string errorMsg = driver.errorMessage;
 					driver.resume(pid);
-					systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+					systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 					return false;
 				}
 
@@ -1452,8 +1488,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1468,8 +1506,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1487,8 +1527,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 	status =
 	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
+		DWORD errorCode = driver.errorCode;
+		std::string errorMsg = driver.errorMessage;
 		driver.resume(pid);
-		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+		systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 		return false;
 	}
 
@@ -1843,8 +1885,10 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.log(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1864,8 +1908,10 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1945,8 +1991,10 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 			PVOID allocAddress = NULL;
 			status = driver.allocVM(pid, &allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.log(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1966,8 +2014,10 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 			memcpy(vmalloc, working_bytes, sizeof(working_bytes) - 1);
 			status = driver.writeVM(pid, vmalloc, allocAddress);
 			if (!status) {
+				DWORD errorCode = driver.errorCode;
+				std::string errorMsg = driver.errorMessage;
 				driver.resume(pid);
-				systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+				systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 				return false;
 			}
 
@@ -1985,8 +2035,10 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 	status =
 	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
+		DWORD errorCode = driver.errorCode;
+		std::string errorMsg = driver.errorMessage;
 		driver.resume(pid);
-		systemMgr.log(driver.errorCode, "patch_user32(): writeVM() failed : %s", driver.errorMessage);
+		systemMgr.panic(errorCode, "%s", errorMsg.c_str());
 		return false;
 	}
 	

@@ -317,7 +317,7 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 		}
 		if (request.errorCode != 0) {
 			_recordError(request.errorCode, "driver::writeVM(): from kernel: %s\n\n"
-				"【提示】尝试按以下步骤操作：\n①按说明恢复默认设置\n②把右键其他选项->扫描间隔设为1秒\n③先开限制器后开游戏", request.errorFunc);
+				"【提示】尝试按以下步骤操作：\n\n①先按说明恢复默认设置\n②把右键其他选项->扫描间隔设为1秒\n③必须先开限制器后开游戏", request.errorFunc);
 			return false;
 		}
 	}

@@ -112,6 +112,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		patchMgr.patchDelayBeforeNtdlletc   = 20;
 
 		patchMgr.patchSwitches.NtQueryVirtualMemory  = true;
+		patchMgr.patchSwitches.NtReadVirtualMemory   = true;
 		patchMgr.patchSwitches.GetAsyncKeyState      = true;
 		patchMgr.patchSwitches.NtWaitForSingleObject = false;
 		patchMgr.patchSwitches.NtDelayExecution      = false;
