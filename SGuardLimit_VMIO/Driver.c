@@ -6,7 +6,7 @@
 #include "Vad.h"
 
 
-#define DRIVER_VERSION  "22.6.28"
+#define DRIVER_VERSION  "22.9.15"
 
 // 全局对象
 RTL_OSVERSIONINFOW   OSVersion;
@@ -70,7 +70,7 @@ NTSTATUS KeReadVirtualMemory(PEPROCESS Process, PVOID SourceAddress, PVOID Targe
 	
 	// 此处MmCopyVirtualMemory仅用于拷贝用户空间的虚拟内存。
 	// 尽管MmCopyVirtualMemory也可以拷贝内核空间的分页内存，但若触碰到内核非分页区域或无页表映射区域，
-	// 由于对应的内核页表项不存在，触发内核态page fault后缺页中断无法处理，ntos会将之判定为严重错误，这将引发BSOD。
+	// 由于对应的内核页表项不存在，触发内核态page fault后缺页中断无法处理，ntos会将之判定为严重错误，若不捕获异常将BSOD。
 	// 相应的，若触发了用户态page fault，即使无法解决缺页，也只是MmCopyVirtualMemory返回失败而已。
 	ULONG64 mask = (OSVersion.dwMajorVersion == 6 && (OSVersion.dwMinorVersion == 1 || OSVersion.dwMinorVersion == 2)) ?
 		(ULONG64)SourceAddress >> 44 : (ULONG64)SourceAddress >> 48;
@@ -385,8 +385,8 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 			PVOID BaseAddress = NULL;
 
-			if (OSVersion.dwMajorVersion == 6) {
-				// 对于win7/win8/win8.1，约束堆的起始地址在32bit以内，以方便构造shellcode。注：参数ZeroBits的msdn描述有误，详见：
+			if (OSVersion.dwMajorVersion == 6 || (OSVersion.dwMajorVersion == 10 && OSVersion.dwBuildNumber == 10240)) {
+				// 对于win7/win8/win8.1/win10.10240，约束堆的起始地址在32bit以内，以方便构造shellcode。注：参数ZeroBits的msdn描述有误，详见：
 				// https://stackoverflow.com/questions/50429365/what-is-the-most-reliable-portable-way-to-allocate-memory-at-low-addresses-on
 				Status = ZwAllocateVirtualMemory(hProcess, &BaseAddress, 0x7FFFFFFF, &allocSize, MEM_COMMIT, PAGE_EXECUTE);
 			} else {
