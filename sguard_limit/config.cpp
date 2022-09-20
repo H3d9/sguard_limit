@@ -102,6 +102,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	if (!result) {
 
 		g_Mode = 2;
+		systemMgr.scanDelay = 3000;
 		
 		driver.loadFromProfileDir = true;
 		driver.win11ForceEnable   = false;

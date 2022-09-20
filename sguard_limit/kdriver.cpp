@@ -4,7 +4,7 @@
 #include <filesystem>
 #include "kdriver.h"
 
-#define DRIVER_VERSION  "22.9.15"
+#define DRIVER_VERSION  "22.9.20"
 
 
 // kernel-mode memory io
@@ -316,8 +316,7 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError(request.errorCode, "driver::writeVM(): from kernel: %s\n\n"
-				"【提示】尝试按以下步骤操作：\n\n①先按说明恢复默认设置\n②把右键其他选项->扫描间隔设为1秒\n③必须先开限制器后开游戏", request.errorFunc);
+			_recordError(request.errorCode, "driver::writeVM(): from kernel: %s", request.errorFunc);
 			return false;
 		}
 	}
@@ -419,6 +418,24 @@ bool KernelDriver::searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t
 
 	return true;
 }
+
+bool KernelDriver::restoreVad() {
+
+	VMIO_REQUEST  request(0);
+	DWORD         Bytes;
+
+	_resetError();
+
+
+	if (!DeviceIoControl(hDriver, VM_VADRESTORE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
+		_recordError(GetLastError(), "driver::restoreVad(): DeviceIoControl失败。");
+		return false;
+	}
+	
+	return true;
+}
+
+
 
 #define SVC_ERROR_EXIT(errorCode, errorMsg)   _recordError(errorCode, errorMsg); \
                                               if (hService) CloseServiceHandle(hService); \

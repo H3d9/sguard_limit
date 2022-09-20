@@ -131,9 +131,7 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：修复“安全组件运行异常”。\n\n"
-			"1. 重写内存补丁模块以增加稳定性。\n"
-			"2. 添加ZwProtectVirtualMemory参数错误的解决方法。\n"
-			"3. 修复旧版Win10限制不生效。\n\n\n"
+			"1. 绕过ace-base的自我保护机制以避免ZwProtectVirtualMemory1弹窗。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
