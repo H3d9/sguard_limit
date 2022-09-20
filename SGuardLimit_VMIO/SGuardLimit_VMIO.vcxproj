@@ -89,6 +89,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Driver.c" />
+    <ClCompile Include="mm\virtual.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Vad.h" />

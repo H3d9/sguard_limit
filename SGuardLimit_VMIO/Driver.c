@@ -6,7 +6,7 @@
 #include "Vad.h"
 
 
-#define DRIVER_VERSION  "22.9.15"
+#define DRIVER_VERSION  "22.9.20"
 
 // 全局对象
 RTL_OSVERSIONINFOW   OSVersion;
@@ -14,9 +14,10 @@ UNICODE_STRING       dev, dos;
 PDEVICE_OBJECT       pDeviceObject;
 ULONG                VadRoot;
 wchar_t              TargetImageName[256];
+PVOID                TargetVad;
 
 
-// I/O接口事件和缓冲区结构
+// I/O事件和缓冲区结构
 #define VMIO_VERSION   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0700, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_READ      CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VMIO_WRITE     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
@@ -24,6 +25,7 @@ wchar_t              TargetImageName[256];
 #define IO_SUSPEND     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0704, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define IO_RESUME      CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VM_VADSEARCH   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0706, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define VM_VADRESTORE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0707, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 
 typedef struct {
 	HANDLE   pid;
@@ -148,6 +150,11 @@ void SearchVad_NT61(PSEARCH_RESULT result, PMMVAD_7 pVad) { // assert: pVad != N
 						result->Found = TRUE;
 						result->VirtualAddress[0] = pVad->StartingVpn << 12;
 						result->VirtualAddress[1] = pVad->EndingVpn << 12;
+						
+						if (pVad->u.VadFlags.NoChange == 1) {
+							pVad->u.VadFlags.NoChange = 0;
+							TargetVad = pVad;
+						}
 					}
 
 					ExFreePoolWithTag(pImageName, '9d3H');
@@ -201,6 +208,11 @@ void SearchVad_NT62(PSEARCH_RESULT result, PMMVAD_8 pVad) { // assert: pVad != N
 						result->Found = TRUE;
 						result->VirtualAddress[0] = (ULONG64)pVad->Core.StartingVpn << 12;
 						result->VirtualAddress[1] = (ULONG64)pVad->Core.EndingVpn << 12;
+
+						if (pVad->Core.u.VadFlags.NoChange == 1) {
+							pVad->Core.u.VadFlags.NoChange = 0;
+							TargetVad = pVad;
+						}
 					}
 
 					ExFreePoolWithTag(pImageName, '9d3H');
@@ -265,6 +277,18 @@ void SearchVad_NT10(PSEARCH_RESULT result, PMMVAD_10 pVad) { // assert: pVad != 
 						// 而NT6.1的Vpn字段为64位，但仅使用了低32位，它的44~47位虚拟地址从未被使用。
 						result->VirtualAddress[0] = ((ULONG64)pVad->Core.StartingVpnHigh << 44) | ((ULONG64)pVad->Core.StartingVpn << 12);
 						result->VirtualAddress[1] = ((ULONG64)pVad->Core.EndingVpnHigh << 44) | ((ULONG64)pVad->Core.EndingVpn << 12);
+						
+						if (OSVersion.dwBuildNumber <= 17763) {
+							if (pVad->Core.u.VadFlags._17763.NoChange == 1) {
+								pVad->Core.u.VadFlags._17763.NoChange = 0;
+								TargetVad = pVad;
+							}
+						} else {
+							if (pVad->Core.u.VadFlags._18362.NoChange == 1) {
+								pVad->Core.u.VadFlags._18362.NoChange = 0;
+								TargetVad = pVad;
+							}
+						}
 					}
 
 					ExFreePoolWithTag(pImageName, '9d3H');
@@ -518,6 +542,29 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 					virtualStart = (PVOID)((ULONG64)virtualStart + memInfo.RegionSize);
 				}
 			}
+		}
+		break;
+
+		case VM_VADRESTORE:
+		{
+			if (MmIsAddressValid(TargetVad)) {
+
+				if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 1) {
+					((PMMVAD_7)TargetVad)->u.VadFlags.NoChange = 1;
+
+				} else if (OSVersion.dwMajorVersion == 6 && OSVersion.dwMinorVersion == 2) {
+					((PMMVAD_8)TargetVad)->Core.u.VadFlags.NoChange = 1;
+
+				} else {
+					if (OSVersion.dwBuildNumber <= 17763) {
+						((PMMVAD_10)TargetVad)->Core.u.VadFlags._17763.NoChange = 1;
+					} else {
+						((PMMVAD_10)TargetVad)->Core.u.VadFlags._18362.NoChange = 1;
+					}
+				}
+			}
+
+			TargetVad = NULL;
 		}
 		break;
 
