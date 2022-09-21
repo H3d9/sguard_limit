@@ -167,6 +167,7 @@ bool KernelDriver::prepareSysfile() {
 				sysfile = &sysProfilePath;
 			
 			} else {
+				sysfile = &sysProfilePath; // assign pointer to forbid crash in start service deref
 				_startService(); // try stop running driver
 				_endService();
 
@@ -208,6 +209,7 @@ bool KernelDriver::prepareSysfile() {
 					sysfile = &sysCurrentPath;
 				
 				} else {
+					sysfile = &sysCurrentPath; // assign pointer to forbid crash in start service deref
 					_startService(); // try stop running driver
 					_endService();
 
