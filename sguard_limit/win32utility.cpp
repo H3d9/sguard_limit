@@ -257,7 +257,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	auto      logfile       = profileDir + "\\log.txt";
 	DWORD     logfileSize   = GetCompressedFileSize(logfile.c_str(), NULL);
 
-	if (logfileSize != INVALID_FILE_SIZE && logfileSize > (1 << 16)) { // 64KB
+	if (logfileSize != INVALID_FILE_SIZE && logfileSize > (1 << 15)) { // 32KB
 		DeleteFile(logfile.c_str());
 	}
 
@@ -304,7 +304,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 			osBuildNum = osInfo.dwBuildNumber;
 
-			log("systemInit(): Running Windows NT %u.%u.%u", 
+			log("systemInit(): Running on Windows NT %u.%u.%u", 
 				osInfo.dwMajorVersion, osInfo.dwMinorVersion, osInfo.dwBuildNumber);
 		}
 	}
@@ -510,7 +510,7 @@ void win32SystemManager::raiseCleanThread() {
 		}
 
 
-		// wait 60 secs after game (SG) start to ensure it's stable to clean.
+		// wait 60 secs after game start to ensure it's stable to clean.
 		// if game not exist, still wait 60 secs and make clean.
 		win32ThreadManager  threadMgr;
 		DWORD               pid            = threadMgr.getTargetPid();
@@ -522,7 +522,7 @@ void win32SystemManager::raiseCleanThread() {
 			Sleep(5000);
 			timeElapsed += 5;
 
-			// every 5 secs, check SG's instance.
+			// every 5 secs, check SGUARD instance.
 			// if one of (SG not exist || SG pid alive) keeps 60 secs, kill ace-loader.
 			auto pidNow = threadMgr.getTargetPid();
 

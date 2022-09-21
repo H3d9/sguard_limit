@@ -58,22 +58,20 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	driver.win11CurrentBuild  = GetPrivateProfileInt("kdriver", "win11CurrentBuild",  0,     profile);
 
 	// limit config
-	limitMgr.limitPercent  = GetPrivateProfileInt("Limit", "Percent",       90,    profile);
-	limitMgr.useKernelMode = GetPrivateProfileInt("Limit", "useKernelMode", FALSE, profile);
+	limitMgr.limitPercent  = GetPrivateProfileInt("Limit", "Percent",       90,   profile);
+	limitMgr.useKernelMode = GetPrivateProfileInt("Limit", "useKernelMode", TRUE, profile);
 
 	// lock config
 	traceMgr.lockMode  = GetPrivateProfileInt("Lock", "Mode",  0,  profile);
 	traceMgr.lockRound = GetPrivateProfileInt("Lock", "Round", 95, profile);
 
 	// patch config
-	patchMgr.useAdvancedSearch          = GetPrivateProfileInt("Patch", "useAdvancedSearch",     TRUE, profile);
-	patchMgr.patchDelayBeforeNtdllioctl = GetPrivateProfileInt("Patch", "DelayBeforeNtdllioctl", 0,    profile);
-	patchMgr.patchDelayBeforeNtdlletc   = GetPrivateProfileInt("Patch", "DelayBeforeNtdlletc",   20,   profile);
+	patchMgr.patchDelayBeforeNtdlletc = GetPrivateProfileInt("Patch", "DelayBeforeNtdlletc", 20, profile);
 
 	patchMgr.patchSwitches.NtQueryVirtualMemory  = 
 		GetPrivateProfileInt("Patch", "NtQueryVirtualMemory",  TRUE,  profile);
 	patchMgr.patchSwitches.NtReadVirtualMemory   =
-		GetPrivateProfileInt("Patch", "NtReadVirtualMemory",   TRUE, profile);
+		GetPrivateProfileInt("Patch", "NtReadVirtualMemory",   TRUE,  profile);
 	patchMgr.patchSwitches.GetAsyncKeyState      =
 		GetPrivateProfileInt("Patch", "GetAsyncKeyState",      TRUE,  profile);
 	patchMgr.patchSwitches.NtWaitForSingleObject =
@@ -108,9 +106,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		driver.win11ForceEnable   = false;
 		driver.win11CurrentBuild  = 0;
 
-		patchMgr.useAdvancedSearch          = true;
-		patchMgr.patchDelayBeforeNtdllioctl = 0;
-		patchMgr.patchDelayBeforeNtdlletc   = 20;
+		patchMgr.patchDelayBeforeNtdlletc = 20;
 
 		patchMgr.patchSwitches.NtQueryVirtualMemory  = true;
 		patchMgr.patchSwitches.NtReadVirtualMemory   = true;
@@ -177,12 +173,6 @@ void ConfigManager::writeConfig() {
 	WritePrivateProfileString("Lock", "Round", buf, profile);
 
 	// patch config
-	sprintf(buf, patchMgr.useAdvancedSearch ? "1" : "0");
-	WritePrivateProfileString("Patch", "useAdvancedSearch", buf, profile);
-
-	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdllioctl.load());
-	WritePrivateProfileString("Patch", "DelayBeforeNtdllioctl", buf, profile);
-
 	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdlletc.load());
 	WritePrivateProfileString("Patch", "DelayBeforeNtdlletc", buf, profile);
 

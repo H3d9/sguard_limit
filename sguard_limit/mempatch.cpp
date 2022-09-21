@@ -24,7 +24,7 @@ extern win32SystemManager&    systemMgr;
 PatchManager  PatchManager::patchManager;
 
 PatchManager::PatchManager()
-	: patchEnabled(true), patchPid(0), patchFailCount(),
+	: patchEnabled(true), patchPid(0),
 	  patchSwitches{}, patchStatus{}, patchDelay{},
 	  patchDelayRange {
 	   { 1,   1500, 2000 },   /* NtQueryVirtualMemory */
@@ -33,7 +33,7 @@ PatchManager::PatchManager()
 	   { 500, 1250, 2000 },   /* NtDelayExecution */
 	   { 500, 1500, 5000 }    /* DeviceIoControl_1x */
 	  }, 
-	  useAdvancedSearch(true), patchDelayBeforeNtdllioctl(0), patchDelayBeforeNtdlletc(20), 
+	  patchDelayBeforeNtdlletc(20), 
 	  syscallTable{} {}
 
 PatchManager& PatchManager::getInstance() {
@@ -66,7 +66,7 @@ bool PatchManager::init() {
 
 	// check if there's any fail while getting syscall numbers.
 	for (auto& it : syscallTable) {
-		systemMgr.log("patch::init(): system call: %s -> 0x%x", it.first.c_str(), it.second);
+		systemMgr.log("patch::init(): Native system call acquired: %s -> 0x%x", it.first.c_str(), it.second);
 		if (it.second == 0) {
 			systemMgr.panic(0, "patch::init(): 从函数 %s 中获取本地系统调用编号失败。", it.first.c_str());
 			ret = false;
@@ -112,28 +112,6 @@ void PatchManager::patch() {
 			return;
 		}
 
-		// wait if sample rip: wait for stable as target just start up.
-		for (auto time = 0; !useAdvancedSearch && time < 10; time++) {
-			Sleep(1000);
-			if (!patchEnabled || pid != threadMgr.getTargetPid()) {
-				systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
-				return;
-			}
-		}
-
-		// wait if adv search: before patch ioctl.
-		/*if (useAdvancedSearch) {
-			systemMgr.log("patch(): waiting %us before manip ntdll ioctl.", patchDelayBeforeNtdllioctl.load());
-
-			for (DWORD time = 0; time < patchDelayBeforeNtdllioctl; time++) {
-				Sleep(1000);
-				if (!patchEnabled || pid != threadMgr.getTargetPid()) {
-					systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
-					return;
-				}
-			}
-		}*/
-
 		// patch ioctl.
 		if (patchSwitches.DeviceIoControl_1 || patchSwitches.DeviceIoControl_2) {
 
@@ -149,15 +127,13 @@ void PatchManager::patch() {
 		}
 
 		// wait if adv search: before patch ntdll etc.
-		if (useAdvancedSearch) {
-			systemMgr.log("patch(): waiting %us before manip ntdll etc.", patchDelayBeforeNtdlletc.load());
+		systemMgr.log("patch(): waiting %us before manip ntdll etc.", patchDelayBeforeNtdlletc.load());
 
-			for (DWORD time = 0; time < patchDelayBeforeNtdlletc; time++) {
-				Sleep(1000);
-				if (!patchEnabled || pid != threadMgr.getTargetPid()) {
-					systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
-					return;
-				}
+		for (DWORD time = 0; time < patchDelayBeforeNtdlletc; time++) {
+			Sleep(1000);
+			if (!patchEnabled || pid != threadMgr.getTargetPid()) {
+				systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
+				return;
 			}
 		}
 
@@ -293,187 +269,118 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 	bool                   status;
 
 
-	
 	// assert: driver loaded.
 	systemMgr.log("patch_ntdll(): entering.");
 
-	// if use normal search, before stable, wait a second.
-	for (auto time = 0; !useAdvancedSearch && time < 5; time++) {
-		Sleep(1000);
-		if (!patchEnabled || pid != threadMgr.getTargetPid()) {
-			systemMgr.log("patch_ntdll(): primary wait: pid not match or patch disabled, quit.");
-			return false;
+
+	// find ntdll syscall 0 offset.
+	// offset0: syscall 0 entry rva from vmbuf:0.
+	LONG                    offset0          = -1;
+	std::vector<ULONG64>    executeRange;
+	std::vector<ULONG64>    blocks;
+	
+
+	// search memory executable modules in given image from kernel structs.
+	status = driver.searchVad(pid, executeRange, L"Ntdll.dll");
+	cxx_guard.VadChanged = true;
+
+	if (!status) {
+		return false;
+	}
+
+	// check if result exists.
+	if (executeRange.empty()) {
+		systemMgr.panic("patch_ntdll(): 无法在目标进程中找到模块“Ntdll”");
+		return false;
+	}
+
+	// split executable range to pieces to read.
+	for (size_t i = 0; i < executeRange.size(); i += 2) {
+
+		auto moduleVABegin = executeRange[i];
+		auto moduleVAEnd = executeRange[i + 1];
+
+		for (auto moduleVA = moduleVABegin + 0x1000; moduleVA <= moduleVAEnd - 0x3000; moduleVA += 0x3000) {
+			blocks.push_back(moduleVA);
 		}
 	}
 
+	// search memory traits in all block found.
+	for (auto block = blocks.begin(); block != blocks.end(); ++block) {
 
-	// find ntdll syscall 0 offset.
-	// offset0: syscall entry rva from vmbuf:0.
-	LONG offset0 = -1;
+		// round up page.
+		vmStartAddress = (*block & ~0xfff) - 0x1000;
 
-	// try multi-times to find target offset.
-	for (auto try_times = 1; try_times <= 3; try_times++) {
+		// read memory.
+		status = driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
+		if (!status) {
+			systemMgr.log(driver.errorCode, "patch_ntdll() warning: load memory failed at 0x%llx : %s", vmStartAddress, driver.errorMessage);
+			continue;
+		}
 
-		std::vector<ULONG64> rips;
-		rips.clear();
 
-		if (useAdvancedSearch) {
-			systemMgr.log("patch_ntdll(): [Caution] using Advanced memory search.");
+		// pattern: 
+		// 4c 8b d1 b8 00   00 00 00 ...  << call 0           ---
+		// ...                                                 |
+		// 4c 8b d1 b8 ??+0 00 00 00 ...  << found here        4
+		// ...                                                 |
+		// 4c 8b d1 b8 ??+x 00 00 00 ...  << to be patch     pages
+		// ...                                                 |
+		// 4c 8b d1 b8 40   00 00 00 ...  << call 40          ---
+		// 
+		// [call 40] by now, all call numbers we need are in range [0x0, 0x40].
+		// 
+		char pattern[] = "\x4c\x8b\xd1\xb8\x00\x00\x00\x00";
 
-			// search memory executable modules in given image from kernel structs.
-			std::vector<ULONG64> executeRange;
+		for (LONG offset = 0; offset < 0x4000 - 0x20 * 0x41; offset++) {
 
-			status = driver.searchVad(pid, executeRange, L"Ntdll.dll");
-			cxx_guard.VadChanged = true;
+			if (0 == memcmp(pattern, vmbuf + offset, 4) &&
+				0 == memcmp(pattern + 5, vmbuf + offset + 5, 3)) {
 
-			if (!status) {
-				continue;
-			}
+				// possible call page, find call 0x40 to ensure pages not too short to write.
+				// [caution] win7 map 0x10 bytes for each syscall stub.
 
-			// check if result exists.
-			if (executeRange.empty()) {
-				systemMgr.panic("patch_ntdll(): 无法在目标进程中找到模块“Ntdll”");
-			}
+				LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
+				LONG syscall_40_num = 0;
 
-			// split executable range to pieces to read.
-			for (size_t i = 0; i < executeRange.size(); i += 2) {
-
-				auto moduleVABegin = executeRange[i];
-				auto moduleVAEnd = executeRange[i + 1];
-
-				for (auto moduleVA = moduleVABegin + 0x1000; moduleVA < moduleVAEnd; moduleVA += 0x1000) {
-					rips.push_back(moduleVA);
+				if (osVersion == OSVersion::WIN_10_11 && osBuildNum >= 10586) {
+					syscall_40_num = *(LONG*)((ULONG64)vmbuf + offset - 0x20 * (LONG64)syscall_num + 0x20 * 0x40 + 0x4);
+				} else {
+					syscall_40_num = *(LONG*)((ULONG64)vmbuf + offset - 0x10 * (LONG64)syscall_num + 0x10 * 0x40 + 0x4);
 				}
-			}
 
-		} else {
-			systemMgr.log("patch_ntdll(): using normal rip search.");
+				if (syscall_40_num == 0x40) {
 
-			// get potential rip in top 3 threads like before.
-			rips = _findRip();
-		}
-
-		if (rips.empty()) {
-			systemMgr.log("patch_ntdll(): rips/blocks empty, quit.");
-			return false;
-		}
-
-
-		// search memory traits in all rip found.
-		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
-
-			// round up page.
-			vmStartAddress = (*rip & ~0xfff) - 0x1000;
-
-
-			// read memory.
-			status =
-			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
-
-			if (!status) {
-				systemMgr.log(driver.errorCode, "patch_ntdll() warning: load memory failed at 0x%llx : %s", vmStartAddress, driver.errorMessage);
-				continue;
-			}
-
-			if (useAdvancedSearch) {
-
-				// pattern: 
-				// 4c 8b d1 b8 00   00 00 00 ...  << call 0           ---
-				// ...                                                 |
-				// 4c 8b d1 b8 ??+0 00 00 00 ...  << found here        4
-				// ...                                                 |
-				// 4c 8b d1 b8 ??+x 00 00 00 ...  << to be patch     pages
-				// ...                                                 |
-				// 4c 8b d1 b8 40   00 00 00 ...  << call 40          ---
-				// 
-				// [call 40] by now, all call numbers we need are in range [0x0, 0x40].
-				
-				char pattern[] = "\x4c\x8b\xd1\xb8\x00\x00\x00\x00";
-				for (LONG offset = 0; offset < 0x4000 - 0x20 * 0x41; offset++) {
-
-					if (0 == memcmp(pattern, vmbuf + offset, 4) && 
-						0 == memcmp(pattern + 5, vmbuf + offset + 5, 3)) {
-
-						// possible call page, find call 0x40 to ensure pages not too short to write.
-						// [caution] win7 map 0x10 bytes for each syscall stub.
-
-						LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
-						LONG syscall_40_num = 0;
-
-						if (osVersion == OSVersion::WIN_10_11) {
-							syscall_40_num = *(LONG*)((ULONG64)vmbuf + offset - 0x20 * (LONG64)syscall_num + 0x20 * 0x40 + 0x4);
-						} else {
-							syscall_40_num = *(LONG*)((ULONG64)vmbuf + offset - 0x10 * (LONG64)syscall_num + 0x10 * 0x40 + 0x4);
-						}
-
-						if (syscall_40_num == 0x40) {
-
-							// now we have ensured pages contain enough information. locate offset0 to syscall 0.
-							if (osVersion == OSVersion::WIN_10_11) {
-								offset0 = offset - 0x20 * syscall_num;
-							} else {
-								offset0 = offset - 0x10 * syscall_num;
-							}
-
-							systemMgr.log("patch_ntdll(): offset0 found at +0x%x (from: syscall 0x%x)", offset0, syscall_num);
-							break;
-						}
+					// now we have ensured pages contain enough information. locate offset0 to syscall 0.
+					if (osVersion == OSVersion::WIN_10_11 && osBuildNum >= 10586) {
+						offset0 = offset - 0x20 * syscall_num;
+					} else {
+						offset0 = offset - 0x10 * syscall_num;
 					}
+
+					systemMgr.log("patch_ntdll(): offset0 found at +0x%x (from: syscall 0x%x)", offset0, syscall_num);
+					break;
 				}
-
-			} else {
-
-				// syscall traits: 4c 8b d1 b8 ?? 00 00 00
-				for (LONG offset = (0x1000 + *rip % 0x1000) - 0x14; /* rva from current syscall begin */
-					offset < 0x4000 - 0x20 /* buf sz - bytes to write */; offset++) {
-					if (vmbuf[offset] == '\x4c' &&
-						vmbuf[offset + 1] == '\x8b' &&
-						vmbuf[offset + 2] == '\xd1' &&
-						vmbuf[offset + 3] == '\xb8' &&
-						/* vmbuf[offset + 4] == ?? && */
-						vmbuf[offset + 5] == '\x00' &&
-						vmbuf[offset + 6] == '\x00' &&
-						vmbuf[offset + 7] == '\x00') {
-
-						// locate offset0 to syscall 0.
-						LONG syscall_num = *(LONG*)((ULONG64)vmbuf + offset + 0x4);
-						if (osVersion == OSVersion::WIN_10_11) {
-							offset0 = offset - 0x20 * syscall_num;
-						} else {
-							offset0 = offset - 0x10 * syscall_num;
-						}
-
-						systemMgr.log("patch_ntdll(): offset0 found at +0x%x (from: syscall 0x%x)", offset0, syscall_num);
-						break;
-					}
-				}
-			}
-
-			if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
-				//systemMgr.log("patch_ntdll(): trait not found from %%rip/block = %llx", *rip);
-				continue;
-			} else {
-				systemMgr.log("patch_ntdll(): trait found from %%rip/block = %llx", *rip);
-				break;
 			}
 		}
 
-		// check if offset0 found in all results.
-		if (offset0 < 0) {
-			systemMgr.log("patch_ntdll(): round %u: trait not found in all rips/blocks.", try_times);
-			Sleep(5000);
+		if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
 			continue;
 		} else {
+			systemMgr.log("patch_ntdll(): trait found from %%block = %llx", *block);
 			break;
 		}
 	}
 
 
-	// decide whether trait found success in all rounds.
-	// in case patch_stage1() success / fail, inc failcount / xor failcount.
+	// check if offset0 found in all results.
+	// in case patch_ntdll() success / fail, inc failcount / xor failcount.
 	if (offset0 < 0) {
 		patchFailCount ++;
-		systemMgr.log("patch_ntdll(): search failed too many times, abort. (retry: %d)", patchFailCount.load());
+		systemMgr.log("patch_ntdll(): search failed, aborting. (retry: %d)", patchFailCount.load());
+		if (patchFailCount >= 3) {
+			systemMgr.panic("patch_ntdll(): 无法在模块“Ntdll”中找到有效的内存特征");
+		}
 		return false;
 	} else {
 		patchFailCount = 0;
@@ -593,8 +500,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress);
+			_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.NtQueryVirtualMemory = true;
@@ -653,8 +559,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress + 6);
+			_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress + 6);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.NtReadVirtualMemory = true;
@@ -743,8 +648,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress);
+			_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.NtWaitForSingleObject = true;
@@ -871,8 +775,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 				}
 
 				// try fix target context.
-				_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-					(ULONG64)allocAddress + 0x59);
+				_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress + 0x59);
 
 				// mark related flag to inform user that patch has complete.
 				patchedNow.DeviceIoControl_1x = true;
@@ -933,8 +836,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 				}
 
 				// try fix target context.
-				_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-					(ULONG64)allocAddress + 0x34);
+				_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress + 0x34);
 			}
 
 			// mark related flag to inform user that patch has complete.
@@ -999,8 +901,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress + 0x1e);
+			_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress + 0x1e);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.DeviceIoControl_2 = true;
@@ -1102,8 +1003,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress);
+			_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.NtQueryVirtualMemory = true;
@@ -1147,8 +1047,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress + 6);
+			_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress + 6);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.NtReadVirtualMemory = true;
@@ -1237,8 +1136,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress);
+			_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.NtWaitForSingleObject = true;
@@ -1365,8 +1263,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 				}
 
 				// try fix target context.
-				_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-					(ULONG64)allocAddress + 0x59);
+				_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress + 0x59);
 
 				// mark related flag to inform user that patch has complete.
 				patchedNow.DeviceIoControl_1x = true;
@@ -1410,8 +1307,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 				}
 
 				// try fix target context.
-				_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-					(ULONG64)allocAddress + 0x34);
+				_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress + 0x34);
 			}
 
 			// mark related flag to inform user that patch has complete.
@@ -1466,8 +1362,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + offset, vmStartAddress + offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress + 0x1e);
+			_fixThreadContext(vmStartAddress + offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress + 0x1e);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.DeviceIoControl_2 = true;
@@ -1491,7 +1386,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 		CloseHandle(hProc);
 	}
 
-	// restore target vad.
+	// restore target vad protection.
 	status = driver.restoreVad();
 	cxx_guard.VadChanged = false;
 
@@ -1506,6 +1401,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 	if (!status) {
 		return false;
 	}
+
 
 	// stage1 complete.
 	if (patchedNow.NtQueryVirtualMemory)   patchStatus.NtQueryVirtualMemory   = true;
@@ -1541,220 +1437,176 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 	// assert: driver loaded.
 	systemMgr.log("patch_user32(): entering.");
 
-	// if using normal search, wait for stable.
-	for (auto time = 0; !useAdvancedSearch && time < 5; time++) {
-		Sleep(1000);
-		if (!patchEnabled || pid != threadMgr.getTargetPid()) {
-			systemMgr.log("patch_user32(): primary wait: pid not match or patch disabled, quit.");
-			return false;
+
+	// find win32u / user32 target_offset (only 1 patch now).
+	// target_offset: target syscall entry, from vmbuf:0.
+	LONG                    target_offset    = -1;
+	std::vector<ULONG64>    executeRange;
+	std::vector<ULONG64>    blocks;
+	
+
+	// search memory executable modules in given image from kernel structs.
+	status = driver.searchVad(pid, executeRange, L"User32.dll");
+	cxx_guard.VadChanged = true;
+
+	if (!status) {
+		return false;
+	}
+
+	// check if result exists.
+	if (executeRange.empty()) {
+		systemMgr.panic("patch_user32(): 无法在目标进程中找到模块“User32”");
+		return false;
+	}
+
+	// split executable range to pieces to read.
+	for (size_t i = 0; i < executeRange.size(); i += 2) {
+
+		auto moduleVABegin = executeRange[i];
+		auto moduleVAEnd = executeRange[i + 1];
+
+		for (auto moduleVA = moduleVABegin + 0x1000; moduleVA <= moduleVAEnd - 0x3000; moduleVA += 0x3000) {
+			blocks.push_back(moduleVA);
 		}
 	}
 
+	// find offset we need in all block given, load memory to vmbuf btw.
+	for (auto block = blocks.begin(); block != blocks.end(); ++block) {
 
-	// find win32u / user32 target offset.
-	// target_offset: target syscall entry, from vmbuf:0.
-	LONG target_offset = -1;
-
-	// try multi-times to find target offset.
-	for (auto try_times = 1; try_times <= 3; try_times++) {
-		
-		std::vector<ULONG64> rips;
-		rips.clear();
-
-		if (useAdvancedSearch) {
-			systemMgr.log("patch_user32(): [Caution] using Advanced memory search.");
-
-			// search memory executable modules in given image from kernel structs.
-			std::vector<ULONG64> executeRange;
-			
-			status = driver.searchVad(pid, executeRange, L"User32.dll");
-			cxx_guard.VadChanged = true;
-			
-			if (!status) {
-				continue;
-			}
-
-			// check if result exists.
-			if (executeRange.empty()) {
-				systemMgr.panic("patch_user32(): 无法在目标进程中找到模块“User32”");
-			}
-
-			// split executable range to pieces to read.
-			for (size_t i = 0; i < executeRange.size(); i += 2) {
-
-				auto moduleVABegin  = executeRange[i];
-				auto moduleVAEnd    = executeRange[i + 1];
-
-				for (auto moduleVA = moduleVABegin + 0x1000; moduleVA < moduleVAEnd; moduleVA += 0x4000) {
-					rips.push_back(moduleVA);
-				}
-			}
-
-		} else {
-			systemMgr.log("patch_user32(): using normal rip search.");
-			
-			// get potential rip in top 3 threads like before.
-			rips = _findRip(true);
-		}
-
-		if (rips.empty()) {
-			systemMgr.log("patch_user32(): rips empty, quit.");
-			return false;
-		}
+		// round page.
+		vmStartAddress = (*block & ~0xfff) - 0x1000;
 
 
-		// find offset we need in all rip given, load memory to vmbuf btw.
-		for (auto rip = rips.begin(); rip != rips.end(); ++rip) {
-
-			// round page.
-			vmStartAddress = (*rip & ~0xfff) - 0x1000;
-
-
-			// read memory.
-			status =
+		// read memory.
+		status =
 			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 
-			if (!status) {
-				systemMgr.log(driver.errorCode, "patch_user32() warning: load memory failed at 0x%llx : %s", vmStartAddress, driver.errorMessage);
-				continue;
-			}
+		if (!status) {
+			systemMgr.log(driver.errorCode, "patch_user32() warning: load memory failed at 0x%llx : %s", vmStartAddress, driver.errorMessage);
+			continue;
+		}
 
 
-			// get mem trait.
-			char traits[] = "\x4c\x8b\xd1\xb8\x44\x10\x00\x00";
-			*(DWORD*)(traits + 4) = syscallTable["NtUserGetAsyncKeyState"];
-
-			// loop var to search for syscall entry.
-			LONG offset;
-
-			// search round 1: find exact value.
-			offset = 0x1000 + *rip % 0x1000 - 0x14;
-			for (offset < 0 ? offset = 0 : 0; offset <= 0x4000 - 0x20; offset++) {
-				if (0 == memcmp(vmbuf + offset, traits, 8)) { // if strict: 4c 8b d1 b8 XX 10 00 00
-
-					target_offset = offset;
-
-					systemMgr.log("patch_user32(): strict search: target_offset found at +0x%x (syscall 0x%x)", target_offset, *(LONG*)(traits + 4));
-					break;
-				}
-			}
-
-			// search round 2: if not found, find fuzzy value. (WIN_10_11 only)
-			// [remark] WIN_7 do NOT map continuous memory for syscall 0x1xxx by a single library (win32u.dll).
-			// syscalls are simply inlined in user32.dll's function implementation.
-			// just like ntdll, win32u are all aligned to 0x20 Bytes in WIN_10_11.
-			if (target_offset == -1 && osVersion == OSVersion::WIN_10_11) {
-
-				for (offset = 0x0; offset <= 0x4000 - 0x20; offset++) {
-					if (0 == memcmp(vmbuf + offset, traits, 4) &&
-						0 == memcmp(vmbuf + offset + 5, traits + 5, 3)) { // if fuzzy: 4c 8b d1 b8 ?? 10 00 00
-
-						// from the syscall we found, switch to syscall 0x1000, then switch to syscall we need.
-						LONG found_call_num = *(LONG*)(vmbuf + offset + 4);
-						LONG real_call_num = *(LONG*)(traits + 4);
-						target_offset = offset - (found_call_num - 0x1000) * 0x20 + (real_call_num - 0x1000) * 0x20;
-
-						systemMgr.log("patch_user32(): fuzzy search: target_offset found at +0x%x (from syscall 0x%x)", target_offset, found_call_num);
-						break;
-					}
-				}
-			}
-
-			// search round 3: if not found, find relative in user32 and jump over. (WIN_10_11 only)
-			// [remark] WIN_7 do NOT use rex.W call to enter syscall part.
-			// however, WIN_10_11 use them to enter win32u.dll. In other case, this prefix is less likely to use.
-			// (21.12.10) enhanced: search is capable for any reference to user32.dll.
-			if (target_offset == -1 && osVersion == OSVersion::WIN_10_11) {
-
-				char user32_traits[] = "\x48\xFF\x15\x00\x00\x00\x00";
-				/*
-					traits: user32.dll!AnyTrapFunction+0x??:
-					0:  48 ff 15 ?? ?? ?? ??    rex.W call qword ptr [rip+<imm32>]  ; <__imp_NtUserXxx...> 
-					7:  ??                      (possibly) nop dword ptr ...        ; if it was a trap entry
-				*/
-
-				int fake_entries = 0;
-
-				for (offset = 0x0; offset < 0x4000 - 0x20; offset++) {
-
-					if (0 == memcmp(vmbuf + offset, user32_traits, 3)) {
-
-						auto vmrelate_ptr = std::make_unique<char[]>(0x4000);
-						auto vmrelate = vmrelate_ptr.get();
-
-						// parse instruction: rex.w call.
-						auto relative_shift  = *(LONG*)(vmbuf + offset + 0x3);
-						auto vaddress_ptr    = vmStartAddress + offset + 0x7 + relative_shift;
-
-						if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_ptr & ~0xfff) - 0x1000))) {
-							systemMgr.log(driver.errorCode, "patch_user32(): read *vaddress_ptr (%llx) failed.", vaddress_ptr);
-							systemMgr.log("  note: %s", driver.errorMessage);
-							continue;
-						}
-						
-						// since rex.w call -> vaddress_entry, load memory vaddress_entry points to.
-						auto vaddress_entry = *(ULONG64*)(vmrelate + 0x1000 + vaddress_ptr % 0x1000);
-
-						if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_entry & ~0xfff) - 0x1000))) {
-							systemMgr.log(driver.errorCode, "patch_user32(): load pages at vaddress_entry = 0x%llx failed.", vaddress_entry);
-							systemMgr.log("  note: %s", driver.errorMessage);
-							continue;
-						}
-
-						// check if vaddress_entry points to valid related system call:
-						// traits should match and call_number_found should be in range [0x1000, 0x1fff].
-						auto call_number_found = *(LONG*)(vmrelate + 0x1000 + vaddress_entry % 0x1000 + 4);
-
-						if (!(0 == memcmp(vmrelate + 0x1000 + vaddress_entry % 0x1000, traits, 4) &&
-							call_number_found >= 0x1000 && call_number_found <= 0x1fff)) {
-							fake_entries ++;
-							continue;
-						}
-
-						// now we have ensured vaddress_entry -> __imp_NtUserXxx... .
-						// use call_number_target to shift vaddress_entry to target_entry,
-						auto call_number_target = *(LONG*)(traits + 4);
-						auto target_entry       = vaddress_entry - (LONG64)call_number_found * 0x20 + (LONG64)call_number_target * 0x20;
-						
-						// switch to target_entry memory, 
-						if (!driver.readVM(pid, vmrelate, (PVOID)((target_entry & ~0xfff) - 0x1000))) {
-							systemMgr.log(driver.errorCode, "patch_user32(): switch win32u pages to vaddress_entry = 0x%llx failed.", vaddress_entry);
-							systemMgr.log("  note: %s", driver.errorMessage);
-							continue;
-						}
-						
-						// then modify final result.
-						// no need to check target traits again; patch it directly. 
-						// only ptrs're changed and kbs of memory're wasted since game didn't restart.
-						target_offset   = 0x1000 + target_entry % 0x1000;
-						vmStartAddress  = (target_entry & ~0xfff) - 0x1000;
-						memcpy(vmbuf, vmrelate, 0x4000);
+		// get target syscall mem trait.
+		char traits[] = "\x4c\x8b\xd1\xb8\x44\x10\x00\x00";
+		*(DWORD*)(traits + 4) = syscallTable["NtUserGetAsyncKeyState"];
 
 
-						systemMgr.log("patch_user32(): relative search: catched target_offset at +0x%llx, after %d fake traps.", target_offset, fake_entries);
-						systemMgr.log("patch_user32():   >> search path: [rip+0x%x] ~ 0x%llx => 0x%llx (syscall 0x%x) => 0x%llx (syscall 0x%x)",
-							relative_shift, vaddress_ptr, vaddress_entry, call_number_found, target_entry, call_number_target);
-						
-						break;
-					}
-				}
-			}
+		// search round 1: find exact value.
+		for (LONG offset = 0; offset <= 0x4000 - 0x20; offset++) {
+			if (0 == memcmp(vmbuf + offset, traits, 8)) { // if strict: 4c 8b d1 b8 XX 10 00 00
 
-			if (target_offset == -1) {
-				//systemMgr.log("patch_user32(): trait not found from %%rip/block = %llx.", *rip);
-				continue;
-			} else {
-				systemMgr.log("patch_user32(): trait found from %%rip/block = %llx.", *rip);
+				target_offset = offset;
+				systemMgr.log("patch_user32(): strict search: target_offset found at +0x%x (syscall 0x%x)", target_offset, *(LONG*)(traits + 4));
 				break;
 			}
 		}
 
-		// check if target_offset found in all result in _findRip().
+		// search round 2: if not found, find fuzzy value. (WIN_10_11 >= 10586 only)
+		// [remark] WIN_7 do NOT map continuous memory for syscall 0x1xxx by a single library (win32u.dll).
+		// syscalls are simply inlined in user32.dll's function implementation.
+		// [remark] WIN_10 10240 does not have a 0x20 Bytes aligned win32u.dll, no need to optimize.
+		// just like ntdll, win32u are all aligned to 0x20 Bytes in WIN_10_11 >= 10586.
+		if (target_offset == -1 && osVersion == OSVersion::WIN_10_11 && osBuildNum >= 10586) {
+
+			for (LONG offset = 0x0; offset <= 0x4000 - 0x20; offset++) {
+				if (0 == memcmp(vmbuf + offset, traits, 4) &&
+					0 == memcmp(vmbuf + offset + 5, traits + 5, 3)) { // if fuzzy: 4c 8b d1 b8 ?? 10 00 00
+
+					// from the syscall we found, switch to syscall 0x1000, then switch to syscall we need.
+					LONG found_call_num = *(LONG*)(vmbuf + offset + 4);
+					LONG real_call_num  = *(LONG*)(traits + 4);
+					target_offset = offset - (found_call_num - 0x1000) * 0x20 + (real_call_num - 0x1000) * 0x20;
+					systemMgr.log("patch_user32(): fuzzy search: target_offset found at +0x%x (from syscall 0x%x)", target_offset, found_call_num);
+					break;
+				}
+			}
+		}
+
+		// search round 3: if not found, find relative in user32 and jump over. (WIN_10_11 >= 14393 only)
+		// [remark] others do NOT use rex.W call to enter syscall part.
+		// WIN_10_11 >= 14393 use them to enter win32u.dll. In other case this prefix is less likely to use.
+		// (21.12.10) enhanced: search is capable for any reference from user32.dll.
+		if (target_offset == -1 && osVersion == OSVersion::WIN_10_11 && osBuildNum >= 14393) {
+
+			char user32_traits[] = "\x48\xFF\x15\x00\x00\x00\x00";
+			/*
+				traits: user32.dll!AnyTrapFunction+0x??:
+				0:  48 ff 15 ?? ?? ?? ??    rex.W call qword ptr [rip+<imm32>]  ; <__imp_NtUserXxx...>
+				7:  ??                      (possibly) nop dword ptr ...        ; if it was a trap entry
+			*/
+
+			int fake_entries = 0;
+
+			for (LONG offset = 0x0; offset < 0x4000 - 0x20; offset++) {
+
+				if (0 == memcmp(vmbuf + offset, user32_traits, 3)) {
+
+					auto vmrelate_ptr = std::make_unique<char[]>(0x4000);
+					auto vmrelate     = vmrelate_ptr.get();
+
+					// parse instruction: rex.w call.
+					auto relative_shift = *(LONG*)(vmbuf + offset + 0x3);
+					auto vaddress_ptr   = vmStartAddress + offset + 0x7 + relative_shift;
+
+					if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_ptr & ~0xfff) - 0x1000))) {
+						systemMgr.log(driver.errorCode, "patch_user32(): read *vaddress_ptr (%llx) failed.", vaddress_ptr);
+						systemMgr.log("  note: %s", driver.errorMessage);
+						continue;
+					}
+
+					// since rex.w call -> vaddress_entry, load memory vaddress_entry points to.
+					auto vaddress_entry = *(ULONG64*)(vmrelate + 0x1000 + vaddress_ptr % 0x1000);
+
+					if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_entry & ~0xfff) - 0x1000))) {
+						systemMgr.log(driver.errorCode, "patch_user32(): load pages at vaddress_entry = 0x%llx failed.", vaddress_entry);
+						systemMgr.log("  note: %s", driver.errorMessage);
+						continue;
+					}
+
+					// check if vaddress_entry points to valid related system call:
+					// traits should match and call_number_found should be in range [0x1000, 0x1fff].
+					auto call_number_found = *(LONG*)(vmrelate + 0x1000 + vaddress_entry % 0x1000 + 4);
+
+					if (!(0 == memcmp(vmrelate + 0x1000 + vaddress_entry % 0x1000, traits, 4) &&
+						call_number_found >= 0x1000 && call_number_found <= 0x1fff)) {
+						fake_entries++;
+						continue;
+					}
+
+					// now we have ensured vaddress_entry -> __imp_NtUserXxx... .
+					// use call_number_target to shift vaddress_entry to target_entry,
+					auto call_number_target = *(LONG*)(traits + 4);
+					auto target_entry = vaddress_entry - (LONG64)call_number_found * 0x20 + (LONG64)call_number_target * 0x20;
+
+					// switch to target_entry memory, 
+					if (!driver.readVM(pid, vmrelate, (PVOID)((target_entry & ~0xfff) - 0x1000))) {
+						systemMgr.log(driver.errorCode, "patch_user32(): switch win32u pages to vaddress_entry = 0x%llx failed.", vaddress_entry);
+						systemMgr.log("  note: %s", driver.errorMessage);
+						continue;
+					}
+
+					// then modify final result.
+					// no need to check target traits again; patch it directly. 
+					// only ptrs're changed and kbs of memory're wasted since game didn't restart.
+					target_offset  = 0x1000 + target_entry % 0x1000;
+					vmStartAddress = (target_entry & ~0xfff) - 0x1000;
+					memcpy(vmbuf, vmrelate, 0x4000);
+
+
+					systemMgr.log("patch_user32(): relative search: catched target_offset at +0x%llx, after %d fake traps.", target_offset, fake_entries);
+					systemMgr.log("patch_user32():   >> search path: [rip+0x%x] ~ 0x%llx => 0x%llx (syscall 0x%x) => 0x%llx (syscall 0x%x)",
+						relative_shift, vaddress_ptr, vaddress_entry, call_number_found, target_entry, call_number_target);
+
+					break;
+				}
+			}
+		}
+
 		if (target_offset == -1) {
-			systemMgr.log("patch_user32(): round %u: trait not found in all rips/blocks.", try_times);
-			Sleep(5000);
 			continue;
 		} else {
+			systemMgr.log("patch_user32(): trait found from %%block = %llx.", *block);
 			break;
 		}
 	}
@@ -1772,7 +1624,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 		return false;
 	}
 
-	// assert: vmbuf is syscall pages && offset0 >= 0.
+	// assert: vmbuf is syscall pages && target_offset >= 0.
 	// suspend target, then detour user32/win32u.
 
 	status = driver.suspend(pid);
@@ -1875,8 +1727,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + target_offset, vmStartAddress + target_offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress);
+			_fixThreadContext(vmStartAddress + target_offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.GetAsyncKeyState = true;
@@ -1973,8 +1824,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 			}
 
 			// try fix target context.
-			_fixThreadContext(vmStartAddress + target_offset, vmStartAddress + target_offset + sizeof(patch_bytes) - 1,
-				(ULONG64)allocAddress);
+			_fixThreadContext(vmStartAddress + target_offset, sizeof(patch_bytes) - 1, (ULONG64)allocAddress);
 
 			// mark related flag to inform user that patch has complete.
 			patchedNow.GetAsyncKeyState = true;
@@ -1998,7 +1848,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 		CloseHandle(hProc);
 	}
 
-	// restore target vad.
+	// restore target vad protection.
 	status = driver.restoreVad();
 	cxx_guard.VadChanged = false;
 
@@ -2022,7 +1872,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 	return true;
 }
 
-bool PatchManager::_fixThreadContext(ULONG64 pOrgStart, ULONG64 pOrgEnd, ULONG64 pDetour) {
+bool PatchManager::_fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, ULONG64 pDetour) {
 
 	// if some thread(s) are executing patching area, relocate it's Pc.
 	// assert: driver loaded && target suspended.
@@ -2047,12 +1897,12 @@ bool PatchManager::_fixThreadContext(ULONG64 pOrgStart, ULONG64 pOrgEnd, ULONG64
 
 		if (GetThreadContext(thread.handle, &context)) {
 
-			if (context.Rip >= pOrgStart && context.Rip <= pOrgEnd) {
+			if (context.Rip >= pOrginalStart && context.Rip <= pOrginalStart + patchSize) {
 				
 				DWORD64 newPc;
 
 				// assert: pDetour = [mov rcx, r10; mov eax, <imm32>; syscall;]
-				// assert: NT 10.0.10586 and later, pOrgStart = [mov rax, <imm64>; jmp rax;] (0xb)
+				// assert: NT 10.0.10586 and later, pOrginalStart = [mov rax, <imm64>; jmp rax;] (0xb)
 				/*
 					+0:  mov r10, rcx
 					+3:  mov eax, ????h
@@ -2061,7 +1911,7 @@ bool PatchManager::_fixThreadContext(ULONG64 pOrgStart, ULONG64 pOrgEnd, ULONG64
 					+12: syscall
 					+14: ret
 				*/
-				// assert: NT6.x and NT 10.0.10240, pOrgStart = [mov eax, <imm32>; jmp rax;] (0x6)
+				// assert: NT6.x and NT 10.0.10240, pOrginalStart = [mov eax, <imm32>; jmp rax;] (0x6)
 				/*
 					+0: mov r10, rcx
 					+3: mov eax, ????h
@@ -2073,8 +1923,8 @@ bool PatchManager::_fixThreadContext(ULONG64 pOrgStart, ULONG64 pOrgEnd, ULONG64
 				// if Pc is at [+0, +8]: move to pDetour+offset.
 				// if Pc is after +8: only long inline (10586+), move to syscall.
 
-				if (context.Rip - pOrgStart <= 8) {
-					newPc = pDetour + (context.Rip - pOrgStart);
+				if (context.Rip - pOrginalStart <= 8) {
+					newPc = pDetour + (context.Rip - pOrginalStart);
 					systemMgr.log("_fixThreadContext(): thrd 0x%x: relocating Pc before trap: 0x%llx -> 0x%llx", thread.tid, context.Rip, newPc);
 
 				} else {

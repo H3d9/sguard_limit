@@ -1,8 +1,8 @@
 #pragma once
 #include <Windows.h>
+#include <atomic>
 #include <vector>
 #include <unordered_map>
-#include <atomic>
 
 
 // mempatch module (sington)
@@ -48,8 +48,6 @@ public:
 	patchStatus_t                 patchStatus;
 	std::atomic<int>              patchFailCount;
 
-	std::atomic<bool>             useAdvancedSearch;
-	std::atomic<DWORD>            patchDelayBeforeNtdllioctl;
 	std::atomic<DWORD>            patchDelayBeforeNtdlletc;
 
 public:
@@ -63,7 +61,7 @@ private:
 	DWORD                     _getSyscallNumber(const char* funcName, const char* libName);
 	bool                      _patch_ntdll(DWORD pid, patchSwitches_t& switches);
 	bool                      _patch_user32(DWORD pid, patchSwitches_t& switches);
-	bool                      _fixThreadContext(ULONG64 pOrgStart, ULONG64 pOrgEnd, ULONG64 pDetour);
+	bool                      _fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, ULONG64 pDetour);
 	std::vector<ULONG64>      _findRip(bool useAll = false);
 	void                      _outVmbuf(ULONG64, const char*);
 

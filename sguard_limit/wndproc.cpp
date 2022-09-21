@@ -65,7 +65,7 @@ static void ShowAbout() {
 			" 间歇性卡硬盘原因为SG使用MDL读其他进程内存而这些内存刚好位于页面文件。\n\n\n"
 			
 			"> 高级内存搜索(V4)：启用后修改内存可以瞬间完成。\n"
-			"【注】你可以在“设置延迟”中更改“等待SG稳定的时间”（第二个，默认20秒那个）\n"
+			"【注】你可以在“设置延迟”中更改“等待稳定的时间”（第二个，默认20秒那个）\n"
 			" 来决定修改内存的时机。非常不建议将该数值调整的过小，以免游戏启动失败。\n"
 			" 如果你游戏启动较慢，可以调高这一项，或先开游戏再开限制器。\n\n"
 
@@ -128,12 +128,7 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 				sprintf(buf, "\n输入1~99的整数（当前值：%u）", traceMgr.lockRound.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
 
-			} else if (dlgParam == DLGPARAM_PATCHWAIT1) { // set advanced patch wait for ntdll ioctl.
-				/*SetWindowText(hDlg, "输入开启全部功能前的初始等待时间（单位：秒）");
-				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdllioctl.load());
-				SetDlgItemText(hDlg, IDC_TEXT1, buf);*/
-				
-			} else if (dlgParam == DLGPARAM_PATCHWAIT2) { // set advanced patch wait for ntdll etc.
+			} else if (dlgParam == DLGPARAM_PATCHWAIT) { // set advanced patch wait for ntdll etc.
 				SetWindowText(hDlg, "输入开启防扫盘后等待SGUARD稳定的时间（单位：秒）");
 				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdlletc.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
@@ -195,16 +190,7 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 						return (INT_PTR)TRUE;
 					}
 
-				} else if (dlgParam == DLGPARAM_PATCHWAIT1) {
-					/*if (!translated) {
-						systemMgr.panic("输入格式错误");
-					} else {
-						patchMgr.patchDelayBeforeNtdllioctl = res;
-						EndDialog(hDlg, LOWORD(wParam));
-						return (INT_PTR)TRUE;
-					}*/
-
-				} else if (dlgParam == DLGPARAM_PATCHWAIT2) {
+				} else if (dlgParam == DLGPARAM_PATCHWAIT) {
 					if (!translated) {
 						systemMgr.panic("输入格式错误");
 					} else {
@@ -317,6 +303,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			sprintf(buf, "设置扫描间隔（当前：%u秒）", systemMgr.scanDelay.load() / 1000);
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_SCANDELAY, buf);
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_OPENPROFILEDIR, "打开系统用户目录");
 			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_AUTOSTARTUP,     "开机自启");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_KILLACELOADER,   "游戏启动60秒后，结束ace-loader");
@@ -432,10 +419,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			} else { // if (g_Mode == 2) 
 
 				if (!driver.driverReady) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuard限制器 - 模式无效（驱动未初始化）");
+					AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGuard限制器 - 模式无效（驱动未初始化）");
 				} else {
 					if (g_HijackThreadWaiting) {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
+						AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGuard限制器 - 等待游戏运行");
 					} else {
 						int total =
 							patchMgr.patchSwitches.NtQueryVirtualMemory +
@@ -459,8 +446,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							if (patchMgr.patchFailCount == 0) {
 								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
 							} else {
-								sprintf(buf, "SGuard限制器 - 正在重试（第%d次）... << [点击查看详细信息]", patchMgr.patchFailCount.load());
-								AppendMenu(hMenu, MFT_STRING, IDM_PATCHFAILHINT, buf);
+								sprintf(buf, "SGuard限制器 - 正在重试（第%d次）...", patchMgr.patchFailCount.load());
+								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 							}
 						} else {
 							sprintf(buf, "SGuard限制器 - 已提交  [%d/%d]", finished, total);
@@ -501,7 +488,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH7, "[防扫盘2] 执行失败的文件系统记录枚举");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索");
-				sprintf(buf, "设置延迟（当前：%u/%u", patchMgr.patchDelayBeforeNtdllioctl.load(), patchMgr.patchDelayBeforeNtdlletc.load());
+				sprintf(buf, "设置延迟（当前：0/%u", patchMgr.patchDelayBeforeNtdlletc.load());
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
 					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[0].load());
 				}
@@ -544,9 +531,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (patchMgr.patchSwitches.DeviceIoControl_2) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH7, MF_CHECKED);
 				}
-				if (patchMgr.useAdvancedSearch) {
-					CheckMenuItem(hMenu, IDM_ADVMEMSEARCH, MF_CHECKED);
-				}
+				CheckMenuItem(hMenu, IDM_ADVMEMSEARCH, MF_CHECKED);
 			}
 
 			AppendMenu(hMenu,  MF_SEPARATOR, 0, NULL);
@@ -659,8 +644,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		case IDM_SETDELAY:
 		{
 			sprintf(buf, "请设置以下选项的延迟：如果不想设置某选项，可以直接关闭窗口。\n\n"
-				//"(高级内存搜索) 开启全部功能前的初始等待时间\n"
-				"(高级内存搜索) 开启防扫盘功能后等待SGUARD稳定的时间\n"
+				"开启防扫盘功能后等待SGUARD稳定的时间\n"
 				"%s%s%s%s%s\n\n"
 				"【提示】如果不知道某选项的作用，请勿胡乱设置，否则可能游戏掉线/无法启动。\n",
 				patchMgr.patchSwitches.NtQueryVirtualMemory ?  "NtQueryVirtualMemory\n" : "",
@@ -670,9 +654,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				patchMgr.patchSwitches.DeviceIoControl_1x ?    "指向ACE-BASE的CPL0通信时间\n" : "");
 
 			if (IDYES == MessageBox(0, buf, "设置延迟", MB_YESNO)) {
-
-				//DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT1);
-				DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT2);
+				DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT);
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY1);
 				}
@@ -737,7 +719,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 				patchMgr.patchSwitches.NtWaitForSingleObject = false;
 			} else {
-				if (IDYES == MessageBox(0, "警告：随意设置该选项可能导致游戏异常！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "警告：随意设置该选项可能导致游戏异常！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告", MB_YESNO)) {
 					patchMgr.patchSwitches.NtWaitForSingleObject = true;
 				} else {
 					break;
@@ -750,7 +732,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			if (patchMgr.patchSwitches.NtDelayExecution) {
 				patchMgr.patchSwitches.NtDelayExecution = false;
 			} else {
-				if (IDYES == MessageBox(0, "警告：随意设置该选项可能导致游戏异常！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 					patchMgr.patchSwitches.NtDelayExecution = true;
 				} else {
 					break;
@@ -799,24 +781,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 			} else {
 				patchMgr.patchSwitches.DeviceIoControl_2 = true;
-			}
-			configMgr.writeConfig();
-			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
-			break;
-		case IDM_PATCHFAILHINT:
-			MessageBox(0,
-				"出现“正在重试”字样表示限制器无法采样到SGUARD扫内存的指令。\n这一般由于SGUARD在最近的时间并没有扫内存导致。\n"
-				"建议的解决方法：\n\n1 打开高级内存搜索功能。\n2 重启游戏或重启电脑。", "信息", MB_OK);
-			break;
-		case IDM_ADVMEMSEARCH:
-			if (patchMgr.useAdvancedSearch) {
-				if (IDYES == MessageBox(0, "点击“是”将关闭高级内存搜索功能。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
-					patchMgr.useAdvancedSearch = false;
-				} else {
-					break;
-				}
-			} else {
-				patchMgr.useAdvancedSearch = true;
 			}
 			configMgr.writeConfig();
 			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
@@ -871,6 +835,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		case IDM_SCANDELAY:
 			DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_SCANDELAY);
 			configMgr.writeConfig();
+			break;
+		case IDM_OPENPROFILEDIR:
+			ShellExecute(0, "open", systemMgr.getProfileDir().c_str(), 0, 0, SW_SHOW);
 			break;
 		case IDM_MORE_UPDATEPAGE:
 			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8087898-1-1.html", 0, 0, SW_SHOW);
