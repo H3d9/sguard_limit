@@ -3,6 +3,8 @@
 // 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
 // 2021.11.27 24:00
 // 大城市的郊区有着明亮的月亮。明天的露水在墙上凝结。
+// 2022.10.5
+// 今天并没有下雨。
 #include <Windows.h>
 #include <stdio.h>
 #include <time.h>
@@ -31,7 +33,7 @@ PatchManager::PatchManager()
 	   { 1,   500,  1000 },   /* GetAsyncKeyState */
 	   { 1,   50,   100  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 },   /* NtDelayExecution */
-	   { 500, 1500, 5000 }    /* DeviceIoControl_1x */
+	   { 500, 1150, 5000 }    /* DeviceIoControl_1x */
 	  }, 
 	  patchDelayBeforeNtdlletc(20), 
 	  syscallTable{} {}
@@ -1943,7 +1945,7 @@ bool PatchManager::_fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, U
 
 
 std::vector<ULONG64>
-PatchManager::_findRip(bool useAll) {
+PatchManager::_findRip(bool useAll) { // unused: deprecated
 
 	win32ThreadManager                  threadMgr;
 	auto&                               threadList   = threadMgr.threadList;

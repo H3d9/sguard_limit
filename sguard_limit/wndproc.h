@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "22.9.21 万圣节特别版"
+#define VERSION             "22.10.5 万圣节特别版"
 #define MEMPATCH_VERSION    "V4.6x"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U

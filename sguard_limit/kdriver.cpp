@@ -12,7 +12,7 @@ KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
 	: loadFromProfileDir(true), driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
-	  currentPath{}, profilePath{}, sysCurrentPath{}, sysProfilePath{}, sysfile(NULL),
+	  currentPath{}, profilePath{}, sysCurrentPath{}, sysProfilePath{}, sysfile(&sysProfilePath), // forbid crash in start service
 	  hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
 	  errorMessage_ptr(new char[0x1000]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
@@ -159,35 +159,27 @@ bool KernelDriver::prepareSysfile() {
 	if (loadFromProfileDir) {
 
 		// 1. should load from profile dir:
+		sysfile = &sysProfilePath;
 		
 		// check current dir, and move sysfile in if exists.
 		if (std::filesystem::exists(sysCurrentPath, ec)) {
 
-			if (MoveFileEx(sysCurrentPath.c_str(), sysProfilePath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-				sysfile = &sysProfilePath;
-			
-			} else {
-				sysfile = &sysProfilePath; // assign pointer to forbid crash in start service deref
+			if (!MoveFileEx(sysCurrentPath.c_str(), sysProfilePath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+
 				_startService(); // try stop running driver
 				_endService();
 
-				if (MoveFileEx(sysCurrentPath.c_str(), sysProfilePath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-					sysfile = &sysProfilePath;
-
-				} else {
-					moveStatus  = GetLastError();
+				if (!MoveFileEx(sysCurrentPath.c_str(), sysProfilePath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+					
+					moveStatus = GetLastError();
 					checkStatus = false;
 				}
 			}
 			
 		} else {
 
-			// if not exist, check profile dir.
-			if (std::filesystem::exists(sysProfilePath, ec)) {
-				sysfile = &sysProfilePath;
-
-			} else {
-				// file not exist at all.
+			// if not exist, check profile dir. if file not exist at all, fail.
+			if (!std::filesystem::exists(sysProfilePath, ec)) {
 				checkStatus = false;
 			}
 		}
@@ -195,34 +187,28 @@ bool KernelDriver::prepareSysfile() {
 	} else {
 
 		// 2. should load from current dir:
+		sysfile = &sysCurrentPath;
 
 		// check current dir, and load it directly if exists.
-		if (std::filesystem::exists(sysCurrentPath, ec)) {
-			sysfile = &sysCurrentPath;
-
-		} else {
-
+		if (!std::filesystem::exists(sysCurrentPath, ec)) {
+			
 			// if not exist, try move sysfile out of profile dir if exists.
 			if (std::filesystem::exists(sysProfilePath, ec)) {
 
-				if (MoveFileEx(sysProfilePath.c_str(), sysCurrentPath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-					sysfile = &sysCurrentPath;
-				
-				} else {
-					sysfile = &sysCurrentPath; // assign pointer to forbid crash in start service deref
-					_startService(); // try stop running driver
+				if (!MoveFileEx(sysProfilePath.c_str(), sysCurrentPath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+					
+					_startService();
 					_endService();
 
-					if (MoveFileEx(sysProfilePath.c_str(), sysCurrentPath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-						sysfile = &sysCurrentPath;
-
-					} else {
-						moveStatus  = GetLastError();
+					if (!MoveFileEx(sysProfilePath.c_str(), sysCurrentPath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+						
+						moveStatus = GetLastError();
 						checkStatus = false;
 					}
 				}
 
 			} else {
+
 				// file not exist at all.
 				checkStatus = false;
 			}
@@ -241,12 +227,12 @@ bool KernelDriver::prepareSysfile() {
 		// sysfile not ready, record error.
 		_recordError(moveStatus,
 			"driver::prepareSysfile(): %s。\n\n"
-			"【解决办法】重启电脑再重新下载解压；若还不行，则先禁用defender，然后把以下2个目录加入杀毒信任区（如有杀毒），再重新下载解压。\n\n"
-			"1. %s\n2. %s\n\n%s",
+			"【解决办法】右键菜单->其他选项->打开系统用户目录，把压缩包里的sys文件手动放到这里。限制器目录若有sys文件则删掉。\n"
+			"若还不行：先禁用defender，把以下2个目录加入杀毒信任区（如有杀毒），然后重试：\n\n"
+			"1. %s\n2. %s\n\n"
+			"【提示】可以查看附带的常见问题文档。",
 			moveStatus ? "移动sys文件失败" : "找不到sys文件：“SGuardLimit_VMIO.sys”",
-			currentPath.c_str(),
-			profilePath.c_str(),
-			moveStatus ? "" : "【提示】把限制器和附带的sys文件解压到一起再运行，不要直接在压缩包里点开。解压目录不要包含特殊符号。");
+			currentPath.c_str(), profilePath.c_str());
 
 		return driverReady = false;
 	}
@@ -520,7 +506,7 @@ bool KernelDriver::_startService() {
 	if (!StartService(hService, 0, NULL)) {
 		DWORD errorCode = GetLastError();
 		DeleteService(hService);
-		SVC_ERROR_EXIT(errorCode, "StartService失败。建议查看常见问题文档。");
+		SVC_ERROR_EXIT(errorCode, "StartService失败。建议禁用defender并加杀毒白名单，然后重启电脑，重新下载解压。\n\n【提示】可以查看附带的常见问题文档。");
 	}
 
 	return true;

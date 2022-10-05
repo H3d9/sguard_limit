@@ -130,25 +130,15 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			" 内存补丁 " MEMPATCH_VERSION "：新增弱化版“防扫盘1”。\n\n"
-			"1. 绕过ace-base的自我保护机制以避免ZwProtectVirtualMemory1弹窗。\n\n\n"
+			" 内存补丁 " MEMPATCH_VERSION "\n\n"
+			"1. 重新P了一下井盖图标。\n\n"
+			"2. 修复初始化驱动的小问题并增加提示信息。\n\n\n"
 			
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
 			"2. 若你第一次使用，请务必仔细阅读说明（可在右下角托盘菜单中找到）\n"
 			"   如果看了说明仍未解决你的问题，可以加群反馈：775176979",
 			VERSION "  by: @H3d9", MB_OK);
-
-		if (IDYES == MessageBox(0, "是否使用“防扫盘1”的强力模式（等效于22.7.15版本）？\n\n"
-								   "如果你之前出现过“安全组件运行异常”，请选择“否”。",
-								   "提示", MB_YESNO)) {
-
-			patchMgr.patchSwitches.DeviceIoControl_1  = true;
-			patchMgr.patchSwitches.DeviceIoControl_1x = false;
-			configMgr.writeConfig();
-
-			MessageBox(0, "如果出现“安全组件运行异常”，将右键菜单“防扫盘1”改成弱化模式即可。", "提示", MB_OK);
-		}
 	}
 
 
@@ -184,11 +174,7 @@ INT WINAPI WinMain(
 		// turn off related config flags and show error hint.
 		if (!status && DriverOptionsSelected()) {
 			limitMgr.useKernelMode = false;
-			configMgr.writeConfig();
 			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-			systemMgr.panic(0, "由于驱动初始化失败，以下关联模块无法使用：\n\n"
-							   "内存补丁 " MEMPATCH_VERSION "\n"
-							   "内核态调度器");
 		}
 
 		// if init success but is win11 latest, show alert.

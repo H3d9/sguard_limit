@@ -719,7 +719,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			if (patchMgr.patchSwitches.NtWaitForSingleObject) {
 				patchMgr.patchSwitches.NtWaitForSingleObject = false;
 			} else {
-				if (IDYES == MessageBox(0, "警告：随意设置该选项可能导致游戏异常！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "警告：如使用未出现问题或未说明，请勿勾选该选项。\n\n仍要继续吗？", "警告", MB_YESNO)) {
 					patchMgr.patchSwitches.NtWaitForSingleObject = true;
 				} else {
 					break;
@@ -752,7 +752,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			break;
 		case IDM_PATCHSWITCH6_2: // strong ioctl_1
 			if (!(patchMgr.patchSwitches.DeviceIoControl_1 && !patchMgr.patchSwitches.DeviceIoControl_1x)) {
-				if (IDYES == MessageBox(0, "强力模式可能导致安全组件运行异常，建议你优先使用弱化模式。\n\n仍要继续吗？", "注意", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "强力模式可能导致安全组件运行异常，不建议使用。\n\n仍要继续吗？", "注意", MB_YESNO)) {
 					patchMgr.patchSwitches.DeviceIoControl_1 = true;
 					patchMgr.patchSwitches.DeviceIoControl_1x = false;
 
@@ -763,7 +763,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			break;
 		case IDM_PATCHSWITCH6_3: // close ioctl_1
 			if (patchMgr.patchSwitches.DeviceIoControl_1) {
-				if (IDYES == MessageBox(0, "点击“是”将关闭NtDeviceIoControlFile开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "点击“是”将关闭[防扫盘1]开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 					patchMgr.patchSwitches.DeviceIoControl_1 = false;
 					patchMgr.patchSwitches.DeviceIoControl_1x = false;
 
@@ -774,7 +774,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			break;
 		case IDM_PATCHSWITCH7:
 			if (patchMgr.patchSwitches.DeviceIoControl_2) {
-				if (IDYES == MessageBox(0, "点击“是”将关闭NtFsControlFile开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "点击“是”将关闭[防扫盘2]开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 					patchMgr.patchSwitches.DeviceIoControl_2 = false;
 				} else {
 					break;

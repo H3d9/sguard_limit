@@ -599,8 +599,6 @@ void win32SystemManager::_log(DWORD code, const char* logbuf) {
 	if (code != 0) {
 
 		// put timestamp to result.
-		time_t t = time(0);
-		tm* local = localtime(&t);
 		sprintf(result, "[%d-%02d-%02d %02d:%02d:%02d]   note: error ",
 			1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
 
