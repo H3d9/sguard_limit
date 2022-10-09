@@ -5,8 +5,8 @@
 
 #include "Vad.h"
 
+#define DRIVER_VERSION  "22.10.9"
 
-#define DRIVER_VERSION  "22.9.21"
 
 // 全局对象
 RTL_OSVERSIONINFOW   OSVersion;
@@ -694,8 +694,8 @@ NTSTATUS DriverEntry(
 
 
 	// 初始化符号链接和I/O设备
-	RtlInitUnicodeString(&dev, L"\\Device\\SGuardLimit_VMIO");
-	RtlInitUnicodeString(&dos, L"\\DosDevices\\SGuardLimit_VMIO");
+	RtlInitUnicodeString(&dev, L"\\Device\\sguard_limit");
+	RtlInitUnicodeString(&dos, L"\\DosDevices\\sguard_limit");
 	IoCreateSymbolicLink(&dos, &dev);
 
 	IoCreateDevice(pDriverObject, 0, &dev, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);

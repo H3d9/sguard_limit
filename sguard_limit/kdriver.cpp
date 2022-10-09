@@ -4,7 +4,9 @@
 #include <filesystem>
 #include "kdriver.h"
 
-#define DRIVER_VERSION  "22.9.21"
+
+#define DRIVER_NAME     "sguard_limit"
+#define DRIVER_VERSION  "22.10.9"
 
 
 // kernel-mode memory io
@@ -34,8 +36,8 @@ bool KernelDriver::init(const std::string& currentDir, const std::string& profil
 	// initialize path for locating sysfile and show hint as fail occurs.
 	currentPath    = currentDir;
 	profilePath    = profileDir;
-	sysCurrentPath = currentDir + "\\SGuardLimit_VMIO.sys";
-	sysProfilePath = profileDir + "\\SGuardLimit_VMIO.sys";
+	sysCurrentPath = currentDir + "\\" DRIVER_NAME ".sys";
+	sysProfilePath = profileDir + "\\" DRIVER_NAME ".sys";
 
 
 	// import certificate key.
@@ -231,7 +233,7 @@ bool KernelDriver::prepareSysfile() {
 			"若还不行：先禁用defender，把以下2个目录加入杀毒信任区（如有杀毒），然后重试：\n\n"
 			"1. %s\n2. %s\n\n"
 			"【提示】可以查看附带的常见问题文档。",
-			moveStatus ? "移动sys文件失败" : "找不到sys文件：“SGuardLimit_VMIO.sys”",
+			moveStatus ? "移动sys文件失败" : "找不到sys文件：“" DRIVER_NAME ".sys”",
 			currentPath.c_str(), profilePath.c_str());
 
 		return driverReady = false;
@@ -248,7 +250,7 @@ bool KernelDriver::load() {
 			return false;
 		}
 
-		hDriver = CreateFile("\\\\.\\SGuardLimit_VMIO", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+		hDriver = CreateFile("\\\\.\\" DRIVER_NAME, GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
 		
 		if (hDriver == INVALID_HANDLE_VALUE) {
 			_recordError(GetLastError(), "driver::load(): CreateFile失败。");
@@ -458,11 +460,11 @@ bool KernelDriver::_startService() {
 	}
 
 	// open Service.
-	hService = OpenService(hSCManager, "SGuardLimit_VMIO", SERVICE_ALL_ACCESS);
+	hService = OpenService(hSCManager, DRIVER_NAME, SERVICE_ALL_ACCESS);
 
 	if (!hService) {
 		hService = 
-		CreateService(hSCManager, "SGuardLimit_VMIO", "SGuardLimit_VMIO",
+		CreateService(hSCManager, DRIVER_NAME, DRIVER_NAME,
 			SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
 			sysfile->c_str(),  /* no quote here, msdn e.g. is wrong */ /* assert path is valid */
 			NULL, NULL, NULL, NULL, NULL);
@@ -552,7 +554,7 @@ bool KernelDriver::_checkSysVersion() {
 	this->unload();
 
 	if (0 != strcmp(request.data, DRIVER_VERSION)) {
-		_recordError(0, "driver::checkSysVersion(): 内核驱动文件“SGuardLimit_VMIO.sys”不是最新的。\n\n"
+		_recordError(0, "driver::checkSysVersion(): 内核驱动文件“" DRIVER_NAME ".sys”不是最新的。\n\n"
 			"【提示】需要把限制器和附带的sys文件解压到一起再运行，不要直接在压缩包里点开。");
 		return false;
 	}
