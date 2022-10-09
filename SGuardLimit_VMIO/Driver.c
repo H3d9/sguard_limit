@@ -5,7 +5,7 @@
 
 #include "Vad.h"
 
-#define DRIVER_VERSION  "22.10.9"
+#define DRIVER_VERSION  "22.10.10"
 
 
 // 全局对象
@@ -26,6 +26,7 @@ PVOID                TargetVad;
 #define IO_RESUME      CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VM_VADSEARCH   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0706, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 #define VM_VADRESTORE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0707, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
+#define PATCH_ACEBASE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0708, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 
 typedef struct {
 	HANDLE   pid;
@@ -38,7 +39,37 @@ typedef struct {
 } VMIO_REQUEST;
 
 
-// ZwProtectVirtualMemory (win7/win8未导出符号)
+typedef enum _SYSTEM_INFORMATION_CLASS {
+	SystemModuleInformation = 0x0B,
+} SYSTEM_INFORMATION_CLASS;
+
+typedef struct _RTL_PROCESS_MODULE_INFORMATION {
+	PVOID Section;
+	PVOID MappedBase;
+	PVOID ImageBase;
+	ULONG ImageSize;
+	ULONG Flags;
+	USHORT LoadOrderIndex;
+	USHORT InitOrderIndex;
+	USHORT LoadCount;
+	USHORT OffsetToFileName;
+	CHAR FullPathName[0x0100];
+} RTL_PROCESS_MODULE_INFORMATION;
+
+typedef struct _RTL_PROCESS_MODULES {
+	ULONG NumberOfModules;
+	RTL_PROCESS_MODULE_INFORMATION Modules[ANYSIZE_ARRAY]; // evil hack
+} RTL_PROCESS_MODULES;
+
+
+// ZwQuerySystemInformation (未声明)
+NTSTATUS ZwQuerySystemInformation(
+	SYSTEM_INFORMATION_CLASS SystemInformationClass,
+	PVOID SystemInformation,
+	ULONG SystemInformationLength,
+	ULONG* ReturnLength);
+
+// ZwProtectVirtualMemory (win7/win8未导出)
 NTSTATUS (NTAPI* ZwProtectVirtualMemory)(
 	__in HANDLE ProcessHandle,
 	__inout PVOID* BaseAddress,
@@ -47,7 +78,7 @@ NTSTATUS (NTAPI* ZwProtectVirtualMemory)(
 	__out PULONG OldProtect
 ) = NULL;
 
-// MmCopyVirtualMemory (可链接符号)
+// MmCopyVirtualMemory (未声明)
 NTSTATUS NTAPI MmCopyVirtualMemory(
 	PEPROCESS SourceProcess,
 	PVOID SourceAddress,
@@ -553,6 +584,74 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			}
 
 			TargetVad = NULL;
+		}
+		break;
+
+		case PATCH_ACEBASE:
+		{
+			RTL_PROCESS_MODULES*  moduleInfo     = NULL;
+			ULONG                 infoLength     = 0;
+			ULONG64               AceImageBase   = 0;
+
+			// 枚举系统加载的所有内核态模块（驱动）
+			ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoLength);
+
+			moduleInfo = ExAllocatePoolWithTag(PagedPool, infoLength, '9d3H');
+			
+			if (moduleInfo) {
+				RtlZeroMemory(moduleInfo, infoLength);
+
+				Status = ZwQuerySystemInformation(SystemModuleInformation, moduleInfo, infoLength, &infoLength);
+
+				if (!NT_SUCCESS(Status)) {
+					ExFreePoolWithTag(moduleInfo, '9d3H');
+					IOCTL_LOG_EXIT("PATCH_ACEBASE::ZwQuerySystemInformation");
+				}
+
+				// 从所有模块中找到ACE驱动的镜像加载地址
+				for (ULONG i = 0; i < moduleInfo->NumberOfModules; i++) {
+					if (strstr(moduleInfo->Modules[i].FullPathName, "ACE-BASE")) {
+						AceImageBase = (ULONG64)moduleInfo->Modules[i].ImageBase;
+						break;
+					}
+				}
+
+				ExFreePoolWithTag(moduleInfo, '9d3H');
+
+				if (!AceImageBase) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("PATCH_ACEBASE::(module not found)");
+				}
+			}
+
+			// 检查ACE驱动中待补丁的内存块是否合法，以及特征码是否匹配
+			if (!MmIsAddressValid((PVOID)(AceImageBase + 0x33fb9))) {
+				Status = STATUS_UNSUCCESSFUL;
+				IOCTL_LOG_EXIT("PATCH_ACEBASE::(memory address not valid)");
+			}
+
+			if (0 != memcmp((PVOID)(AceImageBase + 0x33fb9), "\xB9\x01\x00\x00\x00\xE8\x6D\x3E\x00\x00", 10)) {
+				if (0 == memcmp((PVOID)(AceImageBase + 0x33fb9), "\xB9\xE8\x03\x00\x00\xE8\x6D\x3E\x00\x00", 10)) {
+					// 如果已经补丁过，直接返回成功
+					Status = STATUS_SUCCESS;
+					IOCTL_LOG_EXIT("PATCH_ACEBASE::(memory already patched)");
+				} else {
+					// 如果ACE驱动版本不是可补丁的，也直接返回成功
+					Status = STATUS_SUCCESS;
+					IOCTL_LOG_EXIT("PATCH_ACEBASE::(memory pattern not match)");
+				}
+			}
+
+			// 若目标内存满足条件，则直接应用补丁到ACE驱动
+			KIRQL irql = KeRaiseIrqlToDpcLevel();
+			_disable();
+			__writecr0(__readcr0() & 0xfffffffffffeffff);
+
+			*(int*)(AceImageBase + 0x33fba) = 1000; // -> ksleep(1000)
+
+			__writecr0(__readcr0() | 0x10000);
+			_enable();
+			KeLowerIrql(irql);
 		}
 		break;
 

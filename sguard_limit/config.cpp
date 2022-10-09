@@ -84,6 +84,9 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		GetPrivateProfileInt("Patch", "DeviceIoControl_1x",    TRUE,  profile);
 	patchMgr.patchSwitches.DeviceIoControl_2     =
 		GetPrivateProfileInt("Patch", "DeviceIoControl_2",     TRUE,  profile);
+	patchMgr.patchSwitches.R0_AceBase            =
+		GetPrivateProfileInt("Patch", "R0_AceBase",            TRUE,  profile);
+
 
 	auto defDelay = [] (auto i) { return patchMgr.patchDelayRange[i].def; };
 
@@ -116,6 +119,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		patchMgr.patchSwitches.DeviceIoControl_1     = true;
 		patchMgr.patchSwitches.DeviceIoControl_1x    = true;
 		patchMgr.patchSwitches.DeviceIoControl_2     = true;
+		patchMgr.patchSwitches.R0_AceBase            = true;
 
 		patchMgr.patchDelay[0] = defDelay(0);
 		patchMgr.patchDelay[1] = defDelay(1);
@@ -200,6 +204,9 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, patchMgr.patchSwitches.DeviceIoControl_2 ? "1" : "0");
 	WritePrivateProfileString("Patch", "DeviceIoControl_2", buf, profile);
+
+	sprintf(buf, patchMgr.patchSwitches.R0_AceBase ? "1" : "0");
+	WritePrivateProfileString("Patch", "R0_AceBase", buf, profile);
 
 
 	sprintf(buf, "%u", patchMgr.patchDelay[0].load());

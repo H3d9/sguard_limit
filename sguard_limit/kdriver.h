@@ -36,6 +36,7 @@ public:
 	bool     resume(DWORD pid);
 	bool     searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t* moduleName);
 	bool     restoreVad(/* param in kernel */);
+	bool     patchAceBase();
 
 public:
 	bool     loadFromProfileDir;  // [in] whether the kernel driver should be loaded from profile dir.
@@ -74,6 +75,7 @@ private:
 	static constexpr DWORD	 IO_RESUME      = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0705, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD	 VM_VADSEARCH   = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0706, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD	 VM_VADRESTORE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0707, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
+	static constexpr DWORD	 PATCH_ACEBASE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0708, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
 	std::string     currentPath;  // path without filename
 	std::string     profilePath;  // path without filename

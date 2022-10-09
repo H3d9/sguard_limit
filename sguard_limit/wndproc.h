@@ -2,8 +2,8 @@
 #include <Windows.h>
 
 
-#define VERSION             "22.10.5 万圣节特别版"
-#define MEMPATCH_VERSION    "V4.6x"
+#define VERSION             "22.10.10 万圣节特别版"
+#define MEMPATCH_VERSION    "V4.7x"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 
@@ -44,7 +44,8 @@
 #define IDM_PATCHSWITCH6_2  224
 #define IDM_PATCHSWITCH6_3  225
 #define IDM_PATCHSWITCH7    226
-#define IDM_ADVMEMSEARCH    227
+#define IDM_PATCHSWITCH8    227
+#define IDM_ADVMEMSEARCH    228
 
 
 // other commands

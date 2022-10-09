@@ -6,7 +6,7 @@
 
 
 #define DRIVER_NAME     "sguard_limit"
-#define DRIVER_VERSION  "22.10.9"
+#define DRIVER_VERSION  "22.10.10"
 
 
 // kernel-mode memory io
@@ -436,6 +436,30 @@ bool KernelDriver::restoreVad() {
 		return false;
 	}
 	
+	return true;
+}
+
+bool KernelDriver::patchAceBase() {
+
+	VMIO_REQUEST  request(0);
+	DWORD         Bytes;
+
+	_resetError();
+
+
+	if (!DeviceIoControl(hDriver, PATCH_ACEBASE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
+		_recordError(GetLastError(), "driver::patchAceBase(): DeviceIoControl ß∞‹°£");
+		return false;
+	}
+	if (request.errorCode != 0) {
+		_recordError(request.errorCode, "driver::patchAceBase(): from kernel: %s", request.errorFunc);
+		return false;
+	}
+
+	// designed to be: if already patched, record message and return true.
+	if (request.errorFunc[0] != '\0') {
+		_recordError(0, "driver::patchAceBase(): from kernel: %s", request.errorFunc);
+	}
 	return true;
 }
 

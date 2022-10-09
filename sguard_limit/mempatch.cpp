@@ -33,7 +33,7 @@ PatchManager::PatchManager()
 	   { 1,   500,  1000 },   /* GetAsyncKeyState */
 	   { 1,   50,   100  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 },   /* NtDelayExecution */
-	   { 500, 1150, 5000 }    /* DeviceIoControl_1x */
+	   { 500, 1500, 5000 }    /* DeviceIoControl_1x */
 	  }, 
 	  patchDelayBeforeNtdlletc(20), 
 	  syscallTable{} {}
@@ -41,6 +41,7 @@ PatchManager::PatchManager()
 PatchManager& PatchManager::getInstance() {
 	return patchManager;
 }
+
 
 bool PatchManager::init() {
 	
@@ -78,6 +79,33 @@ bool PatchManager::init() {
 	return ret;
 }
 
+DWORD PatchManager::_getSyscallNumber(const char* funcName, const char* libName) {
+
+	DWORD callNumber = 0;
+
+	auto hModule = LoadLibrary(libName);
+	if (hModule) {
+
+		auto procAddr = (char*)GetProcAddress(hModule, funcName);
+		if (procAddr) {
+
+			// if is Nt/Zw func (__kernelentry), pattern is at header+0.
+			// otherwise, search nearby (win7/8/8.1, in user32; ignore win10 <= 10586).
+			for (auto rip = procAddr; rip < procAddr + 0x200; rip++) {
+				if (0 == memcmp(rip, "\x4c\x8b\xd1\xb8", 4) && 0 == memcmp(rip + 6, "\x00\x00", 2)) {
+					callNumber = *(DWORD*)(rip + 4);
+					break;
+				}
+			}
+		}
+
+		FreeLibrary(hModule);
+	}
+
+	return callNumber;
+}
+
+
 void PatchManager::patch() {
 
 	win32ThreadManager     threadMgr;
@@ -106,6 +134,7 @@ void PatchManager::patch() {
 		patchStatus.DeviceIoControl_1        = false;
 		patchStatus.DeviceIoControl_1x       = false;
 		patchStatus.DeviceIoControl_2        = false;
+		patchStatus.R0_AceBase               = false;
 
 
 		// start driver.
@@ -128,15 +157,26 @@ void PatchManager::patch() {
 			}
 		}
 
+		// stop driver. (to wait)
+		driver.unload();
+
+
 		// wait if adv search: before patch ntdll etc.
 		systemMgr.log("patch(): waiting %us before manip ntdll etc.", patchDelayBeforeNtdlletc.load());
 
-		for (DWORD time = 0; time < patchDelayBeforeNtdlletc; time++) {
+		for (DWORD time = 0; patchEnabled && time < patchDelayBeforeNtdlletc; time++) {
 			Sleep(1000);
 			if (!patchEnabled || pid != threadMgr.getTargetPid()) {
 				systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
 				return;
 			}
+		}
+
+
+		// start driver.
+		if (!driver.load()) {
+			systemMgr.panic(driver.errorCode, "patch().driver.load(): %s", driver.errorMessage);
+			return;
 		}
 
 		// patch ntdll etc. (v2 features)
@@ -155,7 +195,6 @@ void PatchManager::patch() {
 			}
 		}
 
-
 		// patch user32 (v3 features)
 		if (patchSwitches.GetAsyncKeyState) {
 
@@ -167,9 +206,20 @@ void PatchManager::patch() {
 			}
 		}
 
+		// patch ace-base:140033f80 (v4.7)
+		if (patchSwitches.R0_AceBase) {
+
+			patchSwitches_t switches;
+			switches.R0_AceBase = patchSwitches.R0_AceBase.load();
+
+			if (!_patch_r0(switches)) {
+				systemMgr.log("patch(): warning: _patch_r0() failed!");
+			}
+		}
 
 		// stop driver.
 		driver.unload();
+
 
 		patchPid = pid;
 		systemMgr.log("patch(): all operation complete.");
@@ -199,32 +249,6 @@ void PatchManager::enable(bool forceRecover) {
 
 void PatchManager::disable(bool forceRecover) {
 	patchEnabled = false;
-}
-
-DWORD PatchManager::_getSyscallNumber(const char* funcName, const char* libName) {
-
-	DWORD callNumber = 0;
-
-	auto hModule = LoadLibrary(libName);
-	if (hModule) {
-
-		auto procAddr = (char*)GetProcAddress(hModule, funcName);
-		if (procAddr) {
-
-			// if is Nt/Zw func (__kernelentry), pattern is at header+0.
-			// otherwise, search nearby (win7/8/8.1, in user32; ignore win10 <= 10586).
-			for (auto rip = procAddr; rip < procAddr + 0x200; rip++) {
-				if (0 == memcmp(rip, "\x4c\x8b\xd1\xb8", 4) && 0 == memcmp(rip + 6, "\x00\x00", 2)) {
-					callNumber = *(DWORD*)(rip + 4);
-					break;
-				}
-			}
-		}
-
-		FreeLibrary(hModule);
-	}
-
-	return callNumber;
 }
 
 struct kdriver_guard {
@@ -1871,6 +1895,49 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 	if (patchedNow.GetAsyncKeyState) patchStatus.GetAsyncKeyState = true;
 
 	systemMgr.log("patch_user32(): patch complete.");
+	return true;
+}
+
+bool PatchManager::_patch_r0(patchSwitches_t& switches) {
+
+	patchStatus_t            patchedNow;
+	
+
+	// assert: driver loaded.
+	systemMgr.log("patch_r0(): entering.");
+
+	if (switches.R0_AceBase) {
+
+		// loop till ACE-BASE.sys is loaded to kernel. wait up to 1 min.
+		for (DWORD time = 0; patchEnabled && time < 60; time += 3) {
+			
+			// try patch. if module not loaded, retry.
+			if (driver.patchAceBase()) {
+
+				// mark related flag to inform user that patch has complete.
+				patchedNow.R0_AceBase = true;
+
+				// patchAceBase(): if already patched, record message and return true.
+				if (driver.errorMessage[0] != '\0') {
+					systemMgr.log(0, driver.errorMessage);
+				}
+				systemMgr.log("patch_r0(): patch nt!ACE-BASE complete.");
+				break;
+
+			} else {
+				systemMgr.log(0, "%s", driver.errorMessage);
+			}
+
+			Sleep(3000);
+		}
+		// if after 1 min kdriver is not loaded, quit.
+	}
+
+
+	// r0 complete.
+	if (patchedNow.R0_AceBase) patchStatus.R0_AceBase = true;
+
+	systemMgr.log("patch_r0(): patch complete.");
 	return true;
 }
 
