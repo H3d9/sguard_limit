@@ -6,7 +6,7 @@
 
 
 #define DRIVER_NAME     "sguard_limit"
-#define DRIVER_VERSION  "22.10.10"
+#define DRIVER_VERSION  "22.10.14"
 
 
 // kernel-mode memory io
@@ -15,7 +15,7 @@ KernelDriver  KernelDriver::kernelDriver;
 KernelDriver::KernelDriver()
 	: loadFromProfileDir(true), driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
 	  currentPath{}, profilePath{}, sysCurrentPath{}, sysProfilePath{}, sysfile(&sysProfilePath), // forbid crash in start service
-	  hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE),
+	  hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE), refCount{0}, refLock{},
 	  errorMessage_ptr(new char[0x1000]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
 }
@@ -242,7 +242,10 @@ bool KernelDriver::prepareSysfile() {
 
 bool KernelDriver::load() {
 
+	std::lock_guard<std::mutex> cxx_guard(refLock);
+	
 	_resetError();
+
 
 	if (hDriver == INVALID_HANDLE_VALUE) {
 
@@ -251,24 +254,37 @@ bool KernelDriver::load() {
 		}
 
 		hDriver = CreateFile("\\\\.\\" DRIVER_NAME, GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
-		
+
 		if (hDriver == INVALID_HANDLE_VALUE) {
 			_recordError(GetLastError(), "driver::load(): CreateFileÊ§°Ü¡£");
 			return false;
 		}
 	}
 
+
+	refCount++;  // refCount > 0 is guarenteed if driver load success.
 	return true;
 }
 
 void KernelDriver::unload() {
 
-	if (hDriver != INVALID_HANDLE_VALUE) {
+	std::lock_guard<std::mutex> cxx_guard(refLock);
 
-		CloseHandle(hDriver);
-		hDriver = INVALID_HANDLE_VALUE;
 
-		_endService();
+	if (hDriver != INVALID_HANDLE_VALUE) { // if driver is loaded then refCount > 0.
+
+		refCount--;
+
+		if (refCount == 0) {
+
+			CloseHandle(hDriver);
+			hDriver = INVALID_HANDLE_VALUE;
+
+			_endService();
+		}
+
+	} else {
+		refCount = 0;
 	}
 }
 
@@ -290,7 +306,7 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError(request.errorCode, "driver::readVM(): from kernel: %s", request.errorFunc);
+			_recordError(request.errorCode, "driver::readVM(): from kernel: \n%s", request.errorFunc);
 			return false;
 		}
 
@@ -320,7 +336,7 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError(request.errorCode, "driver::writeVM(): from kernel: %s", request.errorFunc);
+			_recordError(request.errorCode, "driver::writeVM(): from kernel: \n%s", request.errorFunc);
 			return false;
 		}
 	}
@@ -341,7 +357,7 @@ bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::allocVM(): from kernel: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::allocVM(): from kernel: \n%s", request.errorFunc);
 		return false;
 	}
 
@@ -363,7 +379,7 @@ bool KernelDriver::suspend(DWORD pid) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::suspend(): from kernel: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::suspend(): from kernel: \n%s", request.errorFunc);
 		return false;
 	}
 
@@ -383,7 +399,7 @@ bool KernelDriver::resume(DWORD pid) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::resume(): from kernel: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::resume(): from kernel: \n%s", request.errorFunc);
 		return false;
 	}
 
@@ -405,7 +421,7 @@ bool KernelDriver::searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::searchVad(): from kernel: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::searchVad(): from kernel: \n%s", request.errorFunc);
 		return false;
 	}
 
@@ -452,14 +468,10 @@ bool KernelDriver::patchAceBase() {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::patchAceBase(): from kernel: %s", request.errorFunc);
+		_recordError(request.errorCode, "driver::patchAceBase(): from kernel: \n%s", request.errorFunc);
 		return false;
 	}
 
-	// designed to be: if already patched, record message and return true.
-	if (request.errorFunc[0] != '\0') {
-		_recordError(0, "driver::patchAceBase(): from kernel: %s", request.errorFunc);
-	}
 	return true;
 }
 

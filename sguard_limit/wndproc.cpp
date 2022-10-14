@@ -63,7 +63,7 @@ static void ShowAbout() {
 			">6 执行失败的文件系统记录枚举(V4.2): 防止高强度扫硬盘（偶尔出现）\n"
 			"【注】游戏刚启动时SG读盘是不可避免的，若屏蔽则游戏会启动失败。\n"
 			" 间歇性卡硬盘原因为SG使用MDL读其他进程内存而这些内存刚好位于页面文件。\n\n"
-			">7 [R0] inline Nt!ACE-BASE+0x33f80: 防止启动游戏后system进程占用cpu。\n\n\n"
+			">7 [R0] re-write Nt!ACE-BASE+0x10cfe9: 防止启动游戏后system进程占用cpu。\n\n\n"
 			
 			"> 高级内存搜索(V4)：启用后修改内存可以瞬间完成。\n"
 			"【注】你可以在“设置延迟”中更改“等待稳定的时间”（第二个，默认20秒那个）\n"
@@ -432,8 +432,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							patchMgr.patchSwitches.NtWaitForSingleObject +
 							patchMgr.patchSwitches.NtDelayExecution +
 							patchMgr.patchSwitches.DeviceIoControl_1 +
-							patchMgr.patchSwitches.DeviceIoControl_2 +
-							patchMgr.patchSwitches.R0_AceBase;
+							patchMgr.patchSwitches.DeviceIoControl_2/* +
+							patchMgr.patchSwitches.R0_AceBase*/;
 
 						int finished =
 							patchMgr.patchStatus.NtQueryVirtualMemory +
@@ -442,8 +442,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							patchMgr.patchStatus.NtWaitForSingleObject +
 							patchMgr.patchStatus.NtDelayExecution +
 							patchMgr.patchStatus.DeviceIoControl_1 +
-							patchMgr.patchStatus.DeviceIoControl_2 +
-							patchMgr.patchStatus.R0_AceBase;
+							patchMgr.patchStatus.DeviceIoControl_2/* +
+							patchMgr.patchStatus.R0_AceBase*/;
 
 						if (finished == 0) {
 							if (patchMgr.patchFailCount == 0) {
@@ -490,7 +490,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH7, "[防扫盘2] 执行失败的文件系统记录枚举");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH8, "[R0] inline Nt!ACE-BASE+0x33f80");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH8, "[R0] re-write Nt!ACE-BASE+0x10cfe9");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索");
 				sprintf(buf, "设置延迟（当前：0/%u", patchMgr.patchDelayBeforeNtdlletc.load());
@@ -536,9 +536,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (patchMgr.patchSwitches.DeviceIoControl_2) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH7, MF_CHECKED);
 				}
-				if (patchMgr.patchSwitches.R0_AceBase) {
+				/*if (patchMgr.patchSwitches.R0_AceBase) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH8, MF_CHECKED);
-				}
+				}*/
 				CheckMenuItem(hMenu, IDM_ADVMEMSEARCH, MF_CHECKED);
 			}
 
@@ -794,7 +794,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 			break;
 		case IDM_PATCHSWITCH8:
-			if (patchMgr.patchSwitches.R0_AceBase) {
+			if (IDYES == MessageBox(0, "点击“是”将限制system进程占用cpu。请你仅在出现该问题时再点！（点一次就可以，不会出现对勾）\n\n"
+				                       "这是试验性功能，可能出现游戏掉线，若你已做好准备则点击“是”，否则点击“否”。\n\n\n", "注意", MB_YESNO)) {
+				patchMgr.patch_r0();
+			}
+			/*if (patchMgr.patchSwitches.R0_AceBase) {
 				if (IDYES == MessageBox(0, "点击“是”将不再限制TP驱动卡system进程的cpu。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
 					patchMgr.patchSwitches.R0_AceBase = false;
 				} else {
@@ -804,7 +808,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				patchMgr.patchSwitches.R0_AceBase = true;
 			}
 			configMgr.writeConfig();
-			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
+			MessageBox(0, "重启游戏后生效", "注意", MB_OK);*/
 			break;
 			// more options
 		case IDM_AUTOSTARTUP:

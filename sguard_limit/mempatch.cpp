@@ -33,9 +33,9 @@ PatchManager::PatchManager()
 	   { 1,   500,  1000 },   /* GetAsyncKeyState */
 	   { 1,   50,   100  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 },   /* NtDelayExecution */
-	   { 500, 1500, 5000 }    /* DeviceIoControl_1x */
+	   { 1,   1500, 1500 }    /* DeviceIoControl_1x */
 	  }, 
-	  patchDelayBeforeNtdlletc(20), 
+	  patchDelayBeforeNtdlletc(20),
 	  syscallTable{} {}
 
 PatchManager& PatchManager::getInstance() {
@@ -139,7 +139,7 @@ void PatchManager::patch() {
 
 		// start driver.
 		if (!driver.load()) {
-			systemMgr.panic(driver.errorCode, "patch().driver.load(): %s", driver.errorMessage);
+			systemMgr.panic(driver.errorCode, "patch(): driver.load(): %s", driver.errorMessage);
 			return;
 		}
 
@@ -157,9 +157,6 @@ void PatchManager::patch() {
 			}
 		}
 
-		// stop driver. (to wait)
-		driver.unload();
-
 
 		// wait if adv search: before patch ntdll etc.
 		systemMgr.log("patch(): waiting %us before manip ntdll etc.", patchDelayBeforeNtdlletc.load());
@@ -172,12 +169,6 @@ void PatchManager::patch() {
 			}
 		}
 
-
-		// start driver.
-		if (!driver.load()) {
-			systemMgr.panic(driver.errorCode, "patch().driver.load(): %s", driver.errorMessage);
-			return;
-		}
 
 		// patch ntdll etc. (v2 features)
 		if (patchSwitches.NtQueryVirtualMemory  || patchSwitches.NtReadVirtualMemory ||
@@ -206,17 +197,6 @@ void PatchManager::patch() {
 			}
 		}
 
-		// patch ace-base:140033f80 (v4.7)
-		if (patchSwitches.R0_AceBase) {
-
-			patchSwitches_t switches;
-			switches.R0_AceBase = patchSwitches.R0_AceBase.load();
-
-			if (!_patch_r0(switches)) {
-				systemMgr.log("patch(): warning: _patch_r0() failed!");
-			}
-		}
-
 		// stop driver.
 		driver.unload();
 
@@ -227,7 +207,7 @@ void PatchManager::patch() {
 
 
 	systemMgr.log("patch(): fall in wait loop.");
-
+	
 	while (patchEnabled) {
 
 		pid = threadMgr.getTargetPid();
@@ -237,10 +217,46 @@ void PatchManager::patch() {
 			break;
 		}
 
+
+		// [TODO] if cpu usage of 'system' keeps above 3% for a long time, try patch.
+		//if (1) {
+		//	// patch ace-base (v4.8)
+		//	if (patchSwitches.R0_AceBase) {
+
+		//		patchSwitches_t switches;
+		//		switches.R0_AceBase = patchSwitches.R0_AceBase.load();
+
+		//		if (!_patch_r0(switches)) {
+		//			systemMgr.log("patch(): warning: _patch_r0() failed!");
+		//		}
+		//	}
+		//}
+		
 		Sleep(5000);
 	}
 
 	systemMgr.log("patch(): leave.");
+}
+
+bool PatchManager::patch_r0() {
+
+	if (!driver.load()) {
+		systemMgr.panic(driver.errorCode, "patch_r0(): driver.load(): %s", driver.errorMessage);
+		return false;
+	}
+
+	if (driver.patchAceBase()) {
+
+		systemMgr.log("patch_r0(): patch nt!ACE-BASE complete.");
+		driver.unload();
+		return true;
+
+	} else {
+
+		systemMgr.panic(0, "%s", driver.errorMessage);
+		driver.unload();
+		return false;
+	}
 }
 
 void PatchManager::enable(bool forceRecover) {
@@ -1895,49 +1911,6 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 	if (patchedNow.GetAsyncKeyState) patchStatus.GetAsyncKeyState = true;
 
 	systemMgr.log("patch_user32(): patch complete.");
-	return true;
-}
-
-bool PatchManager::_patch_r0(patchSwitches_t& switches) {
-
-	patchStatus_t            patchedNow;
-	
-
-	// assert: driver loaded.
-	systemMgr.log("patch_r0(): entering.");
-
-	if (switches.R0_AceBase) {
-
-		// loop till ACE-BASE.sys is loaded to kernel. wait up to 1 min.
-		for (DWORD time = 0; patchEnabled && time < 60; time += 3) {
-			
-			// try patch. if module not loaded, retry.
-			if (driver.patchAceBase()) {
-
-				// mark related flag to inform user that patch has complete.
-				patchedNow.R0_AceBase = true;
-
-				// patchAceBase(): if already patched, record message and return true.
-				if (driver.errorMessage[0] != '\0') {
-					systemMgr.log(0, driver.errorMessage);
-				}
-				systemMgr.log("patch_r0(): patch nt!ACE-BASE complete.");
-				break;
-
-			} else {
-				systemMgr.log(0, "%s", driver.errorMessage);
-			}
-
-			Sleep(3000);
-		}
-		// if after 1 min kdriver is not loaded, quit.
-	}
-
-
-	// r0 complete.
-	if (patchedNow.R0_AceBase) patchStatus.R0_AceBase = true;
-
-	systemMgr.log("patch_r0(): patch complete.");
 	return true;
 }
 

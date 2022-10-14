@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <atomic>
+#include <mutex>
 
 
 // driver io module (sington)
@@ -77,6 +78,7 @@ private:
 	static constexpr DWORD	 VM_VADRESTORE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0707, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD	 PATCH_ACEBASE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0708, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
+
 	std::string     currentPath;  // path without filename
 	std::string     profilePath;  // path without filename
 
@@ -90,12 +92,16 @@ private:
 	HANDLE          hDriver;
 
 
+	std::atomic<DWORD>  refCount;  // multi-thread call sync
+	std::mutex          refLock;
+	
+
 public:
 	std::atomic<DWORD>  errorCode;     // module's errors recorded here (if method returns false).
 	const char*         errorMessage;  // caller can decide to log, panic, or ignore.
 
 private:
-	void            _resetError();
+	void            _resetError();  // thread unsafe
 	void            _recordError(DWORD errorCode, const char* msg, ...);
 
 private:

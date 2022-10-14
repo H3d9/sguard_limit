@@ -51,9 +51,12 @@ public:
 
 	std::atomic<DWORD>            patchDelayBeforeNtdlletc;
 
+
 public:
 	bool      init();
 	void      patch();
+	bool      patch_r0();
+
 	void      enable(bool forceRecover = false);
 	void      disable(bool forceRecover = false);
 
@@ -63,8 +66,7 @@ private:
 
 	bool                      _patch_ntdll(DWORD pid, patchSwitches_t& switches);
 	bool                      _patch_user32(DWORD pid, patchSwitches_t& switches);
-	bool                      _patch_r0(patchSwitches_t& switches);
-
+	
 	bool                      _fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, ULONG64 pDetour);
 	std::vector<ULONG64>      _findRip(bool useAll = false);
 	void                      _outVmbuf(ULONG64, const char*);

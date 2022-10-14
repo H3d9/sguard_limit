@@ -2,10 +2,12 @@
 // 特别感谢: Zer0Mem0ry BlackBone
 #include <ntdef.h>
 #include <ntifs.h>
+#include <wdm.h>
+#include <intrin.h>
 
 #include "Vad.h"
 
-#define DRIVER_VERSION  "22.10.10"
+#define DRIVER_VERSION  "22.10.14"
 
 
 // 全局对象
@@ -39,6 +41,7 @@ typedef struct {
 } VMIO_REQUEST;
 
 
+// windows未公开的结构
 typedef enum _SYSTEM_INFORMATION_CLASS {
 	SystemModuleInformation = 0x0B,
 } SYSTEM_INFORMATION_CLASS;
@@ -589,18 +592,21 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 		case PATCH_ACEBASE:
 		{
-			RTL_PROCESS_MODULES*  moduleInfo     = NULL;
-			ULONG                 infoLength     = 0;
-			ULONG64               AceImageBase   = 0;
+			RTL_PROCESS_MODULES*   moduleInfo       = NULL;
+			ULONG                  infoLength       = 0;
+			ULONG64                AceImageBase     = 0;
+			ULONG64                AceImageSize     = 0;
+			ULONG64                pShouldExit      = 0;
 
-			// 枚举系统加载的所有内核态模块（驱动）
+
+			// 枚举系统加载的所有内核态模块（驱动模块）
 			ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoLength);
 
 			moduleInfo = ExAllocatePoolWithTag(PagedPool, infoLength, '9d3H');
 			
 			if (moduleInfo) {
-				RtlZeroMemory(moduleInfo, infoLength);
 
+				RtlZeroMemory(moduleInfo, infoLength);
 				Status = ZwQuerySystemInformation(SystemModuleInformation, moduleInfo, infoLength, &infoLength);
 
 				if (!NT_SUCCESS(Status)) {
@@ -608,50 +614,75 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 					IOCTL_LOG_EXIT("PATCH_ACEBASE::ZwQuerySystemInformation");
 				}
 
-				// 从所有模块中找到ACE驱动的镜像加载地址
+				// 从所有模块中找到tp驱动镜像的加载地址
 				for (ULONG i = 0; i < moduleInfo->NumberOfModules; i++) {
 					if (strstr(moduleInfo->Modules[i].FullPathName, "ACE-BASE")) {
 						AceImageBase = (ULONG64)moduleInfo->Modules[i].ImageBase;
+						AceImageSize = (ULONG64)moduleInfo->Modules[i].ImageSize;
 						break;
 					}
 				}
 
 				ExFreePoolWithTag(moduleInfo, '9d3H');
+			}
 
-				if (!AceImageBase) {
-					Status = STATUS_UNSUCCESSFUL;
-					IOCTL_LOG_EXIT("PATCH_ACEBASE::(module not found)");
+			// 若找不到tp驱动模块，则退出
+			if (!AceImageBase) {
+				Status = STATUS_NOT_FOUND;
+				IOCTL_LOG_EXIT("PATCH_ACEBASE::(module not found)");
+			}
+
+
+			// 在tp驱动的代码段搜索变量should_exit的特征码
+			
+			// 当前方案：modify should_exit:
+			// pshould_exit = search("0F B6 05 ?? ?? ?? ?? 85 C0 74 02 EB 02 EB B2").get();  // match pattern
+			// validate_assert(pshould_exit) && *(char*)(pshould_exit) == 0;                 // check if patched
+			// *(char*)(should_exit) = 1;
+
+			for (ULONG64 block = AceImageBase; !pShouldExit && block < AceImageBase + AceImageSize; block += 0x1000) {
+
+				if (MmIsAddressValid((PVOID)block) && 
+					MmIsAddressValid((PVOID)(block + 0x1000)) && 
+					MmIsAddressValid((PVOID)(block - 0x1000))) {
+
+					for (ULONG64 rip = block; rip < block + 0x1000; rip++) {
+
+						if (0 == memcmp((CHAR*)rip, "\x85\xC0\x74\x02\xEB\x02\xEB\xB2", 8)) {
+
+							//DbgPrint("%p pattern1 found: pattern 2 = \n", (PVOID)rip);
+							//for (ULONG64 i = rip - 7; i <= rip; i++)
+							//	DbgPrint("%02X\n", (UCHAR)(*(UCHAR*)i));
+
+							if (0 == memcmp((CHAR*)(rip - 7), "\x0F\xB6\x05", 3)) {
+
+								// mov eax, byte ptr [rip+xxxx]
+								pShouldExit = rip + *(LONG*)(rip - 4);
+								break;
+							}
+						}
+					}
 				}
 			}
 
-			// 检查ACE驱动中待补丁的内存块是否合法，以及特征码是否匹配
-			if (!MmIsAddressValid((PVOID)(AceImageBase + 0x33fb9))) {
-				Status = STATUS_UNSUCCESSFUL;
-				IOCTL_LOG_EXIT("PATCH_ACEBASE::(memory address not valid)");
+			// 检查tp驱动是否满足特征码匹配条件
+			if (!pShouldExit) {
+				Status = STATUS_REQUEST_ABORTED;
+				IOCTL_LOG_EXIT("PATCH_ACEBASE::(memory pattern not match)");
 			}
 
-			if (0 != memcmp((PVOID)(AceImageBase + 0x33fb9), "\xB9\x01\x00\x00\x00\xE8\x6D\x3E\x00\x00", 10)) {
-				if (0 == memcmp((PVOID)(AceImageBase + 0x33fb9), "\xB9\xE8\x03\x00\x00\xE8\x6D\x3E\x00\x00", 10)) {
-					// 如果已经补丁过，直接返回成功
-					Status = STATUS_SUCCESS;
-					IOCTL_LOG_EXIT("PATCH_ACEBASE::(memory already patched)");
-				} else {
-					// 如果ACE驱动版本不是可补丁的，也直接返回成功
-					Status = STATUS_SUCCESS;
-					IOCTL_LOG_EXIT("PATCH_ACEBASE::(memory pattern not match)");
-				}
+			if (!MmIsAddressValid((PVOID)pShouldExit)) {
+				Status = STATUS_INVALID_ADDRESS;
+				IOCTL_LOG_EXIT("PATCH_ACEBASE::(should_exit address not valid)");
 			}
 
-			// 若目标内存满足条件，则直接应用补丁到ACE驱动
-			KIRQL irql = KeRaiseIrqlToDpcLevel();
-			_disable();
-			__writecr0(__readcr0() & 0xfffffffffffeffff);
+			if (*(char*)(pShouldExit) != 0) {
+				Status = STATUS_ALREADY_COMMITTED;
+				IOCTL_LOG_EXIT("PATCH_ACEBASE::(should_exit not zero)");
+			}
 
-			*(int*)(AceImageBase + 0x33fba) = 1000; // -> ksleep(1000)
-
-			__writecr0(__readcr0() | 0x10000);
-			_enable();
-			KeLowerIrql(irql);
+			// 若目标内存满足条件，则立即更改should_exit变量以使目标线程退出
+			*(char*)(pShouldExit) = 1;
 		}
 		break;
 
