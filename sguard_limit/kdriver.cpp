@@ -5,8 +5,8 @@
 #include "kdriver.h"
 
 
-#define DRIVER_NAME     "sguard_limit"
-#define DRIVER_VERSION  "22.10.15"
+#define DRIVER_NAME       "sguard_limit"
+#define DRIVER_VERSION    "22.10.15"
 
 
 // kernel-mode memory io

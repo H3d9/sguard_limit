@@ -120,7 +120,7 @@ public:
 	bool                autoStartup;
 	bool                killAceLoader;
 	std::atomic<DWORD>  scanDelay;
-
+	std::atomic<DWORD>  listExamined;
 
 public:
 	HINSTANCE           hInstance;

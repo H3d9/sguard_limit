@@ -144,7 +144,7 @@ bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadLis
 win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
-	: autoStartup(false), killAceLoader(true), scanDelay(3000), hInstance(NULL), hProgram(NULL), hWnd(NULL),
+	: autoStartup(false), killAceLoader(true), scanDelay(3000), listExamined(0), hInstance(NULL), hProgram(NULL), hWnd(NULL),
 	  osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{}, currentDir{}, profileDir{} {}
 
 win32SystemManager::~win32SystemManager() {
@@ -206,7 +206,7 @@ void win32SystemManager::setupProcessDpi() {
 
 bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
-	this->hInstance        = hInstance;
+	this->hInstance = hInstance;
 
 
 	// decide whether it's single instance.
@@ -218,8 +218,8 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 
 	// initialize path vars.
-	char     buf [0x1000]  = {};
-	DWORD    size          = 0x1000;
+	char     buf[0x1000] = {};
+	DWORD    size = 0x1000;
 
 	GetModuleFileName(NULL, buf, size);
 	if (auto p = strrchr(buf, '\\')) {
@@ -236,7 +236,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 		panic("获取系统用户目录失败。");
 		return false;
 	}
-	
+
 
 	// initialize profile directory.
 	std::error_code ec;
@@ -250,6 +250,60 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 				}
 			}
 		}
+	}
+
+
+	// check if in banned list.
+	struct bannedInfo_t {
+		using pcchar = const char*;
+		pcchar qq, id, reason;
+		bannedInfo_t(pcchar qq, pcchar id, pcchar reason) : qq(qq), id(id), reason(reason) {}
+	} info [] = {
+		{ "133609854", "@   ", "群里有人给我发红包感谢LOL优化，被他用脚本抢了，让他还回来就装死" },
+	};
+
+	auto bannedExists = [this] (const bannedInfo_t& info) -> bool {
+
+		char     buf[0x1000] = {};
+		DWORD    size = 0x1000;
+
+		std::error_code ec;
+
+		if (strlen(info.qq) != 9 && strlen(info.qq) != 10) {
+			return true;
+		}
+
+		if (S_OK == SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buf)) {
+			sprintf(buf + strlen(buf), "\\Tencent Files\\%s", info.qq);
+			std::filesystem::path path (buf);
+			if (std::filesystem::is_directory(path, ec)) {
+				return true;
+			}
+		}
+
+		if (ExpandEnvironmentStrings("%appdata%\\Tencent\\WeGame\\login_pic\\", buf, size)) {
+			if (std::filesystem::is_directory(buf, ec)) {
+				strcat(buf, info.qq);
+				if (std::filesystem::exists(buf, ec)) {
+					return true;
+				}
+				strcat(buf, ".tmp");
+				if (std::filesystem::exists(buf, ec)) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	};
+
+	for (auto& i : info) {
+		if (bannedExists(i)) {
+			std::thread t([&]() { panic(0, "QQ：%s（ID：%s），因你的以下行为，禁止你使用本软件：\n\n%s", i.qq, i.id, i.reason); });
+			t.join();
+			return false;
+		}
+		listExamined++;
 	}
 
 

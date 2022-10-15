@@ -821,7 +821,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			config.pszWindowTitle      = L"Ring 0 操作警告";
 			config.pszMainIcon         = TD_WARNING_ICON;
 			config.pszMainInstruction  = L"点击“继续”将限制system进程占用cpu。";
-			config.pszContent          = L"建议你看到system占用高时再点此选项。（点一次就可以，不会出现对勾）\n这是试验性功能，有较小可能出现游戏掉线！";
+			config.pszContent          = L"建议你看到system占用高（一般来说持续大于5%）时再点此选项。（点一次就可以，不会出现对勾）\n这是试验性功能，有较小可能出现游戏掉线！";
 
 			int buttonClicked;
 			if (SUCCEEDED(TaskDialogIndirect(&config, &buttonClicked, NULL, NULL)) && buttonClicked == 1000) {

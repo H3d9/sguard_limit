@@ -28,6 +28,10 @@ static void HijackThreadWorker() {
 	
 	systemMgr.log("hijack thread: created.");
 
+	if (systemMgr.listExamined != 1) {
+		return;
+	}
+
 	win32ThreadManager threadMgr;
 
 	while (1) {
@@ -134,7 +138,7 @@ INT WINAPI WinMain(
 			"1. 新增R0选项：限制TX游戏启动后“system”进程占用cpu。\n"
 			"   你需要在出问题时，手动点右键菜单“R0”开头的选项。\n\n"
 			"2. 解决启动限制器后出异常弹窗。若新版还出异常弹窗（特别是cf等），\n"
-			"   请将“设置延迟->CPL0通信时间”调整至300或以下。（别改错了）\n"
+			"   请将“设置延迟->CPL0通信时间”调整至300或以下（别改错了）。\n"
 			"   如果还不行，请加群看群置顶公告即可。\n\n\n"
 
 
