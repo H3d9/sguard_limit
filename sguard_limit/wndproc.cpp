@@ -1,4 +1,5 @@
 ﻿#include <Windows.h>
+#include <CommCtrl.h>
 #include <stdio.h>
 #include <atomic>
 #include <random>
@@ -11,6 +12,7 @@
 #include "tracecore.h"
 #include "mempatch.h"
 
+#pragma comment(lib, "Comctl32.lib")
 #pragma comment(linker, "/manifestdependency:\"type='win32' \
 						 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 						 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' \
@@ -651,31 +653,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			// patch
 		case IDM_SETDELAY:
 		{
-			sprintf(buf, "请设置以下选项的延迟：如果不想设置某选项，可以直接关闭窗口。\n\n"
-				"开启防扫盘功能后等待SGUARD稳定的时间\n"
-				"%s%s%s%s%s\n\n"
-				"【提示】如果不知道某选项的作用，请勿胡乱设置，否则可能游戏掉线/无法启动。\n",
-				patchMgr.patchSwitches.NtQueryVirtualMemory ?  "NtQueryVirtualMemory\n" : "",
-				patchMgr.patchSwitches.GetAsyncKeyState ?      "GetAsyncKeyState\n" : "",
-				patchMgr.patchSwitches.NtWaitForSingleObject ? "NtWaitForSingleObject\n" : "",
-				patchMgr.patchSwitches.NtDelayExecution ?      "NtDelayExecution\n" : "",
-				patchMgr.patchSwitches.DeviceIoControl_1x ?    "指向ACE-BASE的CPL0通信时间\n" : "");
+			TASKDIALOG_BUTTON buttons[] = {
+			 { 1000, L"开启防扫盘功能后等待SGUARD稳定的时间" },
+			 { 1001, L"NtQueryVirtualMemory" },
+			 { 1002, L"GetAsyncKeyState" },
+			 { 1003, L"NtWaitForSingleObject" },
+			 { 1004, L"NtDelayExecution" },
+			 { 1005, L"指向ACE-BASE的CPL0通信时间" },
+			};
 
-			if (IDYES == MessageBox(0, buf, "设置延迟", MB_YESNO)) {
-				DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT);
-				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
+			TASKDIALOGCONFIG config    = { sizeof(TASKDIALOGCONFIG) };
+			config.hwndParent          = hWnd;
+			config.dwFlags             = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS;
+			config.dwCommonButtons     = TDCBF_CANCEL_BUTTON;
+			config.pButtons            = buttons;
+			config.cButtons            = _countof(buttons);
+			config.nDefaultButton      = 1005;
+			config.pszWindowTitle      = L"设置延迟";
+			config.pszMainIcon         = TD_INFORMATION_ICON;
+			config.pszMainInstruction  = L"选定一个选项以开始设置延迟。";
+			config.pszContent          = L"如果不知道某选项的作用，请勿胡乱设置，否则可能游戏掉线！\n设置的延迟必须在相应右键菜单显示为已选择时才生效。";
+
+			int buttonClicked;
+			if (SUCCEEDED(TaskDialogIndirect(&config, &buttonClicked, NULL, NULL)) && buttonClicked != IDCANCEL) {
+				
+				if (buttonClicked == 1000) {
+					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHWAIT);
+				} else if (buttonClicked == 1001) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY1);
-				}
-				if (patchMgr.patchSwitches.GetAsyncKeyState) {
+				} else if (buttonClicked == 1002) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY2);
-				}
-				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
+				} else if (buttonClicked == 1003) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY3);
-				}
-				if (patchMgr.patchSwitches.NtDelayExecution) {
+				} else if (buttonClicked == 1004) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY4);
-				}
-				if (patchMgr.patchSwitches.DeviceIoControl_1x) {
+				} else if (buttonClicked == 1005) {
 					DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_PATCHDELAY5);
 				}
 
@@ -794,8 +806,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 			break;
 		case IDM_PATCHSWITCH8:
-			if (IDYES == MessageBox(0, "点击“是”将限制system进程占用cpu。请你仅在出现该问题时再点！（点一次就可以，不会出现对勾）\n\n"
-				                       "这是试验性功能，可能出现游戏掉线，若你已做好准备则点击“是”，否则点击“否”。\n\n\n", "注意", MB_YESNO)) {
+		{
+			TASKDIALOG_BUTTON buttons[] = {
+			 { 1000, L"我已阅读并继续(&R)" },
+			 { 1001, L"取消(&C)" },
+			};
+
+			TASKDIALOGCONFIG config    = { sizeof(TASKDIALOGCONFIG) };
+			config.hwndParent          = hWnd;
+			config.dwFlags             = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS;
+			config.pButtons            = buttons;
+			config.cButtons            = _countof(buttons);
+			config.nDefaultButton      = 1001;
+			config.pszWindowTitle      = L"Ring 0 操作警告";
+			config.pszMainIcon         = TD_WARNING_ICON;
+			config.pszMainInstruction  = L"点击“继续”将限制system进程占用cpu。";
+			config.pszContent          = L"建议你看到system占用高时再点此选项。（点一次就可以，不会出现对勾）\n这是试验性功能，有较小可能出现游戏掉线！";
+
+			int buttonClicked;
+			if (SUCCEEDED(TaskDialogIndirect(&config, &buttonClicked, NULL, NULL)) && buttonClicked == 1000) {
+				
 				patchMgr.patch_r0();
 			}
 			/*if (patchMgr.patchSwitches.R0_AceBase) {
@@ -809,7 +839,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			}
 			configMgr.writeConfig();
 			MessageBox(0, "重启游戏后生效", "注意", MB_OK);*/
-			break;
+		}
+		break;
 			// more options
 		case IDM_AUTOSTARTUP:
 		{
