@@ -7,7 +7,7 @@
 
 #include "Vad.h"
 
-#define DRIVER_VERSION  "22.10.14"
+#define DRIVER_VERSION  "22.10.15"
 
 
 // 全局对象
@@ -640,20 +640,23 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			// validate_assert(pshould_exit) && *(char*)(pshould_exit) == 0;                 // check if patched
 			// *(char*)(should_exit) = 1;
 
-			for (ULONG64 block = AceImageBase; !pShouldExit && block < AceImageBase + AceImageSize; block += 0x1000) {
+			for (ULONG64 blockStart = AceImageBase; !pShouldExit && blockStart < AceImageBase + AceImageSize; blockStart += 0x1000) {
 
-				if (MmIsAddressValid((PVOID)block) && 
-					MmIsAddressValid((PVOID)(block + 0x1000)) && 
-					MmIsAddressValid((PVOID)(block - 0x1000))) {
+				if (MmIsAddressValid((PVOID)blockStart)) {
 
-					for (ULONG64 rip = block; rip < block + 0x1000; rip++) {
+					ULONG64 blockEnd;
+
+					// 若下个页面存在，则允许跨边界搜索，否则仅在当前页面搜索。
+					if (MmIsAddressValid((PVOID)(blockStart + 0x1000))) {
+						blockEnd = blockStart + 0x1000;
+					} else {
+						blockEnd = blockStart + 0xff8;
+					}
+
+					// 从当前页面搜索特征码
+					for (ULONG64 rip = blockStart; rip < blockEnd; rip++) {
 
 						if (0 == memcmp((CHAR*)rip, "\x85\xC0\x74\x02\xEB\x02\xEB\xB2", 8)) {
-
-							//DbgPrint("%p pattern1 found: pattern 2 = \n", (PVOID)rip);
-							//for (ULONG64 i = rip - 7; i <= rip; i++)
-							//	DbgPrint("%02X\n", (UCHAR)(*(UCHAR*)i));
-
 							if (0 == memcmp((CHAR*)(rip - 7), "\x0F\xB6\x05", 3)) {
 
 								// mov eax, byte ptr [rip+xxxx]
