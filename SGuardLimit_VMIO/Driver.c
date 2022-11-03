@@ -7,7 +7,7 @@
 
 #include "Vad.h"
 
-#define DRIVER_VERSION  "22.10.15"
+#define DRIVER_VERSION  "22.11.3"
 
 
 // 全局对象
@@ -629,7 +629,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			// 若找不到tp驱动模块，则退出
 			if (!AceImageBase) {
 				Status = STATUS_NOT_FOUND;
-				IOCTL_LOG_EXIT("PATCH_ACEBASE::(module not found)");
+				IOCTL_LOG_EXIT("TP驱动（ACE-BASE.sys）尚未加载到系统内核。");
 			}
 
 
@@ -671,17 +671,12 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 			// 检查tp驱动是否满足特征码匹配条件
 			if (!pShouldExit) {
 				Status = STATUS_REQUEST_ABORTED;
-				IOCTL_LOG_EXIT("PATCH_ACEBASE::(memory pattern not match)");
-			}
-
-			if (!MmIsAddressValid((PVOID)pShouldExit)) {
-				Status = STATUS_INVALID_ADDRESS;
-				IOCTL_LOG_EXIT("PATCH_ACEBASE::(should_exit address not valid)");
+				IOCTL_LOG_EXIT("未搜索到有效的特征。因为TP驱动（ACE-BASE.sys）版本不匹配。");
 			}
 
 			if (*(char*)(pShouldExit) != 0) {
 				Status = STATUS_ALREADY_COMMITTED;
-				IOCTL_LOG_EXIT("PATCH_ACEBASE::(should_exit not zero)");
+				IOCTL_LOG_EXIT("变量should_exit已经被置位。若此时System进程仍占用CPU，请考虑其他原因（如Win10自动更新等）。");
 			}
 
 			// 若目标内存满足条件，则立即更改should_exit变量以使目标线程退出
