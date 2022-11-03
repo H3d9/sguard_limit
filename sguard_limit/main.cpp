@@ -134,13 +134,8 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			" 内存补丁 " MEMPATCH_VERSION "：限制system占用cpu。\n\n"
-			"1. 新增R0选项：限制TX游戏启动后“system”进程占用cpu。\n"
-			"   你需要在出问题时，手动点右键菜单“R0”开头的选项。\n\n"
-			"2. 解决启动限制器后出异常弹窗。若新版还出异常弹窗（特别是cf等），\n"
-			"   请将“设置延迟->CPL0通信时间”调整至300或以下（别改错了）。\n"
-			"   如果还不行，请加群看群置顶公告即可。\n\n\n"
-
+			" 内存补丁 " MEMPATCH_VERSION "：限制System进程占用cpu。\n\n"
+			"1. 调节参数以避免出ACE异常弹窗。\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"

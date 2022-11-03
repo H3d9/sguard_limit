@@ -6,7 +6,7 @@
 
 
 #define DRIVER_NAME       "sguard_limit"
-#define DRIVER_VERSION    "22.10.15"
+#define DRIVER_VERSION    "22.11.3"
 
 
 // kernel-mode memory io
@@ -306,7 +306,7 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError(request.errorCode, "driver::readVM(): from kernel: \n%s", request.errorFunc);
+			_recordError(request.errorCode, "%s", request.errorFunc);
 			return false;
 		}
 
@@ -336,7 +336,7 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 			return false;
 		}
 		if (request.errorCode != 0) {
-			_recordError(request.errorCode, "driver::writeVM(): from kernel: \n%s", request.errorFunc);
+			_recordError(request.errorCode, "%s", request.errorFunc);
 			return false;
 		}
 	}
@@ -357,7 +357,7 @@ bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::allocVM(): from kernel: \n%s", request.errorFunc);
+		_recordError(request.errorCode, "%s", request.errorFunc);
 		return false;
 	}
 
@@ -379,7 +379,7 @@ bool KernelDriver::suspend(DWORD pid) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::suspend(): from kernel: \n%s", request.errorFunc);
+		_recordError(request.errorCode, "%s", request.errorFunc);
 		return false;
 	}
 
@@ -399,7 +399,7 @@ bool KernelDriver::resume(DWORD pid) {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::resume(): from kernel: \n%s", request.errorFunc);
+		_recordError(request.errorCode, "%s", request.errorFunc);
 		return false;
 	}
 
@@ -421,7 +421,7 @@ bool KernelDriver::searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::searchVad(): from kernel: \n%s", request.errorFunc);
+		_recordError(request.errorCode, "%s", request.errorFunc);
 		return false;
 	}
 
@@ -468,7 +468,7 @@ bool KernelDriver::patchAceBase() {
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "driver::patchAceBase(): from kernel: \n%s", request.errorFunc);
+		_recordError(request.errorCode, "%s", request.errorFunc);
 		return false;
 	}
 

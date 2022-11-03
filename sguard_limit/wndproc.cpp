@@ -422,7 +422,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			} else { // if (g_Mode == 2) 
 
 				if (!driver.driverReady) {
-					AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGuard限制器 - 模式无效（驱动未初始化）");
+					AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGuard限制器 - 模式无效（驱动初始化失败）");
 				} else {
 					if (g_HijackThreadWaiting) {
 						AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGuard限制器 - 等待游戏运行");
@@ -492,7 +492,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH7, "[防扫盘2] 执行失败的文件系统记录枚举");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH8, "[R0] re-write Nt!ACE-BASE+0x10cfe9");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH8, "[R0] 限制System进程占用CPU（should_exit）");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索");
 				sprintf(buf, "设置延迟（当前：0/%u", patchMgr.patchDelayBeforeNtdlletc.load());
@@ -583,7 +583,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			// mode
 		case IDM_MODE_HIJACK:
-			if (IDYES == MessageBox(0, "“时间片轮转”是旧版功能，可能导致游戏掉线！\n不建议使用该功能，你确定要切换吗？", "注意：已弃用的功能！", MB_YESNO)) {
+			if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 				traceMgr.disable();
 				patchMgr.disable();
 				limitMgr.enable();
@@ -592,7 +592,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 		case IDM_MODE_TRACE:
-			if (IDYES == MessageBox(0, "“线程追踪”是旧版功能，可能导致游戏掉线！\n不建议使用该功能，你确定要切换吗？", "注意：已弃用的功能！", MB_YESNO)) {
+			if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 				limitMgr.disable();
 				patchMgr.disable();
 				traceMgr.enable();
@@ -772,7 +772,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			break;
 		case IDM_PATCHSWITCH6_2: // strong ioctl_1
 			if (!(patchMgr.patchSwitches.DeviceIoControl_1 && !patchMgr.patchSwitches.DeviceIoControl_1x)) {
-				if (IDYES == MessageBox(0, "强力模式可能导致安全组件运行异常，不建议使用。\n\n仍要继续吗？", "注意", MB_YESNO)) {
+				if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 					patchMgr.patchSwitches.DeviceIoControl_1 = true;
 					patchMgr.patchSwitches.DeviceIoControl_1x = false;
 
@@ -821,24 +821,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			config.pszWindowTitle      = L"Ring 0 操作警告";
 			config.pszMainIcon         = TD_WARNING_ICON;
 			config.pszMainInstruction  = L"点击“继续”将限制system进程占用cpu。";
-			config.pszContent          = L"建议你看到system占用高（一般来说持续大于5%）时再点此选项。（点一次就可以，不会出现对勾）\n这是试验性功能，有较小可能出现游戏掉线！";
+			config.pszContent          = L"建议你看到“System进程”持续高占用时再点此选项，否则可能出现错误。\n该选项现在并不兼容ACE-BASE.sys的全部版本。";
 
 			int buttonClicked;
 			if (SUCCEEDED(TaskDialogIndirect(&config, &buttonClicked, NULL, NULL)) && buttonClicked == 1000) {
-				
 				patchMgr.patch_r0();
 			}
-			/*if (patchMgr.patchSwitches.R0_AceBase) {
-				if (IDYES == MessageBox(0, "点击“是”将不再限制TP驱动卡system进程的cpu。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
-					patchMgr.patchSwitches.R0_AceBase = false;
-				} else {
-					break;
-				}
-			} else {
-				patchMgr.patchSwitches.R0_AceBase = true;
-			}
-			configMgr.writeConfig();
-			MessageBox(0, "重启游戏后生效", "注意", MB_OK);*/
 		}
 		break;
 			// more options

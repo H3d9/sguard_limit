@@ -3,8 +3,8 @@
 // 昨天吃坏肚子了，很疼。但是 2.2 复刻胡桃，开心。
 // 2021.11.27 24:00
 // 大城市的郊区有着明亮的月亮。明天的露水在墙上凝结。
-// 2022.10.5
-// 今天并没有下雨。
+// 2022.11.2 21:00 雨
+// 和胡桃的周年纪念，梦里遇见了小草神，开心。
 #include <Windows.h>
 #include <stdio.h>
 #include <time.h>
@@ -33,7 +33,7 @@ PatchManager::PatchManager()
 	   { 1,   500,  1000 },   /* GetAsyncKeyState */
 	   { 1,   50,   100  },   /* NtWaitForSingleObject */
 	   { 500, 1250, 2000 },   /* NtDelayExecution */
-	   { 1,   1500, 1500 }    /* DeviceIoControl_1x */
+	   { 1,   300,  1500 }    /* DeviceIoControl_1x */
 	  }, 
 	  patchDelayBeforeNtdlletc(20),
 	  syscallTable{} {}
@@ -217,21 +217,6 @@ void PatchManager::patch() {
 			break;
 		}
 
-
-		// [TODO] if cpu usage of 'system' keeps above 3% for a long time, try patch.
-		//if (1) {
-		//	// patch ace-base (v4.8)
-		//	if (patchSwitches.R0_AceBase) {
-
-		//		patchSwitches_t switches;
-		//		switches.R0_AceBase = patchSwitches.R0_AceBase.load();
-
-		//		if (!_patch_r0(switches)) {
-		//			systemMgr.log("patch(): warning: _patch_r0() failed!");
-		//		}
-		//	}
-		//}
-		
 		Sleep(5000);
 	}
 
@@ -249,6 +234,7 @@ bool PatchManager::patch_r0() {
 
 		systemMgr.log("patch_r0(): patch nt!ACE-BASE complete.");
 		driver.unload();
+		MessageBox(0, "操作成功", "提示", MB_OK);
 		return true;
 
 	} else {
