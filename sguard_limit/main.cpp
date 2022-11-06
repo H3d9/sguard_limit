@@ -132,16 +132,19 @@ INT WINAPI WinMain(
 	configMgr.loadConfig();
 
 	if (!status) {
-		MessageBox(0,
-			"【更新说明】\n\n"
-			" 内存补丁 " MEMPATCH_VERSION "：限制System进程占用cpu。\n\n"
-			"1. 调节参数以避免出ACE异常弹窗。\n\n\n"
+		std::thread t([] () {
+			MessageBox(0,
+				"【更新说明】\n\n"
+				" 内存补丁 " MEMPATCH_VERSION "：更新限制System进程。\n\n"
+				"1. 更新限制System进程占用cpu的方法（需手动点击后生效）。\n\n\n"
 
-			"【重要提示】\n\n"
-			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
-			"2. 若你第一次使用，请仔细阅读附带的常见问题（必看）。\n"
-			"   如果看了以后仍未解决你的问题，可以加群反馈：775176979",
-			VERSION "  by: @H3d9", MB_OK);
+				"【重要提示】\n\n"
+				"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
+				"2. 若你第一次使用，请仔细阅读附带的常见问题（必看）。\n"
+				"   如果看了以后仍未解决你的问题，可以加群反馈：775176979",
+				VERSION "  by: @H3d9", MB_OK);
+		});
+		t.detach();
 	}
 
 

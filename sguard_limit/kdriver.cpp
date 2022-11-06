@@ -6,7 +6,7 @@
 
 
 #define DRIVER_NAME       "sguard_limit"
-#define DRIVER_VERSION    "22.11.3"
+#define DRIVER_VERSION    "22.11.6"
 
 
 // kernel-mode memory io
@@ -463,12 +463,14 @@ bool KernelDriver::patchAceBase() {
 	_resetError();
 
 
+	*(int*)request.data = 2;
+
 	if (!DeviceIoControl(hDriver, PATCH_ACEBASE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
 		_recordError(GetLastError(), "driver::patchAceBase(): DeviceIoControl ß∞‹°£");
 		return false;
 	}
 	if (request.errorCode != 0) {
-		_recordError(request.errorCode, "%s", request.errorFunc);
+		_recordError(request.errorCode, "data_hijack: %s", request.errorFunc);
 		return false;
 	}
 

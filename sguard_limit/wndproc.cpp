@@ -65,7 +65,7 @@ static void ShowAbout() {
 			">6 执行失败的文件系统记录枚举(V4.2): 防止高强度扫硬盘（偶尔出现）\n"
 			"【注】游戏刚启动时SG读盘是不可避免的，若屏蔽则游戏会启动失败。\n"
 			" 间歇性卡硬盘原因为SG使用MDL读其他进程内存而这些内存刚好位于页面文件。\n\n"
-			">7 [R0] re-write Nt!ACE-BASE+0x10cfe9: 防止启动游戏后system进程占用cpu。\n\n\n"
+			">7 [R0] 限制System进程占用CPU(V4.9)：更新为data_hijack。\n\n\n"
 			
 			"> 高级内存搜索(V4)：启用后修改内存可以瞬间完成。\n"
 			"【注】你可以在“设置延迟”中更改“等待稳定的时间”（第二个，默认20秒那个）\n"
@@ -492,7 +492,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				}
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH7, "[防扫盘2] 执行失败的文件系统记录枚举");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH8, "[R0] 限制System进程占用CPU（should_exit）");
+				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH8, "[R0] 限制System进程占用CPU（data_hijack）");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索");
 				sprintf(buf, "设置延迟（当前：0/%u", patchMgr.patchDelayBeforeNtdlletc.load());
@@ -821,7 +821,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			config.pszWindowTitle      = L"Ring 0 操作警告";
 			config.pszMainIcon         = TD_WARNING_ICON;
 			config.pszMainInstruction  = L"点击“继续”将限制system进程占用cpu。";
-			config.pszContent          = L"建议你看到“System进程”持续高占用时再点此选项，否则可能出现错误。\n该选项现在并不兼容ACE-BASE.sys的全部版本。";
+			config.pszContent          = L"建议你发现“System”进程持续占用大量CPU时再点此选项，否则可能出现错误！";
 
 			int buttonClicked;
 			if (SUCCEEDED(TaskDialogIndirect(&config, &buttonClicked, NULL, NULL)) && buttonClicked == 1000) {
