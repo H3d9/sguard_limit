@@ -2,12 +2,12 @@
 // 特别感谢: Zer0Mem0ry BlackBone
 #include <ntdef.h>
 #include <ntifs.h>
-#include <wdm.h>
 #include <intrin.h>
+#include <ntimage.h>
 
 #include "Vad.h"
 
-#define DRIVER_VERSION  "22.11.3"
+#define DRIVER_VERSION  "22.11.6"
 
 
 // 全局对象
@@ -329,6 +329,62 @@ void SearchVad_NT10(PSEARCH_RESULT result, PMMVAD_10 pVad) { // assert: pVad != 
 }
 
 
+// 模式匹配
+ULONG64 match_pattern(ULONG64 pstart, size_t size, const char* pattern, const char* mask) {
+
+	size_t i, j, patternLen = strlen(mask); // pattern may have '\x00'
+
+	for (i = 0; i < size - patternLen; i++) {
+		const char* pnow = (const char*)(pstart + i);
+
+		for (j = 0; j < patternLen; j++) {
+			if (!(pnow[j] == pattern[j] || mask[j] == '?')) {
+				break;
+			}
+		}
+
+		if (j == patternLen) {
+			return pstart + i;
+		}	
+	}
+
+	return 0;
+}
+
+ULONG64 match_pattern_image(ULONG64 imgbase, const char* secname, const char* pattern, const char* mask) {
+
+	PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)imgbase;
+	if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+		return 0;
+	}
+	
+	PIMAGE_NT_HEADERS64 nt = (PIMAGE_NT_HEADERS64)(imgbase + dos->e_lfanew);
+	if (nt->Signature != IMAGE_NT_SIGNATURE) {
+		return 0;
+	}
+
+	PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(nt);
+	for (USHORT i = 0; i < nt->FileHeader.NumberOfSections; i++) {
+		
+		PIMAGE_SECTION_HEADER p = &section[i];
+		if (0 == strcmp((const char*)p->Name, secname)) {
+			ULONG64 res = match_pattern(imgbase + p->VirtualAddress, p->Misc.VirtualSize, pattern, mask);
+			if (res) {
+				return res;
+			}
+		}
+	}
+
+	return 0;
+}
+
+
+// asm跳板
+extern void DetourMain();
+PVOID pOriginal = DetourMain;
+PVOID expectedCip = NULL;
+
+
 // 各种回调函数
 NTSTATUS CreateOrClose(PDEVICE_OBJECT DeviceObject, PIRP irp) {
 
@@ -592,14 +648,14 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 		case PATCH_ACEBASE:
 		{
+			int                    limitMode        = *(int*)Input->data;     // 0: should_exit; 1: obf constant
 			RTL_PROCESS_MODULES*   moduleInfo       = NULL;
 			ULONG                  infoLength       = 0;
 			ULONG64                AceImageBase     = 0;
 			ULONG64                AceImageSize     = 0;
-			ULONG64                pShouldExit      = 0;
+			
 
-
-			// 枚举系统加载的所有内核态模块（驱动模块）
+			// 枚举系统中所有的内核模块，找到ace驱动的地址
 			ZwQuerySystemInformation(SystemModuleInformation, NULL, 0, &infoLength);
 
 			moduleInfo = ExAllocatePoolWithTag(PagedPool, infoLength, '9d3H');
@@ -614,7 +670,6 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 					IOCTL_LOG_EXIT("PATCH_ACEBASE::ZwQuerySystemInformation");
 				}
 
-				// 从所有模块中找到tp驱动镜像的加载地址
 				for (ULONG i = 0; i < moduleInfo->NumberOfModules; i++) {
 					if (strstr(moduleInfo->Modules[i].FullPathName, "ACE-BASE")) {
 						AceImageBase = (ULONG64)moduleInfo->Modules[i].ImageBase;
@@ -626,61 +681,240 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				ExFreePoolWithTag(moduleInfo, '9d3H');
 			}
 
-			// 若找不到tp驱动模块，则退出
+			// 若找不到驱动模块，则退出
 			if (!AceImageBase) {
 				Status = STATUS_NOT_FOUND;
-				IOCTL_LOG_EXIT("TP驱动（ACE-BASE.sys）尚未加载到系统内核。");
+				IOCTL_LOG_EXIT("TP驱动（ACE-BASE.sys）尚未加载到系统内核。您可能没有启动游戏。");
 			}
 
 
-			// 在tp驱动的代码段搜索变量should_exit的特征码
-			
-			// 当前方案：modify should_exit:
-			// pshould_exit = search("0F B6 05 ?? ?? ?? ?? 85 C0 74 02 EB 02 EB B2").get();  // match pattern
-			// validate_assert(pshould_exit) && *(char*)(pshould_exit) == 0;                 // check if patched
-			// *(char*)(should_exit) = 1;
+			if (limitMode == 0) {
 
-			for (ULONG64 blockStart = AceImageBase; !pShouldExit && blockStart < AceImageBase + AceImageSize; blockStart += 0x1000) {
+				// obf_constant:
 
-				if (MmIsAddressValid((PVOID)blockStart)) {
+				ULONG64 targetAddr = match_pattern_image(AceImageBase, ".rdata",
+					"\x79\xfa\x73\xfb\x69\xfc\x63\xfd\x61\xfe\x6c\xcd\x6d\xcd\x65", "x?x?x?x?x?x?x?x");
 
-					ULONG64 blockEnd;
-
-					// 若下个页面存在，则允许跨边界搜索，否则仅在当前页面搜索。
-					if (MmIsAddressValid((PVOID)(blockStart + 0x1000))) {
-						blockEnd = blockStart + 0x1000;
+				if (!targetAddr) {
+					Status = STATUS_REQUEST_ABORTED;
+					if (match_pattern_image(AceImageBase, ".rdata",
+						"\x00\xfa\x00\xfb\x00\xfc\x00\xfd\x61\xfe\x6c\xcd\x6d\xcd\x65", "x?x?x?x?x?x?x?x")) {
+						IOCTL_LOG_EXIT("您之前已经执行过该操作，不能重复执行。");
 					} else {
-						blockEnd = blockStart + 0xff8;
-					}
-
-					// 从当前页面搜索特征码
-					for (ULONG64 rip = blockStart; rip < blockEnd; rip++) {
-
-						if (0 == memcmp((CHAR*)rip, "\x85\xC0\x74\x02\xEB\x02\xEB\xB2", 8)) {
-							if (0 == memcmp((CHAR*)(rip - 7), "\x0F\xB6\x05", 3)) {
-
-								// mov eax, byte ptr [rip+xxxx]
-								pShouldExit = rip + *(LONG*)(rip - 4);
-								break;
-							}
-						}
+						IOCTL_LOG_EXIT("未找到特征。因为TP驱动（ACE-BASE.sys）版本不匹配。");
 					}
 				}
-			}
 
-			// 检查tp驱动是否满足特征码匹配条件
-			if (!pShouldExit) {
-				Status = STATUS_REQUEST_ABORTED;
-				IOCTL_LOG_EXIT("未搜索到有效的特征。因为TP驱动（ACE-BASE.sys）版本不匹配。");
-			}
 
-			if (*(char*)(pShouldExit) != 0) {
-				Status = STATUS_ALREADY_COMMITTED;
-				IOCTL_LOG_EXIT("变量should_exit已经被置位。若此时System进程仍占用CPU，请考虑其他原因（如Win10自动更新等）。");
-			}
+				PMDL pMdl = MmCreateMdl(NULL, (PVOID)(targetAddr & ~0xfff), 0x1000);
+				if (!pMdl) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmCreateMdl失败。");
+				}
 
-			// 若目标内存满足条件，则立即更改should_exit变量以使目标线程退出
-			*(char*)(pShouldExit) = 1;
+				pMdl->MdlFlags = pMdl->MdlFlags | MDL_MAPPED_TO_SYSTEM_VA;
+
+				MmBuildMdlForNonPagedPool(pMdl);
+
+				PVOID mappedAddr = MmMapLockedPages(pMdl, KernelMode);
+				if (NULL == mappedAddr) {
+					IoFreeMdl(pMdl);
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmMapLockedPages失败。");
+				}
+
+				*(ULONG64*)((ULONG64)mappedAddr + (targetAddr & 0xfff)) = 0;
+
+				MmUnmapLockedPages(mappedAddr, pMdl);
+				IoFreeMdl(pMdl);
+
+			} else if (limitMode == 1) {
+
+				// cfg hook: 
+				//（我在写雨但通篇都不见雨，你能看出我在写谁吗？）
+
+				ULONG64 rip = match_pattern_image(AceImageBase, ".text",
+					"\x48\x8B\x54\x24\x60\x48\xC7\xC1\xFF\xFF\xFF\xFF\xFF\x15\x00\x00\x00\x00\x48\x81\xC4\x88\x00\x00\x00\xC3",
+					"xxxxxxxxxxxxxx????xxxxxxxx");
+
+				if (!rip) {
+					Status = STATUS_REQUEST_ABORTED;
+					IOCTL_LOG_EXIT("未找到特征。因为TP驱动（ACE-BASE.sys）版本不匹配。");
+				}
+
+				rip = rip + 0x12 + *(LONG*)(rip + 0xe);
+
+				if (!MmIsAddressValid(*(PVOID*)rip)) {
+					Status = STATUS_REQUEST_ABORTED;
+					IOCTL_LOG_EXIT("MmIsAddressValid断言失败。");
+				}
+
+				char shell[] =
+					"\x48\x8B\x04\x24\x81\x38\x48\x81\xC4\x88\x75\x20\x52\x51"
+					"\x48\xC7\xC0\x80\x69\x67\xFF\x50\x49\x89\xE0\x31\xD2\x31\xC9\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xD0\x58"
+					"\x59\x5A\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xE0";
+				/*
+					0:  48 8b 04 24             mov    rax,QWORD PTR [rsp]
+					4:  81 38 48 81 c4 88       cmp    DWORD PTR [rax],0x88c48148
+					a:  75 20                   jne    2c
+
+					c:  52                      push   rdx
+					d:  51                      push   rcx
+
+					e:  48 c7 c0 80 69 67 ff    mov    rax,0xffffffffff676980
+					15: 50                      push   rax
+					16: 49 89 e0                mov    r8,rsp
+					19: 31 d2                   xor    edx,edx
+					1b: 31 c9                   xor    ecx,ecx
+					1d: 48 b8 78 56 34 12 78    movabs rax,0x1234567812345678
+					24: 56 34 12
+					27: ff d0                   call   rax
+					29: 58                      pop    rax
+
+					2a: 59                      pop    rcx
+					2b: 5a                      pop    rdx
+
+					2c: 48 b8 78 56 34 12 78    movabs rax,0x1234567812345678
+					33: 56 34 12
+					36: ff e0                   jmp    rax
+				*/
+				
+				
+				if (0 == memcmp(DetourMain, *(const PVOID*)rip, 0xb)) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("您已经执行过该操作了，不能重复执行。");
+				}
+
+
+				*(PVOID*)(shell + 0x1f) = KeDelayExecutionThread;
+				*(PVOID*)(shell + 0x2e) = pOriginal = *(PVOID*)rip;
+				
+				char* shellSpace = ExAllocatePoolWithTag(PagedPool, 512, '9d3H'); // not intended to free... by mean
+				if (!shellSpace) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("ExAllocatePoolWithTag失败。");
+				}
+				
+				RtlCopyMemory(shellSpace, shell, sizeof(shell));
+
+
+				PMDL pMdl = IoAllocateMdl((PVOID)rip, 8, FALSE, FALSE, NULL);
+				if (!pMdl) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("IoAllocateMdl失败。");
+				}
+
+				try {
+					MmProbeAndLockPages(pMdl, KernelMode, IoReadAccess);
+				} except (EXCEPTION_EXECUTE_HANDLER) {
+					IoFreeMdl(pMdl);
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmProbeAndLockPages失败。");
+				}
+				
+				PLONG64 mapAddress = MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
+				if (!mapAddress) {
+					IoFreeMdl(pMdl);
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmMapLockedPagesSpecifyCache失败。");
+				}
+
+				Status = MmProtectMdlSystemAddress(pMdl, PAGE_READWRITE);
+				if (!NT_SUCCESS(Status)) {
+					MmUnmapLockedPages(mapAddress, pMdl);
+					MmUnlockPages(pMdl);
+					IoFreeMdl(pMdl);
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmProtectMdlSystemAddress失败。");
+				}
+
+				InterlockedExchange64(mapAddress, (LONG64)DetourMain);
+
+				MmUnmapLockedPages(mapAddress, pMdl);
+				MmUnlockPages(pMdl);
+				IoFreeMdl(pMdl);
+
+				expectedCip = (PVOID)rip;
+
+			} else {
+			
+				// data_hijack
+
+				ULONG64 rip = match_pattern_image(AceImageBase, ".text",
+					"\x48\xC7\xC2\xFF\xFF\xFF\xFF\x48\x8B\x0D\xFF\xFF\xFF\xFF\xFF\x15", "xxxxxxxxxx????xx");
+
+				if (!rip) {
+					Status = STATUS_REQUEST_ABORTED;
+					IOCTL_LOG_EXIT("未找到特征1。因为TP驱动（ACE-BASE.sys）版本不匹配。");
+				}
+
+				rip = rip + 0xe + *(LONG*)(rip + 0xa);
+
+				if (!MmIsAddressValid((PVOID)rip)) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmIsAddressValid断言失败。");
+				}
+
+				PMDL pMdl = IoAllocateMdl((PVOID)rip, 8, FALSE, FALSE, NULL);
+				if (!pMdl) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("IoAllocateMdl失败。");
+				}
+
+				pMdl->MdlFlags = pMdl->MdlFlags | MDL_MAPPED_TO_SYSTEM_VA;
+
+				MmBuildMdlForNonPagedPool(pMdl);
+
+				PVOID mapAddress = MmMapLockedPages(pMdl, KernelMode);
+				if (NULL == mapAddress) {
+					IoFreeMdl(pMdl);
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmMapLockedPages失败。");
+				}
+
+				InterlockedExchange64(mapAddress, 0);
+
+				MmUnmapLockedPages(mapAddress, pMdl);
+				IoFreeMdl(pMdl);
+
+
+				rip = match_pattern_image(AceImageBase, ".text",
+					"\x8B\x05\xFF\xFF\xFF\xFF\xF7\x35\xFF\xFF\xFF\xFF", "xx????xx????");
+
+				if (!rip) {
+					Status = STATUS_REQUEST_ABORTED;
+					IOCTL_LOG_EXIT("未找到特征2。因为TP驱动（ACE-BASE.sys）版本不匹配。");
+				}
+
+				rip = rip + 0xc + *(LONG*)(rip + 0x8);
+
+				if (!MmIsAddressValid((PVOID)rip)) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmIsAddressValid断言失败。");
+				}
+
+				pMdl = IoAllocateMdl((PVOID)rip, 8, FALSE, FALSE, NULL);
+				if (!pMdl) {
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("IoAllocateMdl失败。");
+				}
+
+				pMdl->MdlFlags = pMdl->MdlFlags | MDL_MAPPED_TO_SYSTEM_VA;
+
+				MmBuildMdlForNonPagedPool(pMdl);
+
+				mapAddress = MmMapLockedPages(pMdl, KernelMode);
+				if (NULL == mapAddress) {
+					IoFreeMdl(pMdl);
+					Status = STATUS_UNSUCCESSFUL;
+					IOCTL_LOG_EXIT("MmMapLockedPages失败。");
+				}
+
+				InterlockedExchange64(mapAddress, 2);
+
+				MmUnmapLockedPages(mapAddress, pMdl);
+				IoFreeMdl(pMdl);
+			}
 		}
 		break;
 
@@ -716,6 +950,40 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 
 NTSTATUS UnloadDriver(PDRIVER_OBJECT pDriverObject) {
+
+	if (expectedCip) {
+
+		PMDL pMdl = IoAllocateMdl((PVOID)expectedCip, 8, FALSE, FALSE, NULL);
+		if (!pMdl) {
+			return STATUS_UNSUCCESSFUL;
+		}
+
+		try {
+			MmProbeAndLockPages(pMdl, KernelMode, IoReadAccess);
+		} except(EXCEPTION_EXECUTE_HANDLER) {
+			IoFreeMdl(pMdl);
+			return STATUS_UNSUCCESSFUL;
+		}
+
+		PLONG64 mappedAddr = MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
+		if (!mappedAddr) {
+			IoFreeMdl(pMdl);
+			return STATUS_UNSUCCESSFUL;
+		}
+
+		if (!NT_SUCCESS(MmProtectMdlSystemAddress(pMdl, PAGE_READWRITE))) {
+			MmUnmapLockedPages(mappedAddr, pMdl);
+			MmUnlockPages(pMdl);
+			IoFreeMdl(pMdl);
+			return STATUS_UNSUCCESSFUL;
+		}
+
+		InterlockedExchange64(mappedAddr, (LONG64)pOriginal);
+
+		MmUnmapLockedPages(mappedAddr, pMdl);
+		MmUnlockPages(pMdl);
+		IoFreeMdl(pMdl);
+	}
 
 	IoDeleteSymbolicLink(&dos);
 	IoDeleteDevice(pDriverObject->DeviceObject);
@@ -833,7 +1101,6 @@ NTSTATUS DriverEntry(
 	} else {
 		return STATUS_UNSUCCESSFUL;
 	}
-
 
 	return STATUS_SUCCESS;
 }

@@ -1,18 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Driver Files">
-      <UniqueIdentifier>{8E41214B-6785-4CFE-B992-037D68949A14}</UniqueIdentifier>
-      <Extensions>inf;inv;inx;mof;mc;</Extensions>
-    </Filter>
     <Filter Include="mm">
       <UniqueIdentifier>{bff9fb30-5609-415b-a19a-434b62264147}</UniqueIdentifier>
     </Filter>
-  </ItemGroup>
-  <ItemGroup>
-    <Inf Include="SGuardLimit_VMIO.inf">
-      <Filter>Driver Files</Filter>
-    </Inf>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Driver.c" />
@@ -22,5 +13,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Vad.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="Detour.asm" />
   </ItemGroup>
 </Project>
