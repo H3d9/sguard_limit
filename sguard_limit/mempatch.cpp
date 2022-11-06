@@ -233,7 +233,6 @@ bool PatchManager::patch_r0() {
 	if (driver.patchAceBase()) {
 		systemMgr.log("patch_r0(): patch nt!ACE-BASE complete.");
 		driver.unload();
-		MessageBox(0, "data_hijack: 操作成功，请观察System进程是否仍然占用高以及游戏是否异常，并反馈群里。", "提示", MB_OK);
 		return true;
 
 	} else {

@@ -821,11 +821,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			config.pszWindowTitle      = L"Ring 0 操作警告";
 			config.pszMainIcon         = TD_WARNING_ICON;
 			config.pszMainInstruction  = L"点击“继续”将限制system进程占用cpu。";
-			config.pszContent          = L"建议你发现“System”进程持续占用大量CPU时再点此选项，否则可能出现错误！";
+			config.pszContent          = L"必须先开游戏再点该选项。\n建议你发现“System”持续占用很高CPU时使用，\n否则可能出现错误！";
 
 			int buttonClicked;
 			if (SUCCEEDED(TaskDialogIndirect(&config, &buttonClicked, NULL, NULL)) && buttonClicked == 1000) {
-				patchMgr.patch_r0();
+				if (patchMgr.patch_r0()) {
+					MessageBox(0, "data_hijack: 操作成功，请自行观察System进程的cpu占用。", "提示", MB_OK);
+				}
 			}
 		}
 		break;
