@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "22.11.6 原神夺冠纪念版"
+#define VERSION             "22.12.10 原神夺冠纪念版"
 #define MEMPATCH_VERSION    "V4.9"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
@@ -51,9 +51,7 @@
 // other commands
 #define IDM_AUTOSTARTUP       1001
 #define IDM_KILLACELOADER     1002
-#define IDM_HIDESYSFILE       1003
-#define IDM_SCANDELAY         1004
-#define IDM_OPENPROFILEDIR    1005
+#define IDM_OPENPROFILEDIR    1003
 
 #define IDM_MORE_UPDATEPAGE   1100
 #define IDM_MORE_SOURCEPAGE   1101
@@ -61,7 +59,6 @@
 
 
 // dialog param macro
-#define DLGPARAM_SCANDELAY      2000
 #define DLGPARAM_RRPCT          2001
 #define DLGPARAM_LOCKTIME       2002
 #define DLGPARAM_PATCHWAIT      2003

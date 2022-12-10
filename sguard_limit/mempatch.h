@@ -47,7 +47,6 @@ public:
 
 	std::atomic<DWORD>            patchPid;
 	patchStatus_t                 patchStatus;
-	std::atomic<int>              patchFailCount;
 
 	std::atomic<DWORD>            patchDelayBeforeNtdlletc;
 

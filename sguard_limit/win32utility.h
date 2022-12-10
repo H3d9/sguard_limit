@@ -99,7 +99,6 @@ public:
 	void       panic(DWORD errorCode, const char* format, ...);
 	
 public:
-	const std::string&  getCurrentDir();     // xref: kdriver
 	const std::string&  getProfileDir();     // xref: config, kdriver
 	OSVersion           getSystemVersion();  // xref: mempatch
 	DWORD               getSystemBuildNum(); // xref: mempatch
@@ -119,23 +118,19 @@ public:
 public:
 	bool                autoStartup;
 	bool                killAceLoader;
-	std::atomic<DWORD>  scanDelay;
 	std::atomic<DWORD>  listExamined;
 
 public:
 	HINSTANCE           hInstance;
+	HWND                hWnd;
 
 private:
 	HANDLE              hProgram;
-	HWND                hWnd;
 
+	std::string         profileDir;
 	OSVersion           osVersion;
 	DWORD               osBuildNum;
 	
 	FILE*               logfp;
-	
 	NOTIFYICONDATA      icon;
-	
-	std::string         currentDir;
-	std::string         profileDir;
 };

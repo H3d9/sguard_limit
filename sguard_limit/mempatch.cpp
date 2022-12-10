@@ -4,7 +4,7 @@
 // 2021.11.27 24:00
 // 大城市的郊区有着明亮的月亮。明天的露水在墙上凝结。
 // 2022.11.2 21:00 雨
-// 和胡桃的周年纪念，梦里可以遇见小草神吗？
+// 她对我说：『我等你好久了。』
 #include <Windows.h>
 #include <stdio.h>
 #include <time.h>
@@ -90,7 +90,7 @@ DWORD PatchManager::_getSyscallNumber(const char* funcName, const char* libName)
 		if (procAddr) {
 
 			// if is Nt/Zw func (__kernelentry), pattern is at header+0.
-			// otherwise, search nearby (win7/8/8.1, in user32; ignore win10 <= 10586).
+			// otherwise, walk nearby (win7/8/8.1, in user32; ignore win10 <= 10586).
 			for (auto rip = procAddr; rip < procAddr + 0x200; rip++) {
 				if (0 == memcmp(rip, "\x4c\x8b\xd1\xb8", 4) && 0 == memcmp(rip + 6, "\x00\x00", 2)) {
 					callNumber = *(DWORD*)(rip + 4);
@@ -398,17 +398,10 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 	}
 
 
-	// check if offset0 found in all results.
-	// in case patch_ntdll() success / fail, inc failcount / xor failcount.
+	// check if offset0 found in module.
 	if (offset0 < 0) {
-		patchFailCount ++;
-		systemMgr.log("patch_ntdll(): search failed, aborting. (retry: %d)", patchFailCount.load());
-		if (patchFailCount >= 3) {
-			systemMgr.panic("patch_ntdll(): 无法在模块“Ntdll”中找到有效的内存特征");
-		}
+		systemMgr.panic("patch_ntdll(): 无法在模块“Ntdll”中找到有效的内存特征");
 		return false;
-	} else {
-		patchFailCount = 0;
 	}
 
 

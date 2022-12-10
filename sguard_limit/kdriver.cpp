@@ -9,13 +9,12 @@
 #define DRIVER_VERSION    "22.11.6"
 
 
-// kernel-mode memory io
+// kernel mode memory operation
 KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
-	: loadFromProfileDir(true), driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
-	  currentPath{}, profilePath{}, sysCurrentPath{}, sysProfilePath{}, sysfile(&sysProfilePath), // forbid crash in start service
-	  hSCManager(NULL), hService(NULL), hDriver(INVALID_HANDLE_VALUE), refCount{0}, refLock{},
+	: driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
+	  sysfile{}, hDriver(INVALID_HANDLE_VALUE), loadCount{0}, loadLock{},
 	  errorMessage_ptr(new char[0x1000]), errorCode(0), errorMessage(NULL) {
 	errorMessage = errorMessage_ptr.get();
 }
@@ -28,17 +27,49 @@ KernelDriver& KernelDriver::getInstance() {
 	return kernelDriver;
 }
 
-bool KernelDriver::init(const std::string& currentDir, const std::string& profileDir) {
+bool KernelDriver::init(std::string loadPath) {
 
 	_resetError();
 
 
-	// initialize path for locating sysfile and show hint as fail occurs.
-	currentPath    = currentDir;
-	profilePath    = profileDir;
-	sysCurrentPath = currentDir + "\\" DRIVER_NAME ".sys";
-	sysProfilePath = profileDir + "\\" DRIVER_NAME ".sys";
+	// initialize load path and current path.
+	sysfile = loadPath + "\\" DRIVER_NAME ".sys";
 
+	char sysfile_CurPath[0x1000] = {};
+	GetModuleFileName(NULL, sysfile_CurPath, 0x1000);
+
+	if (auto p = strrchr(sysfile_CurPath, '\\')) {
+		*p = '\0';
+		strcat(sysfile_CurPath, "\\" DRIVER_NAME ".sys");
+
+	} else {
+		_recordError(0, __FUNCTION__ "(): 获取当前目录失败");
+		return false;
+	}
+
+
+	// if found sys in current path, move it to load path.
+	std::error_code ec;
+	auto getSolution = [&]() -> std::string {
+		char buf[0x1000];
+		sprintf(buf, "【解决办法】右键菜单->其他选项->打开系统用户目录，把压缩包里的sys文件手动放到这里。限制器目录若有sys文件则删掉。\n"
+			"若还不行：先禁用defender，把限制器目录以及以下2个路径加入杀毒信任区，然后重试：\n\n1. %s\n2. %s\n\n【注意】请仔细阅读附带的常见问题文档或群公告。",
+			sysfile_CurPath, sysfile.c_str());
+		return buf;
+	};
+
+	if (std::filesystem::exists(sysfile_CurPath, ec)) {
+		if (!MoveFileEx(sysfile_CurPath, sysfile.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+			_recordError(GetLastError(), __FUNCTION__ "(): 无法移动sys文件到系统用户目录。\n\n%s", getSolution().c_str());
+			return false;
+		}
+	}
+
+	if (!std::filesystem::exists(sysfile, ec)) {
+		_recordError(0, __FUNCTION__ "(): 找不到sys文件：“" DRIVER_NAME ".sys”。\n\n%s", getSolution().c_str());
+		return false;
+	}
+	
 
 	// import certificate key.
 	HKEY       key;
@@ -132,117 +163,20 @@ bool KernelDriver::init(const std::string& currentDir, const std::string& profil
 	}
 
 	if (status != ERROR_SUCCESS) {
-		if (IDYES == MessageBox(NULL, "driver::init(): 创建注册表项失败，你可能需要手动安装证书。\n要打开证书下载页面么？", "注意", MB_YESNO)) {
+		if (IDYES == MessageBox(NULL, __FUNCTION__ "(): 创建注册表项失败，你可能需要手动安装证书。\n要打开证书下载页面么？", "注意", MB_YESNO)) {
 			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_SHOW);
 		}
 	}
 
 
 	// make sysfile ready to use.
-	return prepareSysfile();
+	return driverReady = _checkSysVersion();
 }
 
-bool KernelDriver::prepareSysfile() {
-
-	// move sysfile in/out by config flag 'loadFromProfileDir',
-	// then check sysfile's version.
-
-	// for caller init(): call this after init()'s path initialize.
-	// for caller outside: call init() first.
-	
-	// flag 'driverReady' is set automatically here.
-
-	_resetError();
-
-	bool              checkStatus   = true;
-	DWORD             moveStatus    = 0;
-	std::error_code   ec;
-
-	if (loadFromProfileDir) {
-
-		// 1. should load from profile dir:
-		sysfile = &sysProfilePath;
-		
-		// check current dir, and move sysfile in if exists.
-		if (std::filesystem::exists(sysCurrentPath, ec)) {
-
-			if (!MoveFileEx(sysCurrentPath.c_str(), sysProfilePath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-
-				_startService(); // try stop running driver
-				_endService();
-
-				if (!MoveFileEx(sysCurrentPath.c_str(), sysProfilePath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-					
-					moveStatus = GetLastError();
-					checkStatus = false;
-				}
-			}
-			
-		} else {
-
-			// if not exist, check profile dir. if file not exist at all, fail.
-			if (!std::filesystem::exists(sysProfilePath, ec)) {
-				checkStatus = false;
-			}
-		}
-	
-	} else {
-
-		// 2. should load from current dir:
-		sysfile = &sysCurrentPath;
-
-		// check current dir, and load it directly if exists.
-		if (!std::filesystem::exists(sysCurrentPath, ec)) {
-			
-			// if not exist, try move sysfile out of profile dir if exists.
-			if (std::filesystem::exists(sysProfilePath, ec)) {
-
-				if (!MoveFileEx(sysProfilePath.c_str(), sysCurrentPath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-					
-					_startService();
-					_endService();
-
-					if (!MoveFileEx(sysProfilePath.c_str(), sysCurrentPath.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-						
-						moveStatus = GetLastError();
-						checkStatus = false;
-					}
-				}
-
-			} else {
-
-				// file not exist at all.
-				checkStatus = false;
-			}
-		}
-	}
-
-
-	// check if sysfile is ready to load.
-	if (checkStatus) {
-
-		// sysfile is ready, check version to forbid unknown fault.
-		return driverReady = _checkSysVersion();
-	
-	} else {
-
-		// sysfile not ready, record error.
-		_recordError(moveStatus,
-			"driver::prepareSysfile(): %s。\n\n"
-			"【解决办法】右键菜单->其他选项->打开系统用户目录，把压缩包里的sys文件手动放到这里。限制器目录若有sys文件则删掉。\n"
-			"若还不行：先禁用defender，把以下2个目录加入杀毒信任区（如有杀毒），然后重试：\n\n"
-			"1. %s\n2. %s\n\n"
-			"【提示】可以查看附带的常见问题文档。",
-			moveStatus ? "移动sys文件失败" : "找不到sys文件：“" DRIVER_NAME ".sys”",
-			currentPath.c_str(), profilePath.c_str());
-
-		return driverReady = false;
-	}
-}
 
 bool KernelDriver::load() {
 
-	std::lock_guard<std::mutex> cxx_guard(refLock);
+	std::lock_guard<std::mutex> cxx_guard(loadLock);
 	
 	_resetError();
 
@@ -256,35 +190,29 @@ bool KernelDriver::load() {
 		hDriver = CreateFile("\\\\.\\" DRIVER_NAME, GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
 
 		if (hDriver == INVALID_HANDLE_VALUE) {
-			_recordError(GetLastError(), "driver::load(): CreateFile失败。");
+			_recordError(GetLastError(), __FUNCTION__ "(): CreateFile失败。");
 			return false;
 		}
 	}
 
 
-	refCount++;  // refCount > 0 is guarenteed if driver load success.
+	loadCount++;  // loadCount > 0 is guarenteed if driver load success.
 	return true;
 }
 
 void KernelDriver::unload() {
 
-	std::lock_guard<std::mutex> cxx_guard(refLock);
+	std::lock_guard<std::mutex> cxx_guard(loadLock);
 
 
-	if (hDriver != INVALID_HANDLE_VALUE) { // if driver is loaded then refCount > 0.
+	if (loadCount > 0) {  // loadCount > 0 is guarenteed if driver load success.
+		loadCount--;
 
-		refCount--;
-
-		if (refCount == 0) {
-
+		if (loadCount == 0) {
 			CloseHandle(hDriver);
 			hDriver = INVALID_HANDLE_VALUE;
-
 			_endService();
 		}
-
-	} else {
-		refCount = 0;
 	}
 }
 
@@ -302,7 +230,7 @@ bool KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 		request.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
 
 		if (!DeviceIoControl(hDriver, VMIO_READ, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-			_recordError(GetLastError(), "driver::readVM(): DeviceIoControl失败。");
+			_recordError(GetLastError(), __FUNCTION__ "(): DeviceIoControl失败。");
 			return false;
 		}
 		if (request.errorCode != 0) {
@@ -332,7 +260,7 @@ bool KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 		memcpy(request.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
 
 		if (!DeviceIoControl(hDriver, VMIO_WRITE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-			_recordError(GetLastError(), "driver::writeVM(): DeviceIoControl失败。");
+			_recordError(GetLastError(), __FUNCTION__ "(): DeviceIoControl失败。");
 			return false;
 		}
 		if (request.errorCode != 0) {
@@ -353,7 +281,7 @@ bool KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 
 
 	if (!DeviceIoControl(hDriver, VMIO_ALLOC, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError(GetLastError(), "driver::allocVM(): DeviceIoControl失败。");
+		_recordError(GetLastError(), __FUNCTION__ "(): DeviceIoControl失败。");
 		return false;
 	}
 	if (request.errorCode != 0) {
@@ -375,7 +303,7 @@ bool KernelDriver::suspend(DWORD pid) {
 
 
 	if (!DeviceIoControl(hDriver, IO_SUSPEND, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError(GetLastError(), "driver::suspend(): DeviceIoControl失败。");
+		_recordError(GetLastError(), __FUNCTION__ "(): DeviceIoControl失败。");
 		return false;
 	}
 	if (request.errorCode != 0) {
@@ -395,7 +323,7 @@ bool KernelDriver::resume(DWORD pid) {
 
 
 	if (!DeviceIoControl(hDriver, IO_RESUME, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError(GetLastError(), "driver::resume(): DeviceIoControl失败。");
+		_recordError(GetLastError(), __FUNCTION__ "(): DeviceIoControl失败。");
 		return false;
 	}
 	if (request.errorCode != 0) {
@@ -417,7 +345,7 @@ bool KernelDriver::searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t
 	wcscpy((wchar_t*)request.data, moduleName);  // [io param] moduleName => (wchar_t*)request.data
 
 	if (!DeviceIoControl(hDriver, VM_VADSEARCH, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError(GetLastError(), "driver::searchVad(): DeviceIoControl失败。");
+		_recordError(GetLastError(), __FUNCTION__ "(): DeviceIoControl失败。");
 		return false;
 	}
 	if (request.errorCode != 0) {
@@ -448,7 +376,7 @@ bool KernelDriver::restoreVad() {
 
 
 	if (!DeviceIoControl(hDriver, VM_VADRESTORE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError(GetLastError(), "driver::restoreVad(): DeviceIoControl失败。");
+		_recordError(GetLastError(), __FUNCTION__ "(): DeviceIoControl失败。");
 		return false;
 	}
 	
@@ -463,10 +391,10 @@ bool KernelDriver::patchAceBase() {
 	_resetError();
 
 
-	*(int*)request.data = 2;
+	*(int*)request.data = ~1;
 
 	if (!DeviceIoControl(hDriver, PATCH_ACEBASE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
-		_recordError(GetLastError(), "driver::patchAceBase(): DeviceIoControl失败。");
+		_recordError(GetLastError(), __FUNCTION__ "(): DeviceIoControl失败。");
 		return false;
 	}
 	if (request.errorCode != 0) {
@@ -478,56 +406,46 @@ bool KernelDriver::patchAceBase() {
 }
 
 
-
-#define SVC_ERROR_EXIT(errorCode, errorMsg)   _recordError(errorCode, errorMsg); \
-                                              if (hService) CloseServiceHandle(hService); \
-                                              if (hSCManager) CloseServiceHandle(hSCManager); \
-                                              hService = NULL; \
-                                              hSCManager = NULL; \
-                                              return false;
-
 bool KernelDriver::_startService() {
 
+	service_guard  cxx_guard;
+	auto&          hSCManager  = cxx_guard.hSCManager;
+	auto&          hService    = cxx_guard.hService;
 	SERVICE_STATUS svcStatus;
+
 
 	// open SCM.
 	hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-
 	if (!hSCManager) {
-		SVC_ERROR_EXIT(GetLastError(), "OpenSCManager失败。");
+		_recordError(GetLastError(), "OpenSCManager失败。");
+		return false;
 	}
 
 	// open Service.
 	hService = OpenService(hSCManager, DRIVER_NAME, SERVICE_ALL_ACCESS);
-
 	if (!hService) {
-		hService = 
-		CreateService(hSCManager, DRIVER_NAME, DRIVER_NAME,
+
+		hService = CreateService(hSCManager, DRIVER_NAME, DRIVER_NAME,
 			SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
-			sysfile->c_str(),  /* no quote here, msdn e.g. is wrong */ /* assert path is valid */
-			NULL, NULL, NULL, NULL, NULL);
+			sysfile.c_str() /* no quote */ , NULL, NULL, NULL, NULL, NULL);
 
 		if (!hService) {
-			SVC_ERROR_EXIT(GetLastError(), "CreateService失败。");
+			_recordError(GetLastError(), "CreateService失败。");
+			return false;
 		}
 	}
 
-	// check service status. (return val is ignored here)
+	// check service status.
 	(void)QueryServiceStatus(hService, &svcStatus);
 
-	// if service is running, stop it.
-	if (svcStatus.dwCurrentState != SERVICE_STOPPED && svcStatus.dwCurrentState != SERVICE_STOP_PENDING) {
-		if (!ControlService(hService, SERVICE_CONTROL_STOP, &svcStatus)) {
-			DWORD errorCode = GetLastError();
-			DeleteService(hService);
-			SVC_ERROR_EXIT(errorCode, "无法停止当前服务。重启电脑应该能解决该问题。");
-		}
+	// if service is running, return true to use it directly.
+	if (svcStatus.dwCurrentState == SERVICE_RUNNING) {
+		return true;
 	}
 
-	// if service is stopping,
-	// wait till it's completely stopped. 
+	// if service is stopping, wait till it's completely stopped. timeout: 3s
 	if (svcStatus.dwCurrentState == SERVICE_STOP_PENDING) {
-		for (auto time = 0; time < 50; time++) {
+		for (auto time = 0; time < 30; time++) {
 			Sleep(100);
 			(void)QueryServiceStatus(hService, &svcStatus);
 			if (svcStatus.dwCurrentState == SERVICE_STOPPED) {
@@ -536,17 +454,17 @@ bool KernelDriver::_startService() {
 		}
 
 		if (svcStatus.dwCurrentState == SERVICE_STOP_PENDING) {
+			_recordError(0, "等待服务停止所花费的时间过长，建议重启电脑。");
 			DeleteService(hService);
-			SVC_ERROR_EXIT(0, "停止当前服务时的等待时间过长。重启电脑应该能解决该问题。");
+			return false;
 		}
 	}
 
 	// start service.
-	// if start failed, delete old one (cause old service may have wrong params)
 	if (!StartService(hService, 0, NULL)) {
-		DWORD errorCode = GetLastError();
+		_recordError(GetLastError(), "StartService失败。建议重启电脑。\n\n【注意】请仔细阅读附带的常见问题文档或群公告。");
 		DeleteService(hService);
-		SVC_ERROR_EXIT(errorCode, "StartService失败。建议禁用defender并加杀毒白名单，然后重启电脑，重新下载解压。\n\n【提示】可以查看附带的常见问题文档。");
+		return false;
 	}
 
 	return true;
@@ -554,7 +472,22 @@ bool KernelDriver::_startService() {
 
 void KernelDriver::_endService() {
 
+	service_guard  cxx_guard;
+	auto&          hSCManager  = cxx_guard.hSCManager;
+	auto&          hService    = cxx_guard.hService;
 	SERVICE_STATUS svcStatus;
+
+	// open SCM.
+	hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+	if (!hSCManager) {
+		return;
+	}
+
+	// open Service.
+	hService = OpenService(hSCManager, DRIVER_NAME, SERVICE_ALL_ACCESS);
+	if (!hService) {
+		return;
+	}
 
 	// stop service.
 	ControlService(hService, SERVICE_CONTROL_STOP, &svcStatus);
@@ -563,11 +496,8 @@ void KernelDriver::_endService() {
 	DeleteService(hService);
 
 	// service will be deleted after we close service handle.
-	CloseServiceHandle(hService);
-	CloseServiceHandle(hSCManager);
-	hService = NULL;
-	hSCManager = NULL;
 }
+
 
 bool KernelDriver::_checkSysVersion() {
 

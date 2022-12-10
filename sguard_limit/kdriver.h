@@ -23,10 +23,10 @@ private:
 
 public:
 	static KernelDriver& getInstance();
+	
 
 public:
-	bool     init(const std::string& currentDir, const std::string& profileDir);
-	bool     prepareSysfile();
+	bool     init(std::string loadPath);
 	
 	bool     load();
 	void     unload();
@@ -40,11 +40,8 @@ public:
 	bool     patchAceBase();
 
 public:
-	bool     loadFromProfileDir;  // [in] whether the kernel driver should be loaded from profile dir.
-								  // flag read from config; will instruct init()'s behavior.
 	bool     driverReady;         // [out] whether kdriver is ready to use.
 	                              // flag returned from init(); decide accessibility to some menu options.
-	
 	bool     win11ForceEnable;    // [xref] assert use same kernel offset, despite of the risk of bsod.
 								  // flag read from config; decide if win11 latest check is ignored.
 	DWORD    win11CurrentBuild;   // [xref] current win11 build number.
@@ -53,9 +50,25 @@ public:
 private:
 	bool     _startService();
 	void     _endService();
+
+	struct service_guard {
+		SC_HANDLE hSCManager = NULL;
+		SC_HANDLE hService   = NULL;
+
+		~service_guard() {
+			if (hService) {
+				CloseServiceHandle(hService);
+			}
+			if (hSCManager) {
+				CloseServiceHandle(hSCManager);
+			}
+		}
+	};
+
+	
+private:
 	bool     _checkSysVersion();
 
-private:
 	struct VMIO_REQUEST {
 		HANDLE   pid;
 
@@ -79,21 +92,12 @@ private:
 	static constexpr DWORD	 PATCH_ACEBASE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0708, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
 
-	std::string     currentPath;  // path without filename
-	std::string     profilePath;  // path without filename
+private:
+	std::string         sysfile;
+	HANDLE              hDriver;
 
-	std::string     sysCurrentPath;  // path with sys filename
-	std::string     sysProfilePath;  // path with sys filename
-
-	std::string*    sysfile;  // real sysfile location
-
-	SC_HANDLE       hSCManager;
-	SC_HANDLE       hService;
-	HANDLE          hDriver;
-
-
-	std::atomic<DWORD>  refCount;  // multi-thread call sync
-	std::mutex          refLock;
+	std::atomic<DWORD>  loadCount;  // multi-thread call sync
+	std::mutex          loadLock;
 	
 
 public:
@@ -104,6 +108,5 @@ private:
 	void            _resetError();  // thread unsafe
 	void            _recordError(DWORD errorCode, const char* msg, ...);
 
-private:
 	std::unique_ptr<char[]>  errorMessage_ptr;
 };

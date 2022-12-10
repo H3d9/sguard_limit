@@ -116,12 +116,7 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 			char buf [0x1000];
 			dlgParam = (DWORD)lParam;
 			
-			if (dlgParam == DLGPARAM_SCANDELAY) { // set scan delay.
-				SetWindowText(hDlg, "输入检测SGUARD进程的时间间隔（单位：秒）");
-				sprintf(buf, "输入1~5的整数（当前扫描间隔：%u秒）", systemMgr.scanDelay.load() / 1000);
-				SetDlgItemText(hDlg, IDC_TEXT1, buf);
-
-			} else if (dlgParam == DLGPARAM_RRPCT) { // set limit percent.
+			if (dlgParam == DLGPARAM_RRPCT) { // set limit percent.
 				SetWindowText(hDlg, "输入限制资源的百分比");
 				sprintf(buf, "输入整数1~99，或999（代表99.9）\n（当前值：%u）", limitMgr.limitPercent.load());
 				SetDlgItemText(hDlg, IDC_TEXT1, buf);
@@ -166,16 +161,7 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 				BOOL translated;
 				UINT res = GetDlgItemInt(hDlg, IDC_EDIT, &translated, FALSE);
 				
-				if (dlgParam == DLGPARAM_SCANDELAY) {
-					if (!translated || res < 1 || res > 5) {
-						systemMgr.panic("输入1~5的整数");
-					} else {
-						systemMgr.scanDelay = res * 1000;
-						EndDialog(hDlg, LOWORD(wParam));
-						return (INT_PTR)TRUE;
-					}
-
-				} else if (dlgParam == DLGPARAM_RRPCT) {
+				if (dlgParam == DLGPARAM_RRPCT) {
 					if (!translated || res < 1 || (res > 99 && res != 999)) {
 						systemMgr.panic("输入1~99或999");
 					} else {
@@ -293,8 +279,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			HMENU   hMenuModes  = CreatePopupMenu();
 			HMENU   hMenuOthers = CreatePopupMenu();
 
+
 			AppendMenu(hMenuModes, MFT_STRING, IDM_MODE_HIJACK, "切换到：时间片轮转");
-			AppendMenu(hMenuModes, MFT_STRING, IDM_MODE_TRACE,  "切换到：线程追踪");
+			AppendMenu(hMenuModes, MF_GRAYED,  IDM_MODE_TRACE,  "切换到：线程追踪");
 			AppendMenu(hMenuModes, MFT_STRING, IDM_MODE_PATCH,  "切换到：内存补丁 " MEMPATCH_VERSION);
 			if (g_Mode == 0) {
 				CheckMenuItem(hMenuModes, IDM_MODE_HIJACK, MF_CHECKED);
@@ -304,13 +291,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				CheckMenuItem(hMenuModes, IDM_MODE_PATCH, MF_CHECKED);
 			}
 
-			sprintf(buf, "设置扫描间隔（当前：%u秒）", systemMgr.scanDelay.load() / 1000);
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_SCANDELAY, buf);
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_OPENPROFILEDIR, "打开系统用户目录");
-			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
+
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_AUTOSTARTUP,     "开机自启");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_KILLACELOADER,   "游戏启动60秒后，结束ace-loader");
-			AppendMenu(hMenuOthers, MFT_STRING, IDM_HIDESYSFILE,     "将驱动文件隐藏到系统用户目录");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_OPENPROFILEDIR,  "打开系统用户目录");
 			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_MORE_UPDATEPAGE, "检查更新【当前版本：" VERSION "】");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_ABOUT,           "查看说明");
@@ -320,9 +304,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			}
 			if (systemMgr.killAceLoader) {
 				CheckMenuItem(hMenuOthers, IDM_KILLACELOADER, MF_CHECKED);
-			}
-			if (driver.loadFromProfileDir) {
-				CheckMenuItem(hMenuOthers, IDM_HIDESYSFILE, MF_CHECKED);
 			}
 
 
@@ -434,8 +415,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							patchMgr.patchSwitches.NtWaitForSingleObject +
 							patchMgr.patchSwitches.NtDelayExecution +
 							patchMgr.patchSwitches.DeviceIoControl_1 +
-							patchMgr.patchSwitches.DeviceIoControl_2/* +
-							patchMgr.patchSwitches.R0_AceBase*/;
+							patchMgr.patchSwitches.DeviceIoControl_2;
 
 						int finished =
 							patchMgr.patchStatus.NtQueryVirtualMemory +
@@ -444,16 +424,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							patchMgr.patchStatus.NtWaitForSingleObject +
 							patchMgr.patchStatus.NtDelayExecution +
 							patchMgr.patchStatus.DeviceIoControl_1 +
-							patchMgr.patchStatus.DeviceIoControl_2/* +
-							patchMgr.patchStatus.R0_AceBase*/;
+							patchMgr.patchStatus.DeviceIoControl_2;
 
 						if (finished == 0) {
-							if (patchMgr.patchFailCount == 0) {
-								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
-							} else {
-								sprintf(buf, "SGuard限制器 - 正在重试（第%d次）...", patchMgr.patchFailCount.load());
-								AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
-							}
+							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
 						} else {
 							sprintf(buf, "SGuard限制器 - 已提交  [%d/%d]", finished, total);
 							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
@@ -461,9 +435,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					}
 				}
 
-				HMENU  hMenuPatch = CreatePopupMenu();
+				HMENU hMenuPatch = CreatePopupMenu();
 				AppendMenu(hMenuPatch, drvMenuType, IDM_PATCHSWITCH6_1, "切换到：防扫盘1弱化模式");
-				AppendMenu(hMenuPatch, drvMenuType, IDM_PATCHSWITCH6_2, "切换到：防扫盘1强力模式");
+				AppendMenu(hMenuPatch, MF_GRAYED,   IDM_PATCHSWITCH6_2, "切换到：防扫盘1强力模式");
 				AppendMenu(hMenuPatch, drvMenuType, IDM_PATCHSWITCH6_3, "关闭防扫盘1选项");
 				if (patchMgr.patchSwitches.DeviceIoControl_1) {
 					if (patchMgr.patchSwitches.DeviceIoControl_1x) {
@@ -538,9 +512,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (patchMgr.patchSwitches.DeviceIoControl_2) {
 					CheckMenuItem(hMenu, IDM_PATCHSWITCH7, MF_CHECKED);
 				}
-				/*if (patchMgr.patchSwitches.R0_AceBase) {
-					CheckMenuItem(hMenu, IDM_PATCHSWITCH8, MF_CHECKED);
-				}*/
 				CheckMenuItem(hMenu, IDM_ADVMEMSEARCH, MF_CHECKED);
 			}
 
@@ -583,7 +554,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			// mode
 		case IDM_MODE_HIJACK:
-			if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
+			if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n仅在“内存补丁”模式无法使用时，才能使用该选项。要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 				traceMgr.disable();
 				patchMgr.disable();
 				limitMgr.enable();
@@ -592,13 +563,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 		case IDM_MODE_TRACE:
-			if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
+			/*if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 				limitMgr.disable();
 				patchMgr.disable();
 				traceMgr.enable();
 				g_Mode = 1;
 				configMgr.writeConfig();
-			}
+			}*/
 			break;
 		case IDM_MODE_PATCH:
 			limitMgr.disable();
@@ -771,7 +742,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			}
 			break;
 		case IDM_PATCHSWITCH6_2: // strong ioctl_1
-			if (!(patchMgr.patchSwitches.DeviceIoControl_1 && !patchMgr.patchSwitches.DeviceIoControl_1x)) {
+			/*if (!(patchMgr.patchSwitches.DeviceIoControl_1 && !patchMgr.patchSwitches.DeviceIoControl_1x)) {
 				if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
 					patchMgr.patchSwitches.DeviceIoControl_1 = true;
 					patchMgr.patchSwitches.DeviceIoControl_1x = false;
@@ -779,7 +750,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					configMgr.writeConfig();
 					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 				}
-			}
+			}*/
 			break;
 		case IDM_PATCHSWITCH6_3: // close ioctl_1
 			if (patchMgr.patchSwitches.DeviceIoControl_1) {
@@ -821,7 +792,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			config.pszWindowTitle      = L"Ring 0 操作警告";
 			config.pszMainIcon         = TD_WARNING_ICON;
 			config.pszMainInstruction  = L"点击“继续”将限制system进程占用cpu。";
-			config.pszContent          = L"必须先开游戏再点该选项。\n建议你发现“System”持续占用很高CPU时使用，\n否则可能出现错误！";
+			config.pszContent          = L"必须先开游戏再点该选项。\n你发现“System”持续占用很高CPU时使用，\n否则可能出现错误！";
 
 			int buttonClicked;
 			if (SUCCEEDED(TaskDialogIndirect(&config, &buttonClicked, NULL, NULL)) && buttonClicked == 1000) {
@@ -858,29 +829,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			}
 		}
 		break;
-		case IDM_HIDESYSFILE:
-		{
-			sprintf(buf, "点击“是”可以将驱动文件的加载位置设置为%s（一般不影响使用）。\n\n建议你先关游戏再进行该操作。",
-				driver.loadFromProfileDir ? "当前目录" : "系统用户目录");
-			if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
-
-				// set flag and reload sysfile.
-				driver.loadFromProfileDir = !driver.loadFromProfileDir;
-
-				if (!driver.prepareSysfile()) {
-					driver.loadFromProfileDir = !driver.loadFromProfileDir;
-					limitMgr.useKernelMode = false;
-					systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-				}
-
-				configMgr.writeConfig();
-			}
-		}
-		break;
-		case IDM_SCANDELAY:
-			DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), NULL, DlgProc, DLGPARAM_SCANDELAY);
-			configMgr.writeConfig();
-			break;
 		case IDM_OPENPROFILEDIR:
 			ShellExecute(0, "open", systemMgr.getProfileDir().c_str(), 0, 0, SW_SHOW);
 			break;

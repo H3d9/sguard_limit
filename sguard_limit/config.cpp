@@ -50,10 +50,8 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	g_Mode                  = GetPrivateProfileInt("Global", "Mode",          2,     profile);
 	systemMgr.autoStartup   = GetPrivateProfileInt("Global", "autoStartup",   FALSE, profile);
 	systemMgr.killAceLoader = GetPrivateProfileInt("Global", "KillAceLoader", TRUE,  profile);
-	systemMgr.scanDelay     = GetPrivateProfileInt("Global", "scanDelay",     3000,  profile);
 
 	// kdriver config
-	driver.loadFromProfileDir = GetPrivateProfileInt("kdriver", "loadFromProfileDir", TRUE,  profile);
 	driver.win11ForceEnable   = GetPrivateProfileInt("kdriver", "win11ForceEnable",   FALSE, profile);
 	driver.win11CurrentBuild  = GetPrivateProfileInt("kdriver", "win11CurrentBuild",  0,     profile);
 
@@ -103,9 +101,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	if (!result) {
 
 		g_Mode = 2;
-		systemMgr.scanDelay = 3000;
-		
-		driver.loadFromProfileDir = true;
+
 		driver.win11ForceEnable   = false;
 		driver.win11CurrentBuild  = 0;
 
@@ -147,15 +143,8 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, systemMgr.killAceLoader ? "1" : "0");
 	WritePrivateProfileString("Global", "KillAceLoader", buf, profile);
-
-	sprintf(buf, "%u", systemMgr.scanDelay.load());
-	WritePrivateProfileString("Global", "scanDelay", buf, profile);
-
 	
 	// kdriver config
-	sprintf(buf, driver.loadFromProfileDir ? "1" : "0");
-	WritePrivateProfileString("kdriver", "loadFromProfileDir", buf, profile);
-
 	sprintf(buf, driver.win11ForceEnable ? "1" : "0");
 	WritePrivateProfileString("kdriver", "win11ForceEnable", buf, profile);
 

@@ -66,7 +66,7 @@ static void HijackThreadWorker() {
 		}
 
 		g_HijackThreadWaiting.notify_all();   // inform main thread for blocked actions.
-		Sleep(systemMgr.scanDelay.load());    // call sys schedule | no target found, wait.
+		Sleep(5000);    // call sys schedule | no target found, wait.
 	}
 }
 
@@ -136,7 +136,8 @@ INT WINAPI WinMain(
 			MessageBox(0,
 				"【更新说明】\n\n"
 				" 内存补丁 " MEMPATCH_VERSION "：更新限制System进程。\n\n"
-				"1. 更新限制System进程占用cpu的方法（需手动点击后生效）。\n\n\n"
+				"1. 重构内核驱动模块。\n\n"
+				"2. 此版不防弹窗，如你出异常弹窗，请去群文件下载出弹窗专用版。\n\n\n"
 
 				"【重要提示】\n\n"
 				"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -174,7 +175,7 @@ INT WINAPI WinMain(
 	} else {
 
 		status =
-		driver.init(systemMgr.getCurrentDir(), systemMgr.getProfileDir());
+		driver.init(systemMgr.getProfileDir());
 
 		// if driver init failed, and selected related options,
 		// turn off related config flags and show error hint.
@@ -228,7 +229,7 @@ INT WINAPI WinMain(
 	if (!patchMgr.init()) {
 
 		if (MessageBox(0, "“内存补丁 " MEMPATCH_VERSION "”模块初始化失败。\n"
-			              "未能初始化的开关将无法正常工作，建议你把该问题反馈到群里。\n\n"
+			              "某些功能将无法正常工作，建议你将限制器移动到其他目录重新运行。\n\n"
 			              "仍然要继续吗？", "警告", MB_YESNO) == IDNO) {
 
 			// in some rare case (such as rtlgetversion fails by some kernel internal bug),

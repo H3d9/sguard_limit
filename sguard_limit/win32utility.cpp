@@ -144,8 +144,8 @@ bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadLis
 win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
-	: autoStartup(false), killAceLoader(true), scanDelay(3000), listExamined(0), hInstance(NULL), hProgram(NULL), hWnd(NULL),
-	  osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{}, currentDir{}, profileDir{} {}
+	: autoStartup(false), killAceLoader(true), listExamined(0), hInstance(NULL), hProgram(NULL), hWnd(NULL),
+	  profileDir{}, osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -218,20 +218,9 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 
 	// initialize path vars.
-	char     buf[0x1000] = {};
-	DWORD    size = 0x1000;
-
-	GetModuleFileName(NULL, buf, size);
-	if (auto p = strrchr(buf, '\\')) {
-		*p = '\0';
-		currentDir = buf;
-	} else {
-		panic("获取当前目录失败。");
-		return false;
-	}
-
-	if (ExpandEnvironmentStrings("%appdata%\\sguard_limit", buf, size)) {
-		profileDir = buf;
+	char profilePath[0x1000] = {};
+	if (ExpandEnvironmentStrings("%appdata%\\sguard_limit", profilePath, 0x1000)) {
+		profileDir = profilePath;
 	} else {
 		panic("获取系统用户目录失败。");
 		return false;
@@ -264,9 +253,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 	auto bannedExists = [this] (const bannedInfo_t& info) -> bool {
 
-		char     buf[0x1000] = {};
-		DWORD    size = 0x1000;
-
+		char buf[0x1000] = {};
 		std::error_code ec;
 
 		if (strlen(info.qq) != 9 && strlen(info.qq) != 10) {
@@ -281,7 +268,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 			}
 		}
 
-		if (ExpandEnvironmentStrings("%appdata%\\Tencent\\WeGame\\login_pic\\", buf, size)) {
+		if (ExpandEnvironmentStrings("%appdata%\\Tencent\\WeGame\\login_pic\\", buf, 0x1000)) {
 			if (std::filesystem::is_directory(buf, ec)) {
 				strcat(buf, info.qq);
 				if (std::filesystem::exists(buf, ec)) {
@@ -491,10 +478,6 @@ void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 	va_end(arg);
 
 	_panic(errorCode, buf);
-}
-
-const std::string& win32SystemManager::getCurrentDir() {
-	return currentDir;
 }
 
 const std::string& win32SystemManager::getProfileDir() {
