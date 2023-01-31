@@ -29,15 +29,16 @@ ConfigManager& ConfigManager::getInstance() {
 	return configManager;
 }
 
-void  ConfigManager::init(const std::string& profileDir) {
+void ConfigManager::init(const std::string& profileDir) {
 	profile = profileDir + "\\config.ini";
 }
 
 bool ConfigManager::loadConfig() {  // executes only when program is initalizing.
 
-	auto     profile    = this->profile.c_str();
-	char     version    [128];
-	bool     result     = true;
+	auto     profile   = this->profile.c_str();
+	char     version   [128];
+	bool     result    = true;
+
 
 	// check version & load configurations.
 	GetPrivateProfileString("Global", "Version", NULL, version, 128, profile);
@@ -47,9 +48,11 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	}
 
 	// global config
-	g_Mode                  = GetPrivateProfileInt("Global", "Mode",          2,     profile);
-	systemMgr.autoStartup   = GetPrivateProfileInt("Global", "autoStartup",   FALSE, profile);
-	systemMgr.killAceLoader = GetPrivateProfileInt("Global", "KillAceLoader", TRUE,  profile);
+	g_Mode                    = GetPrivateProfileInt("Global", "Mode",            2,     profile);
+	systemMgr.autoStartup     = GetPrivateProfileInt("Global", "autoStartup",     FALSE, profile);
+	systemMgr.killAceLoader   = GetPrivateProfileInt("Global", "KillAceLoader",   TRUE,  profile);
+	systemMgr.autoCheckUpdate = GetPrivateProfileInt("Global", "autoCheckUpdate", TRUE, profile);
+	
 
 	// kdriver config
 	driver.win11ForceEnable   = GetPrivateProfileInt("kdriver", "win11ForceEnable",   FALSE, profile);
@@ -82,8 +85,6 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		GetPrivateProfileInt("Patch", "DeviceIoControl_1x",    TRUE,  profile);
 	patchMgr.patchSwitches.DeviceIoControl_2     =
 		GetPrivateProfileInt("Patch", "DeviceIoControl_2",     TRUE,  profile);
-	patchMgr.patchSwitches.R0_AceBase            =
-		GetPrivateProfileInt("Patch", "R0_AceBase",            TRUE,  profile);
 
 
 	auto defDelay = [] (auto i) { return patchMgr.patchDelayRange[i].def; };
@@ -115,7 +116,6 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 		patchMgr.patchSwitches.DeviceIoControl_1     = true;
 		patchMgr.patchSwitches.DeviceIoControl_1x    = true;
 		patchMgr.patchSwitches.DeviceIoControl_2     = true;
-		patchMgr.patchSwitches.R0_AceBase            = true;
 
 		patchMgr.patchDelay[0] = defDelay(0);
 		patchMgr.patchDelay[1] = defDelay(1);
@@ -143,6 +143,9 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, systemMgr.killAceLoader ? "1" : "0");
 	WritePrivateProfileString("Global", "KillAceLoader", buf, profile);
+	
+	sprintf(buf, systemMgr.autoCheckUpdate ? "1" : "0");
+	WritePrivateProfileString("Global", "autoCheckUpdate", buf, profile);
 	
 	// kdriver config
 	sprintf(buf, driver.win11ForceEnable ? "1" : "0");
@@ -193,9 +196,6 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, patchMgr.patchSwitches.DeviceIoControl_2 ? "1" : "0");
 	WritePrivateProfileString("Patch", "DeviceIoControl_2", buf, profile);
-
-	sprintf(buf, patchMgr.patchSwitches.R0_AceBase ? "1" : "0");
-	WritePrivateProfileString("Patch", "R0_AceBase", buf, profile);
 
 
 	sprintf(buf, "%u", patchMgr.patchDelay[0].load());

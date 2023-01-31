@@ -45,7 +45,8 @@ static void ShowAbout() {
 		"【提示】 不要使用工具强行关闭上述扫盘插件，这会导致游戏掉线！\n\n"
 		"【提示】 使用中可能出现的大部分问题已经写在附带的文档里，请自行查看！\n\n\n"
 
-		"SGUARD讨论群：775176979（已满），877315766\n"
+		"SGUARD讨论群：775176979（满），877315766（满），637691678（满），\n"
+		"            708641149，708413375\n"
 		"更新链接/源代码：见右键菜单→其他选项。\n\n"
 		"点击“确定”翻到下一页；点击“取消”结束查看说明。",
 		"SGuard限制器 " VERSION "  by: @H3d9",
@@ -293,6 +294,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_AUTOSTARTUP,     "开机自启");
+			AppendMenu(hMenuOthers, MFT_STRING, IDM_AUTOCHECKUPDATE, "自动检查更新");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_KILLACELOADER,   "游戏启动60秒后，结束ace-loader");
 			AppendMenu(hMenuOthers, MFT_STRING, IDM_OPENPROFILEDIR,  "打开系统用户目录");
 			AppendMenu(hMenuOthers, MF_SEPARATOR, 0, NULL);
@@ -302,9 +304,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			if (systemMgr.autoStartup) {
 				CheckMenuItem(hMenuOthers, IDM_AUTOSTARTUP, MF_CHECKED);
 			}
+			if (systemMgr.autoCheckUpdate) {
+				CheckMenuItem(hMenuOthers, IDM_AUTOCHECKUPDATE, MF_CHECKED);
+			}
 			if (systemMgr.killAceLoader) {
 				CheckMenuItem(hMenuOthers, IDM_KILLACELOADER, MF_CHECKED);
 			}
+
 
 
 			if (g_Mode == 0) {
@@ -819,6 +825,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			}
 		}
 		break;
+		case IDM_AUTOCHECKUPDATE:
+		{
+			sprintf(buf, "点击“是”将%s自动检查更新。", systemMgr.autoCheckUpdate ? "禁用" : "启用");
+			if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
+
+				systemMgr.autoCheckUpdate = !systemMgr.autoCheckUpdate;
+				configMgr.writeConfig();
+			}
+		}
+		break;
 		case IDM_KILLACELOADER:
 		{
 			sprintf(buf, "点击“是”将%s自动结束ace-loader功能。", systemMgr.killAceLoader ? "禁用" : "启用");
@@ -833,7 +849,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			ShellExecute(0, "open", systemMgr.getProfileDir().c_str(), 0, 0, SW_SHOW);
 			break;
 		case IDM_MORE_UPDATEPAGE:
-			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8087898-1-1.html", 0, 0, SW_SHOW);
+			ShellExecute(0, "open", "https://space.bilibili.com/1795170/article", 0, 0, SW_SHOW);
 			break;
 		case IDM_MORE_SOURCEPAGE:
 			ShellExecute(0, "open", "https://github.com/H3d9/sguard_limit", 0, 0, SW_SHOW);

@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 
-#define VERSION             "22.12.10 原神夺冠纪念版"
+#define VERSION             "23.1.31 原神夺冠纪念版"
 #define MEMPATCH_VERSION    "V4.9"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
@@ -50,8 +50,9 @@
 
 // other commands
 #define IDM_AUTOSTARTUP       1001
-#define IDM_KILLACELOADER     1002
-#define IDM_OPENPROFILEDIR    1003
+#define IDM_AUTOCHECKUPDATE   1002
+#define IDM_KILLACELOADER     1003
+#define IDM_OPENPROFILEDIR    1004
 
 #define IDM_MORE_UPDATEPAGE   1100
 #define IDM_MORE_SOURCEPAGE   1101

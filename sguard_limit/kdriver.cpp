@@ -164,7 +164,7 @@ bool KernelDriver::init(std::string loadPath) {
 
 	if (status != ERROR_SUCCESS) {
 		if (IDYES == MessageBox(NULL, __FUNCTION__ "(): 创建注册表项失败，你可能需要手动安装证书。\n要打开证书下载页面么？", "注意", MB_YESNO)) {
-			ShellExecute(0, "open", "https://bbs.colg.cn/thread-8305966-1-1.html", 0, 0, SW_SHOW);
+			ShellExecute(0, "open", "https://pan.baidu.com/s/1wAShvyh1Qff7t7VgrY7MXg?pwd=si6r", 0, 0, SW_SHOW);
 		}
 	}
 

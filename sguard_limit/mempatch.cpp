@@ -134,7 +134,6 @@ void PatchManager::patch() {
 		patchStatus.DeviceIoControl_1        = false;
 		patchStatus.DeviceIoControl_1x       = false;
 		patchStatus.DeviceIoControl_2        = false;
-		patchStatus.R0_AceBase               = false;
 
 
 		// start driver.

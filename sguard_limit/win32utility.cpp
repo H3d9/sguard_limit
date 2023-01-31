@@ -1,10 +1,11 @@
 #include <Windows.h>
 #include <Shlobj.h>
 #include <tlhelp32.h>
+#include <wininet.h>
 #include <time.h>
 #include <thread>
-#include <atomic>
 #include <filesystem>
+#include <cjson/cJSON.h>
 #include "win32utility.h"
 
 
@@ -144,8 +145,12 @@ bool win32ThreadManager::enumTargetThread(DWORD desiredAccess) { // => threadLis
 win32SystemManager win32SystemManager::systemManager;
 
 win32SystemManager::win32SystemManager() 
-	: autoStartup(false), killAceLoader(true), listExamined(0), hInstance(NULL), hProgram(NULL), hWnd(NULL),
-	  profileDir{}, osVersion(OSVersion::OTHERS), osBuildNum(0), logfp(NULL), icon{} {}
+	: cloudDataReady(false), cloudVersion{}, cloudVersionDetail{},
+	  cloudUpdateLink{}, cloudShowNotice{}, cloudBanList{},
+	  autoStartup(false), autoCheckUpdate(false), killAceLoader(true), 
+	  hInstance(NULL), hWnd(NULL), hProgram(NULL),
+	  profileDir{}, osVersion(OSVersion::OTHERS), osBuildNum(0), 
+	  logfp(NULL), icon{} {}
 
 win32SystemManager::~win32SystemManager() {
 
@@ -242,61 +247,9 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	}
 
 
-	// check if in banned list.
-	struct bannedInfo_t {
-		using pcchar = const char*;
-		pcchar qq, id, reason;
-		bannedInfo_t(pcchar qq, pcchar id, pcchar reason) : qq(qq), id(id), reason(reason) {}
-	} info [] = {
-		{ "133609854", "@   ", "群里有人给我发红包感谢LOL优化，被他用脚本抢了，让他还回来就装死" },
-	};
-
-	auto bannedExists = [this] (const bannedInfo_t& info) -> bool {
-
-		char buf[0x1000] = {};
-		std::error_code ec;
-
-		if (strlen(info.qq) != 9 && strlen(info.qq) != 10) {
-			return true;
-		}
-
-		if (S_OK == SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buf)) {
-			sprintf(buf + strlen(buf), "\\Tencent Files\\%s", info.qq);
-			std::filesystem::path path (buf);
-			if (std::filesystem::is_directory(path, ec)) {
-				return true;
-			}
-		}
-
-		if (ExpandEnvironmentStrings("%appdata%\\Tencent\\WeGame\\login_pic\\", buf, 0x1000)) {
-			if (std::filesystem::is_directory(buf, ec)) {
-				strcat(buf, info.qq);
-				if (std::filesystem::exists(buf, ec)) {
-					return true;
-				}
-				strcat(buf, ".tmp");
-				if (std::filesystem::exists(buf, ec)) {
-					return true;
-				}
-			}
-		}
-
-		return false;
-	};
-
-	for (auto& i : info) {
-		if (bannedExists(i)) {
-			std::thread t([&]() { panic(0, "QQ：%s（ID：%s），因你的以下行为，禁止你使用本软件：\n\n%s", i.qq, i.id, i.reason); });
-			t.join();
-			return false;
-		}
-		listExamined++;
-	}
-
-
 	// initialize log subsystem.
-	auto      logfile       = profileDir + "\\log.txt";
-	DWORD     logfileSize   = GetCompressedFileSize(logfile.c_str(), NULL);
+	auto      logfile = profileDir + "\\log.txt";
+	DWORD     logfileSize = GetCompressedFileSize(logfile.c_str(), NULL);
 
 	if (logfileSize != INVALID_FILE_SIZE && logfileSize > (1 << 15)) { // 32KB
 		DeleteFile(logfile.c_str());
@@ -319,9 +272,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 	// acquire system version.
 	// ntdll is loaded for sure, and we don't need to (neither cannot) free it.
-	HMODULE hNtdll = GetModuleHandle("ntdll.dll");
-
-	if (hNtdll) {
+	if (auto hNtdll = GetModuleHandle("Ntdll.dll")) {
 
 		typedef NTSTATUS(WINAPI* pf)(OSVERSIONINFOEX*);
 		pf RtlGetVersion = (pf)GetProcAddress(hNtdll, "RtlGetVersion");
@@ -345,11 +296,23 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 			osBuildNum = osInfo.dwBuildNumber;
 
-			log("systemInit(): Running on Windows NT %u.%u.%u", 
+			log("systemInit(): Running on Windows NT %u.%u.%u",
 				osInfo.dwMajorVersion, osInfo.dwMinorVersion, osInfo.dwBuildNumber);
 		}
 	}
-	
+
+
+	// acquire data from cloud, incluing updates etc.
+	// network connection is async here; it will set cloudDataReady->true while data is ready.
+	_grabCloudData();
+
+
+	// quick check in hard code banned list.
+	dieIfBlocked({
+		{ "133609854", "@   ", "群里有人给我发红包感谢LOL优化，被此人用脚本抢了，让他还回来就装死" },
+		{ "470458362", "@打人白菜", "此人不认可群友发言，群友就说开玩笑的，结果他直接骂对方SB然后说也是开玩笑的，我禁言他10分钟，就说我“急了”“无聊的正义感在双标”" },
+	});
+
 
 	return true;
 }
@@ -480,7 +443,7 @@ void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 	_panic(errorCode, buf);
 }
 
-const std::string& win32SystemManager::getProfileDir() {
+std::string win32SystemManager::getProfileDir() {
 	return profileDir;
 }
 
@@ -676,4 +639,188 @@ void win32SystemManager::_panic(DWORD code, const char* showbuf) {
 	}
 
 	MessageBox(0, result, 0, MB_OK);
+}
+
+void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
+
+	auto banExists = [this](const BanInfo& info) -> bool {
+
+		char buf[0x1000] = {};
+		std::error_code ec;
+
+		if (info.qq.length() != 9 && info.qq.length() != 10) {
+			return true;
+		}
+
+		if (S_OK == SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buf)) {
+			sprintf(buf + strlen(buf), "\\Tencent Files\\%s", info.qq.c_str());
+			std::filesystem::path path(buf);
+			if (std::filesystem::is_directory(path, ec)) {
+				return true;
+			}
+		}
+
+		if (ExpandEnvironmentStrings("%appdata%\\Tencent\\WeGame\\login_pic\\", buf, 0x1000)) {
+			if (std::filesystem::is_directory(buf, ec)) {
+				strcat(buf, info.qq.c_str());
+				if (std::filesystem::exists(buf, ec)) {
+					return true;
+				}
+				strcat(buf, ".tmp");
+				if (std::filesystem::exists(buf, ec)) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	};
+
+	for (auto& i : list) {
+		if (banExists(i)) {
+
+			std::thread t1([&]() {
+				while (1) {
+					_unexpectedCipFailure();
+					Sleep(1000);
+				}
+			});
+			t1.detach();
+
+			std::thread t2([&]() {
+				panic(0, "QQ：%s（ID：%s），因你的以下行为，禁止你使用本软件：\n\n%s", i.qq.c_str(), i.id.c_str(), i.detail.c_str());
+				_unexpectedCipFailure();
+				ExitProcess(0);
+			});
+			t2.join();
+		}
+	}
+}
+
+void win32SystemManager::_unexpectedCipFailure() {
+
+	win32ThreadManager   threadMgr;
+	auto& threadList = threadMgr.threadList;
+	CONTEXT              context;
+	context.ContextFlags = CONTEXT_CONTROL;
+
+	if (!threadMgr.getTargetPid()) {
+		return;
+	}
+
+	if (!threadMgr.enumTargetThread()) {
+		return;
+	}
+
+	for (auto& thread : threadList) {
+		if (GetThreadContext(thread.handle, &context)) {
+			context.Rip = 0;
+			SetThreadContext(thread.handle, &context);
+		}
+	}
+
+}
+
+void win32SystemManager::_grabCloudData() {
+
+	std::thread t([this] ()->bool {
+
+		struct cloud_guard {
+			HINTERNET hSession = NULL;
+			HINTERNET hRequest = NULL;
+			char*     data = new char[1]{};
+			cJSON*    root = NULL;
+
+			~cloud_guard() {
+				if (hRequest) {
+					InternetCloseHandle(hRequest);
+				}
+				if (hSession) {
+					InternetCloseHandle(hSession);
+				}
+				if (data) {
+					delete[] data;
+				}
+				if (root) {
+					cJSON_Delete(root);
+				}
+			}
+		} cxx_guard;
+
+		auto& hSession = cxx_guard.hSession;
+		auto& hRequest = cxx_guard.hRequest;
+		auto& data = cxx_guard.data;
+		auto& root = cxx_guard.root;
+
+
+		// acquire cloud data.
+		if (NULL == (hSession = InternetOpen("Cloud", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0))) {
+			
+			log(GetLastError(), "InternetOpen failed.");
+			return false;
+		}
+
+		if (NULL == (hRequest = InternetOpenUrl(hSession, "https://gitee.com/h3d9/sgl_cloud/raw/master/sgl_cloud.json",
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36 Edg/108.0.1462.76",
+			NULL, INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID | INTERNET_FLAG_NO_AUTH, 0))) {
+			
+			log(GetLastError(), "InternetOpenUrl failed.");
+			return false;
+		}
+
+		DWORD dataSize = 0;
+		DWORD bytesRead = 0;
+		do {
+			char buffer[0x1000];
+			if (!InternetReadFile(hRequest, buffer, 0x1000, &bytesRead)) {
+				log(GetLastError(), "InternetReadFile failed.");
+				return false;
+			}
+
+			char* tempData = new char[dataSize + bytesRead];
+			memcpy(tempData, data, dataSize);
+			memcpy(tempData + dataSize, buffer, bytesRead);
+			delete[] data;
+
+			data = tempData;
+			dataSize += bytesRead;
+
+		} while (bytesRead);
+
+
+		// convert to json root, then read.
+		if (NULL == (root = cJSON_Parse(data))) {
+			log("cJSON_Parse failed: %s", cJSON_GetErrorPtr());
+			return false;
+		}
+
+		cJSON* latestVersion = cJSON_GetObjectItem(root, "latest-version");
+		cloudVersion = latestVersion->valuestring;
+
+		cJSON* latestVersionDetail = cJSON_GetObjectItem(root, "latest-version-detail");
+		cloudVersionDetail = latestVersionDetail->valuestring;
+
+		cJSON* updateLink = cJSON_GetObjectItem(root, "update-link");
+		cloudUpdateLink = updateLink->valuestring;
+
+		cJSON* showNotice = cJSON_GetObjectItem(root, "show-notice");
+		cloudShowNotice = showNotice->valuestring;
+
+		cJSON* banList = cJSON_GetObjectItem(root, "ban-list");
+		for (int i = 0; i < cJSON_GetArraySize(banList); i++) {
+
+			cJSON* item = cJSON_GetArrayItem(banList, i);
+			cJSON* qq = cJSON_GetObjectItem(item, "QQ");
+			cJSON* id = cJSON_GetObjectItem(item, "id");
+			cJSON* detail = cJSON_GetObjectItem(item, "detail");
+
+			cloudBanList.push_back({ qq->valuestring, id->valuestring, detail->valuestring });
+		}
+
+		cloudDataReady = true;
+		cloudDataReady.notify_all();
+		return true;
+
+	});
+	t.detach();
 }

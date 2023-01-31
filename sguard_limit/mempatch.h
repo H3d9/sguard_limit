@@ -32,7 +32,6 @@ public:
 		std::atomic<bool>   DeviceIoControl_1        = false; // no delay
 		std::atomic<bool>   DeviceIoControl_1x       = false;
 		std::atomic<bool>   DeviceIoControl_2        = false; // no delay
-		std::atomic<bool>   R0_AceBase               = false;
 	} patchSwitches_t, patchStatus_t;
 
 	struct patchDelayRange_t {

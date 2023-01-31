@@ -28,10 +28,6 @@ static void HijackThreadWorker() {
 	
 	systemMgr.log("hijack thread: created.");
 
-	if (systemMgr.listExamined != 1) {
-		return;
-	}
-
 	win32ThreadManager threadMgr;
 
 	while (1) {
@@ -87,6 +83,8 @@ INT WINAPI WinMain(
 
 	systemMgr.setupProcessDpi();
 
+#ifndef _DEBUG
+
 	// [prerequisite for raise privilege] acquire uac manually:
 	// if not do this (but acquire in manifest), win10/11 with uac will refuse auto start-up.
 	// return true if already in admin; false if not (will get admin with a restart).
@@ -97,6 +95,8 @@ INT WINAPI WinMain(
 	if (!status) {
 		return -1;
 	}
+
+#endif
 
 	status =
 	systemMgr.enableDebugPrivilege();
@@ -132,24 +132,61 @@ INT WINAPI WinMain(
 	configMgr.loadConfig();
 
 	if (!status) {
-		std::thread t([] () {
-			MessageBox(0,
-				"【更新说明】\n\n"
-				" 内存补丁 " MEMPATCH_VERSION "：更新限制System进程。\n\n"
-				"1. 重构内核驱动模块。\n\n"
-				"2. 此版不防弹窗，如你出异常弹窗，请去群文件下载出弹窗专用版。\n\n\n"
+		MessageBox(0,
+			"【更新说明】\n\n"
+			" 内存补丁 " MEMPATCH_VERSION "：更新限制System进程。\n\n"
+			"1. 新增自动检查更新功能。\n\n"
+			"2. 此版不防ace弹窗，如你出异常弹窗，请去更新链接下载出弹窗专用版。\n\n\n"
 
-				"【重要提示】\n\n"
-				"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
-				"2. 若你第一次使用，请仔细阅读附带的常见问题（必看）。\n"
-				"   如果看了以后仍未解决你的问题，可以加群反馈：775176979",
-				VERSION "  by: @H3d9", MB_OK);
-		});
-		t.detach();
+			"【重要提示】\n\n"
+			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
+			"2. 使用遇到问题时，请先仔细阅读附带的“常见问题（必看）”，\n"
+			"   如果看了仍未解决你的问题，可以加群反馈：775176979",
+			VERSION "  by: @H3d9", MB_OK);
 	}
 
 
-	// initialize system module global funcions (depending on config):
+	// show notice msgbox via cloud:
+	// if update is avaliable, user will be notified.
+
+	auto NotifyThreadCaller = [] () {
+
+		std::thread t([] () {
+
+			// wait till cloud data successfully grabbed.
+			systemMgr.cloudDataReady.wait(false);
+			systemMgr.dieIfBlocked(systemMgr.cloudBanList);
+
+			// check for latest version. (user shall update manually)
+			if (systemMgr.autoCheckUpdate && systemMgr.cloudVersion != VERSION) {
+
+				char buf[0x1000];
+				sprintf(buf, "【发现新版本】\n\n"
+					"    当前版本：" VERSION "\n"
+					"    最新版本：%s\n\n"
+					"【新版说明】\n\n"
+					"    %s\n\n"
+					"点击“是”前往更新页面，点击“否”关闭此窗口。\n"
+					"【提示】你可以在右下角托盘菜单“其他选项”中设置是否检查更新。",
+					systemMgr.cloudVersion.c_str(), systemMgr.cloudVersionDetail.c_str());
+
+				if (IDYES == MessageBox(0, buf, "检测到新版本", MB_YESNO)) {
+					ShellExecute(0, "open", systemMgr.cloudUpdateLink.c_str(), 0, 0, SW_SHOW);
+				}
+			}
+
+			// show notice if exists.
+			if (!systemMgr.cloudShowNotice.empty()) {
+				MessageBox(0, systemMgr.cloudShowNotice.c_str(), "公告", MB_OK);
+			}
+		});
+		t.detach();
+	};
+
+	NotifyThreadCaller();
+
+
+	// initialize system module global functions (depending on config):
 	// modify registry key to make sure auto start or not.
 	// return value here is not critical.
 

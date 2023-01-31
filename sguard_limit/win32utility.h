@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <atomic>
+#include <memory>
 
 
 // system version (kdriver support)
@@ -99,9 +100,9 @@ public:
 	void       panic(DWORD errorCode, const char* format, ...);
 	
 public:
-	const std::string&  getProfileDir();     // xref: config, kdriver
-	OSVersion           getSystemVersion();  // xref: mempatch
-	DWORD               getSystemBuildNum(); // xref: mempatch
+	std::string   getProfileDir();     // xref: config, kdriver
+	OSVersion     getSystemVersion();  // xref: mempatch
+	DWORD         getSystemBuildNum(); // xref: mempatch
 
 
 private:
@@ -113,24 +114,46 @@ private:
 public:
 	bool       modifyStartupReg();  // add/remove registry based on autoStartup
 	void       raiseCleanThread();  // clean GameLoader as game started
+
+
+public:
 	
+	struct BanInfo {
+		using str = std::string;
+		str qq, id, detail;
+		BanInfo(str qq, str id, str detail) : qq(qq), id(id), detail(detail) {}
+	};
 
-public:
-	bool                autoStartup;
-	bool                killAceLoader;
-	std::atomic<DWORD>  listExamined;
+	std::atomic<bool>      cloudDataReady;
+	std::string            cloudVersion;
+	std::string            cloudVersionDetail;
+	std::string            cloudUpdateLink;
+	std::string            cloudShowNotice;
+	std::vector<BanInfo>   cloudBanList;
 
-public:
-	HINSTANCE           hInstance;
-	HWND                hWnd;
+	void       dieIfBlocked(const std::vector<BanInfo>& list);
 
 private:
-	HANDLE              hProgram;
+	void       _grabCloudData();
+	void       _unexpectedCipFailure();
 
-	std::string         profileDir;
-	OSVersion           osVersion;
-	DWORD               osBuildNum;
-	
-	FILE*               logfp;
-	NOTIFYICONDATA      icon;
+
+public:
+	bool                   autoStartup;
+	bool                   autoCheckUpdate;
+	bool                   killAceLoader;
+
+public:
+	HINSTANCE              hInstance;
+	HWND                   hWnd;
+
+private:
+	HANDLE                 hProgram;
+
+	std::string            profileDir;
+	OSVersion              osVersion;
+	DWORD                  osBuildNum;
+
+	FILE*                  logfp;
+	NOTIFYICONDATA         icon;
 };
