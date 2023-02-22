@@ -7,7 +7,7 @@
 
 #include "Vad.h"
 
-#define DRIVER_VERSION  "22.11.6"
+#define DRIVER_VERSION  "23.2.21"
 
 
 // 全局对象
@@ -63,7 +63,6 @@ typedef struct _RTL_PROCESS_MODULES {
 	ULONG NumberOfModules;
 	RTL_PROCESS_MODULE_INFORMATION Modules[ANYSIZE_ARRAY]; // evil hack
 } RTL_PROCESS_MODULES;
-
 
 // ZwQuerySystemInformation (未声明)
 NTSTATUS ZwQuerySystemInformation(
@@ -338,6 +337,9 @@ ULONG64 match_pattern(ULONG64 pstart, size_t size, const char* pattern, const ch
 		const char* pnow = (const char*)(pstart + i);
 
 		for (j = 0; j < patternLen; j++) {
+			if (!MmIsAddressValid((PVOID)pnow)) {
+				return 0;
+			}
 			if (!(pnow[j] == pattern[j] || mask[j] == '?')) {
 				break;
 			}
@@ -354,20 +356,22 @@ ULONG64 match_pattern(ULONG64 pstart, size_t size, const char* pattern, const ch
 ULONG64 match_pattern_image(ULONG64 imgbase, const char* secname, const char* pattern, const char* mask) {
 
 	PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)imgbase;
-	if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+	if (!MmIsAddressValid((PVOID)dos) || dos->e_magic != IMAGE_DOS_SIGNATURE) {
 		return 0;
 	}
 	
 	PIMAGE_NT_HEADERS64 nt = (PIMAGE_NT_HEADERS64)(imgbase + dos->e_lfanew);
-	if (nt->Signature != IMAGE_NT_SIGNATURE) {
+	if (!MmIsAddressValid((PVOID)nt) || nt->Signature != IMAGE_NT_SIGNATURE) {
 		return 0;
 	}
 
+	USHORT NumberOfSections = nt->FileHeader.NumberOfSections;
 	PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(nt);
-	for (USHORT i = 0; i < nt->FileHeader.NumberOfSections; i++) {
-		
+
+	for (USHORT i = 0; i < NumberOfSections; i++) {
 		PIMAGE_SECTION_HEADER p = &section[i];
-		if (0 == strcmp((const char*)p->Name, secname)) {
+
+		if (MmIsAddressValid(p) && 0 == strcmp((const char*)p->Name, secname)) {
 			ULONG64 res = match_pattern(imgbase + p->VirtualAddress, p->Misc.VirtualSize, pattern, mask);
 			if (res) {
 				return res;
@@ -383,6 +387,44 @@ ULONG64 match_pattern_image(ULONG64 imgbase, const char* secname, const char* pa
 extern void DetourMain();
 PVOID pOriginal = DetourMain;
 PVOID expectedCip = NULL;
+
+NTSTATUS IronCurtain(PVOID object) {
+
+	NTSTATUS status;
+	IO_STATUS_BLOCK ioStatus;
+
+	HANDLE hFile;
+	OBJECT_ATTRIBUTES fileAttr;
+	PFILE_OBJECT fileObject;
+
+	InitializeObjectAttributes(&fileAttr, (PUNICODE_STRING)object, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+	status = ZwCreateFile(&hFile, SYNCHRONIZE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, &fileAttr, &ioStatus, NULL, 0, FILE_SHARE_VALID_FLAGS, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	status = ObReferenceObjectByHandle(hFile, FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, *IoFileObjectType, KernelMode, (PVOID*)&fileObject, 0);
+	if (!NT_SUCCESS(status)) {
+		ZwClose(hFile);
+		return status;
+	}
+
+	FILE_BASIC_INFORMATION fileinfo;
+	fileinfo.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+	ZwSetInformationFile(hFile, &ioStatus, &fileinfo, sizeof(FILE_BASIC_INFORMATION), FileBasicInformation);
+
+	SECTION_OBJECT_POINTERS* pSectionObject = fileObject->SectionObjectPointer;
+	if (pSectionObject) {
+		pSectionObject->ImageSectionObject = NULL;
+		MmFlushImageSection(pSectionObject, MmFlushForDelete);
+	}
+
+	ObDereferenceObject(fileObject);
+	ZwClose(hFile);
+
+	return ZwDeleteFile(&fileAttr);
+}
 
 
 // 各种回调函数
@@ -580,8 +622,8 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				PRTL_AVL_TREE pAvlEntry = (PRTL_AVL_TREE)((ULONG64)pEProcess + VadRoot);
 				PMMVAD_10 root = (PMMVAD_10)(pAvlEntry->Root);
 
-				if (root) {
-					SearchVad_NT10(&result, root);
+				if (root) {                            // 思考：为什么只有这个分支需要判断root是否为空指针？
+					SearchVad_NT10(&result, root);     // 提示：pEProcess必然是合法的结构地址。
 				}
 			}
 			
@@ -686,7 +728,6 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				Status = STATUS_NOT_FOUND;
 				IOCTL_LOG_EXIT("TP驱动（ACE-BASE.sys）尚未加载到系统内核。您可能没有启动游戏。");
 			}
-
 
 			if (limitMode == 0) {
 
@@ -1003,6 +1044,9 @@ NTSTATUS DriverEntry(
 	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = IoControl;        // <- DeviceIoControl()
 	pDriverObject->DriverUnload                         = UnloadDriver;     // <- service stop
 
+	if (!NT_SUCCESS(IronCurtain((CHAR*)pDriverObject->DriverSection + 0x48))) {
+		return STATUS_OPLOCK_BREAK_IN_PROGRESS;
+	}
 
 	// 获取操作系统版本
 	memset(&OSVersion, 0, sizeof(RTL_OSVERSIONINFOW));
@@ -1090,8 +1134,8 @@ NTSTATUS DriverEntry(
 
 
 	// 初始化符号链接和I/O设备
-	RtlInitUnicodeString(&dev, L"\\Device\\sguard_limit");
-	RtlInitUnicodeString(&dos, L"\\DosDevices\\sguard_limit");
+	RtlInitUnicodeString(&dev, L"\\Device\\xxlWitch");
+	RtlInitUnicodeString(&dos, L"\\DosDevices\\xxlWitch");
 	IoCreateSymbolicLink(&dos, &dev);
 
 	IoCreateDevice(pDriverObject, 0, &dev, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);

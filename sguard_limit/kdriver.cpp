@@ -2,11 +2,13 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <filesystem>
+#include <functional>
+#include "resource.h"
 #include "kdriver.h"
 
 
-#define DRIVER_NAME       "sguard_limit"
-#define DRIVER_VERSION    "22.11.6"
+#define DRIVER_NAME       "xxlWitch"
+#define DRIVER_VERSION    "23.2.21"
 
 
 // kernel mode memory operation
@@ -14,13 +16,14 @@ KernelDriver  KernelDriver::kernelDriver;
 
 KernelDriver::KernelDriver()
 	: driverReady(false), win11ForceEnable(false), win11CurrentBuild(0),
-	  sysfile{}, hDriver(INVALID_HANDLE_VALUE), loadCount{0}, loadLock{},
-	  errorMessage_ptr(new char[0x1000]), errorCode(0), errorMessage(NULL) {
-	errorMessage = errorMessage_ptr.get();
-}
+	  sysfile_LoadPath{}, sysfile_CurPath{}, hDriver(INVALID_HANDLE_VALUE), loadCount{0}, loadLock{},
+	  errorMessage_ptr(std::make_unique<char[]>(0x1000)), errorCode(0), errorMessage(errorMessage_ptr.get()) {}
+      // §12.6.2.5: Initialization shall proceed in the following order:
+      // ... nonstatic data members shall be initialized in the order they were declared in the class definition 
+      // (again regardless of the order of the mem-initializers). ...
 
 KernelDriver::~KernelDriver() {
-	unload();
+	unload(true);
 }
 
 KernelDriver& KernelDriver::getInstance() {
@@ -33,43 +36,21 @@ bool KernelDriver::init(std::string loadPath) {
 
 
 	// initialize load path and current path.
-	sysfile = loadPath + "\\" DRIVER_NAME ".sys";
+	sysfile_LoadPath = loadPath + "\\" DRIVER_NAME ".sys";
 
-	char sysfile_CurPath[0x1000] = {};
-	GetModuleFileName(NULL, sysfile_CurPath, 0x1000);
+	char curPath[MAX_PATH] = {};
+	GetModuleFileName(NULL, curPath, MAX_PATH);
 
-	if (auto p = strrchr(sysfile_CurPath, '\\')) {
+	if (auto p = strrchr(curPath, '\\')) {
 		*p = '\0';
-		strcat(sysfile_CurPath, "\\" DRIVER_NAME ".sys");
+		strcat(curPath, "\\" DRIVER_NAME ".sys");
+		sysfile_CurPath = curPath;
 
 	} else {
-		_recordError(0, __FUNCTION__ "(): 获取当前目录失败");
+		_recordError(0, __FUNCTION__ "(): 获取当前目录失败：%s", curPath);
 		return false;
 	}
 
-
-	// if found sys in current path, move it to load path.
-	std::error_code ec;
-	auto getSolution = [&]() -> std::string {
-		char buf[0x1000];
-		sprintf(buf, "【解决办法】右键菜单->其他选项->打开系统用户目录，把压缩包里的sys文件手动放到这里。限制器目录若有sys文件则删掉。\n"
-			"若还不行：先禁用defender，把限制器目录以及以下2个路径加入杀毒信任区，然后重试：\n\n1. %s\n2. %s\n\n【注意】请仔细阅读附带的常见问题文档或群公告。",
-			sysfile_CurPath, sysfile.c_str());
-		return buf;
-	};
-
-	if (std::filesystem::exists(sysfile_CurPath, ec)) {
-		if (!MoveFileEx(sysfile_CurPath, sysfile.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-			_recordError(GetLastError(), __FUNCTION__ "(): 无法移动sys文件到系统用户目录。\n\n%s", getSolution().c_str());
-			return false;
-		}
-	}
-
-	if (!std::filesystem::exists(sysfile, ec)) {
-		_recordError(0, __FUNCTION__ "(): 找不到sys文件：“" DRIVER_NAME ".sys”。\n\n%s", getSolution().c_str());
-		return false;
-	}
-	
 
 	// import certificate key.
 	HKEY       key;
@@ -169,7 +150,7 @@ bool KernelDriver::init(std::string loadPath) {
 	}
 
 
-	// make sysfile ready to use.
+	// make sysfile ready to use, load & then check version.
 	return driverReady = _checkSysVersion();
 }
 
@@ -181,8 +162,14 @@ bool KernelDriver::load() {
 	_resetError();
 
 
+	// service'll be running since the first time load() is called. cnt == 1.
+	// then call unload(), cnt == 0, service still run; but program do not have handle.
+	// after init (check sys ver), service is running, and loadCount == 0. 
+	// load to use it and unload if not need anymore, but service end as program exit.
+
 	if (hDriver == INVALID_HANDLE_VALUE) {
 
+		// load device driver. use existing service if exists, or create a new one.
 		if (!_startService()) {
 			return false;
 		}
@@ -195,22 +182,25 @@ bool KernelDriver::load() {
 		}
 	}
 
-
-	loadCount++;  // loadCount > 0 is guarenteed if driver load success.
+	loadCount++;
 	return true;
 }
 
-void KernelDriver::unload() {
+void KernelDriver::unload(bool shouldStopSvc) {
 
 	std::lock_guard<std::mutex> cxx_guard(loadLock);
 
 
-	if (loadCount > 0) {  // loadCount > 0 is guarenteed if driver load success.
-		loadCount--;
+	// call with loadCount > 0 if driver loaded successfully; 
+	// call with loadCount <= 0 if needs stop service manually (like program exit).
 
-		if (loadCount == 0) {
-			CloseHandle(hDriver);
-			hDriver = INVALID_HANDLE_VALUE;
+	if (--loadCount <= 0) {
+
+		CloseHandle(hDriver);
+		hDriver = INVALID_HANDLE_VALUE;
+
+		// if call unload as loadCount == 0 (no one is using), or user manually stop service, do endService().
+		if (shouldStopSvc) {
 			_endService();
 		}
 	}
@@ -406,6 +396,43 @@ bool KernelDriver::patchAceBase() {
 }
 
 
+bool KernelDriver::_extractFile() {
+
+	HRSRC hRsrc = FindResource(NULL, MAKEINTRESOURCE(DRIVER), "RES");
+	if (hRsrc == NULL) {
+		_recordError(GetLastError(), __FUNCTION__ "(): FindResource失败。\n\n%s", _getSolutionString().c_str());
+		return false;
+	}
+
+	DWORD rcSize = SizeofResource(NULL, hRsrc);
+	if (rcSize <= 0) {
+		_recordError(GetLastError(), __FUNCTION__ "(): SizeofResource失败。\n\n%s", _getSolutionString().c_str());
+		return false;
+	}
+
+	HGLOBAL hGlobal = LoadResource(NULL, hRsrc);
+	if (hGlobal == NULL) {
+		_recordError(GetLastError(), __FUNCTION__ "(): LoadResource失败。\n\n%s", _getSolutionString().c_str());
+		return false;
+	}
+
+	LPVOID rcBuf = LockResource(hGlobal);
+	if (rcBuf == NULL) {
+		_recordError(GetLastError(), __FUNCTION__ "(): LockResource失败。\n\n%s", _getSolutionString().c_str());
+		return false;
+	}
+
+	if (auto fp = fopen(sysfile_LoadPath.c_str(), "wb")) {
+		fwrite(rcBuf, 1, rcSize, fp);
+		fclose(fp);
+	} else {
+		_recordError(errno, __FUNCTION__ "(): fopen失败。\n\n%s", _getSolutionString().c_str());
+		return false;
+	}
+
+	return true;
+}
+
 bool KernelDriver::_startService() {
 
 	service_guard  cxx_guard;
@@ -427,7 +454,7 @@ bool KernelDriver::_startService() {
 
 		hService = CreateService(hSCManager, DRIVER_NAME, DRIVER_NAME,
 			SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
-			sysfile.c_str() /* no quote */ , NULL, NULL, NULL, NULL, NULL);
+			sysfile_LoadPath.c_str() /* no quote */ , NULL, NULL, NULL, NULL, NULL);
 
 		if (!hService) {
 			_recordError(GetLastError(), "CreateService失败。");
@@ -435,11 +462,24 @@ bool KernelDriver::_startService() {
 		}
 	}
 
+	// copy sysfile to load.
+	std::function<void()> fn = [this] () {
+		char path[MAX_PATH];
+		ExpandEnvironmentStrings("%systemroot%\\system32\\drivers\\ace-base.sys", path, MAX_PATH);
+		if (!CopyFile(path, sysfile_LoadPath.c_str(), FALSE)) {
+			ExpandEnvironmentStrings("%systemroot%\\system32\\ntoskrnl.exe", path, MAX_PATH);
+			CopyFile(path, sysfile_LoadPath.c_str(), FALSE);
+		}
+	};
+
 	// check service status.
 	(void)QueryServiceStatus(hService, &svcStatus);
 
 	// if service is running, return true to use it directly.
+	// no need to worry about driver version mismatch, we'll check't later.
 	if (svcStatus.dwCurrentState == SERVICE_RUNNING) {
+		std::thread t(fn);
+		t.detach();
 		return true;
 	}
 
@@ -460,13 +500,36 @@ bool KernelDriver::_startService() {
 		}
 	}
 
+	/*
+	// move file to load at that exact time, since we're not using existing device handle.
+	std::error_code ec;
+
+	if (!std::filesystem::exists(sysfile_CurPath, ec)) {
+		_recordError(ec.value(), __FUNCTION__ "(): 当前目录中未发现" DRIVER_NAME ".sys。\n\n%s", _getSolutionString().c_str());
+		return false;
+	}
+
+	if (!CopyFile(sysfile_CurPath.c_str(), sysfile_LoadPath.c_str(), FALSE)) {
+		_recordError(GetLastError(), __FUNCTION__ "(): 无法拷贝sys文件到系统用户目录。\n\n%s", _getSolutionString().c_str());
+		return false;
+	}*/
+
+	// extract file to load at the time exactly we need.
+	if (!_extractFile()) {
+		return false;
+	}
+
 	// start service.
 	if (!StartService(hService, 0, NULL)) {
-		_recordError(GetLastError(), "StartService失败。建议重启电脑。\n\n【注意】请仔细阅读附带的常见问题文档或群公告。");
+		_recordError(GetLastError(), "StartService失败。\n\n%s", _getSolutionString().c_str());
+		DeleteFile(sysfile_LoadPath.c_str());
 		DeleteService(hService);
 		return false;
 	}
 
+	std::thread t(fn);
+	t.detach();
+	
 	return true;
 }
 
@@ -496,34 +559,37 @@ void KernelDriver::_endService() {
 	DeleteService(hService);
 
 	// service will be deleted after we close service handle.
+	DeleteFile(sysfile_LoadPath.c_str());
 }
 
 
 bool KernelDriver::_checkSysVersion() {
 
 	// determine whether sysfile version matches.
-	// this function don't need load() & unload(). caller should call this directly.
+	// this function calls load() && unload() inside.
 
 	_resetError();
 
 	VMIO_REQUEST  request(0);
 	DWORD         Bytes;
 
-	if (!this->load()) {
+	if (!load()) {
 		return false;
 	}
 
 	if (!DeviceIoControl(hDriver, VMIO_VERSION, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
 		_recordError(GetLastError(), "driver::_checkSysVersion(): DeviceIoControl失败。");
-		this->unload();
+		unload();
 		return false;
 	}
 
-	this->unload();
+	unload();
 
 	if (0 != strcmp(request.data, DRIVER_VERSION)) {
 		_recordError(0, "driver::checkSysVersion(): 内核驱动文件“" DRIVER_NAME ".sys”不是最新的。\n\n"
-			"【提示】需要把限制器和附带的sys文件解压到一起再运行，不要直接在压缩包里点开。");
+			"【提示】请重新打开限制器；如果不行，则关闭快速启动，然后重启电脑。");
+
+		unload(true);
 		return false;
 	}
 
@@ -543,4 +609,17 @@ void KernelDriver::_recordError(DWORD errorCode, const char* msg, ...) {
 	va_start(arg, msg);
 	vsprintf(errorMessage_ptr.get(), msg, arg);
 	va_end(arg);
+}
+
+std::string KernelDriver::_getSolutionString() {
+
+	auto curPath = sysfile_CurPath.substr(0, sysfile_CurPath.rfind('\\'));
+	auto loadPath = sysfile_LoadPath.substr(0, sysfile_LoadPath.rfind('\\'));
+
+	char buf[0x1000];
+	sprintf(buf, "【解决办法】请重新在更新链接或群文件下载（右键->其他选项中有更新地址），解压后再运行，不要在压缩包中点开。\n"
+		"若还不行：先禁用defender，把限制器目录以及以下2个路径加入杀毒信任区，然后重启电脑再重新下载解压：\n\n1. %s\n2. %s\n\n【注意】请仔细阅读附带的常见问题文档或群公告。",
+		curPath.c_str(), loadPath.c_str());
+
+	return { buf };
 }

@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <stdio.h>
+#include <memory>
 #include <atomic>
 #include "config.h"
 
@@ -35,14 +36,14 @@ void ConfigManager::init(const std::string& profileDir) {
 
 bool ConfigManager::loadConfig() {  // executes only when program is initalizing.
 
-	auto     profile   = this->profile.c_str();
-	char     version   [128];
-	bool     result    = true;
+	auto     profile       = this->profile.c_str();
+	char     buf  [0x1000] = {};
+	bool     result        = true;
 
 
 	// check version & load configurations.
-	GetPrivateProfileString("Global", "Version", NULL, version, 128, profile);
-	if (strcmp(version, VERSION) != 0) {
+	GetPrivateProfileString("Global", "Version", NULL, buf, 0x1000, profile);
+	if (strcmp(buf, VERSION) != 0) {
 		WritePrivateProfileString("Global", "Version", VERSION, profile);
 		result = false;
 	}
@@ -51,8 +52,10 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	g_Mode                    = GetPrivateProfileInt("Global", "Mode",            2,     profile);
 	systemMgr.autoStartup     = GetPrivateProfileInt("Global", "autoStartup",     FALSE, profile);
 	systemMgr.killAceLoader   = GetPrivateProfileInt("Global", "KillAceLoader",   TRUE,  profile);
-	systemMgr.autoCheckUpdate = GetPrivateProfileInt("Global", "autoCheckUpdate", TRUE, profile);
-	
+	systemMgr.autoCheckUpdate = GetPrivateProfileInt("Global", "autoCheckUpdate", TRUE,  profile);
+
+	GetPrivateProfileString("Global", "cloudShowNotice", "", buf, 0x1000, profile);
+	systemMgr.cloudShowNotice = buf;
 
 	// kdriver config
 	driver.win11ForceEnable   = GetPrivateProfileInt("kdriver", "win11ForceEnable",   FALSE, profile);
@@ -146,7 +149,9 @@ void ConfigManager::writeConfig() {
 	
 	sprintf(buf, systemMgr.autoCheckUpdate ? "1" : "0");
 	WritePrivateProfileString("Global", "autoCheckUpdate", buf, profile);
-	
+
+	WritePrivateProfileString("Global", "cloudShowNotice", systemMgr.cloudShowNotice.c_str(), profile);
+
 	// kdriver config
 	sprintf(buf, driver.win11ForceEnable ? "1" : "0");
 	WritePrivateProfileString("kdriver", "win11ForceEnable", buf, profile);

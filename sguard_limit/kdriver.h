@@ -29,7 +29,7 @@ public:
 	bool     init(std::string loadPath);
 	
 	bool     load();
-	void     unload();
+	void     unload(bool shouldStopSvc = false);
 	bool     readVM(DWORD pid, PVOID out, PVOID targetAddress);
 	bool     writeVM(DWORD pid, PVOID in, PVOID targetAddress);
 	bool     allocVM(DWORD pid, PVOID* pAllocatedAddress);
@@ -48,8 +48,10 @@ public:
 								  // num read from config; decide if win11 has updated.
 
 private:
+	bool     _extractFile();
 	bool     _startService();
 	void     _endService();
+	bool     _checkSysVersion();
 
 	struct service_guard {
 		SC_HANDLE hSCManager = NULL;
@@ -67,8 +69,6 @@ private:
 
 	
 private:
-	bool     _checkSysVersion();
-
 	struct VMIO_REQUEST {
 		HANDLE   pid;
 
@@ -93,12 +93,16 @@ private:
 
 
 private:
-	std::string         sysfile;
+	std::string         sysfile_LoadPath;
+	std::string         sysfile_CurPath;
 	HANDLE              hDriver;
 
-	std::atomic<DWORD>  loadCount;  // multi-thread call sync
+	std::atomic<int>    loadCount;  // multi-thread call sync
 	std::mutex          loadLock;
 	
+
+private:
+	std::unique_ptr<char[]>  errorMessage_ptr;
 
 public:
 	std::atomic<DWORD>  errorCode;     // module's errors recorded here (if method returns false).
@@ -107,6 +111,5 @@ public:
 private:
 	void            _resetError();  // thread unsafe
 	void            _recordError(DWORD errorCode, const char* msg, ...);
-
-	std::unique_ptr<char[]>  errorMessage_ptr;
+	std::string     _getSolutionString();
 };

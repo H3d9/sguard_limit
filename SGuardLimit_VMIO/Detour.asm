@@ -8,7 +8,7 @@ EXTERN pOriginal : QWORD
 
 DetourMain PROC PUBLIC
 
-mov    rax,QWORD PTR [rsp]
+mov    rax,QWORD PTR [rsp] ; rax可能是非法指针（vmp）
 cmp    DWORD PTR [rax], 088c48148h
 jne    L1
 
@@ -16,7 +16,7 @@ push   rdx
 push   rcx
 
 mov    rax, 0ffffffffff676980h
-push   rax
+push   rax       ; 堆栈未对齐，xmm指令将抛出exception。
 mov    r8, rsp
 xor    edx, edx
 xor    ecx, ecx

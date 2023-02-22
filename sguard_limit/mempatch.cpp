@@ -156,18 +156,28 @@ void PatchManager::patch() {
 			}
 		}
 
+		// unload to wait.
+		driver.unload();
+
 
 		// wait if adv search: before patch ntdll etc.
 		systemMgr.log("patch(): waiting %us before manip ntdll etc.", patchDelayBeforeNtdlletc.load());
 
 		for (DWORD time = 0; patchEnabled && time < patchDelayBeforeNtdlletc; time++) {
 			Sleep(1000);
+
 			if (!patchEnabled || pid != threadMgr.getTargetPid()) {
 				systemMgr.log("patch(): primary wait: pid not match or patch disabled, quit.");
 				return;
 			}
 		}
 
+
+		// restart driver.
+		if (!driver.load()) {
+			systemMgr.panic(driver.errorCode, "patch(): driver.load(): %s", driver.errorMessage);
+			return;
+		}
 
 		// patch ntdll etc. (v2 features)
 		if (patchSwitches.NtQueryVirtualMemory  || patchSwitches.NtReadVirtualMemory ||
@@ -196,7 +206,7 @@ void PatchManager::patch() {
 			}
 		}
 
-		// stop driver.
+		// release ace(...) handle.
 		driver.unload();
 
 

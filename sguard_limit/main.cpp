@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <thread>
 #include <atomic>
+#include <memory>
 #include "resource.h"
 #include "wndproc.h"
 #include "win32utility.h"
@@ -134,9 +135,11 @@ INT WINAPI WinMain(
 	if (!status) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			" 内存补丁 " MEMPATCH_VERSION "：更新限制System进程。\n\n"
-			"1. 新增自动检查更新功能。\n\n"
-			"2. 此版不防ace弹窗，如你出异常弹窗，请去更新链接下载出弹窗专用版。\n\n\n"
+			" 内存补丁 " MEMPATCH_VERSION "：尝试避免弹窗。\n\n"
+			"1. 尝试避免因旧版限制器导致的“3009”错误和ace弹窗。\n"
+			"   如果你还无法解决出弹窗问题，请加群看公告或尝试修复弹窗版。\n\n"
+			"2. 重新设计内核模式插件。\n\n"
+			"3. 修复无法显示公告/赞助/源代码页面，可在右键菜单-其他选项查看。\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -160,8 +163,11 @@ INT WINAPI WinMain(
 			// check for latest version. (user shall update manually)
 			if (systemMgr.autoCheckUpdate && systemMgr.cloudVersion != VERSION) {
 
-				char buf[0x1000];
-				sprintf(buf, "【发现新版本】\n\n"
+				auto    msg_ptr = std::make_unique<char[]>(0x1000);
+				auto    msg     = msg_ptr.get();
+
+				sprintf(msg,
+					"【发现新版本】\n\n"
 					"    当前版本：" VERSION "\n"
 					"    最新版本：%s\n\n"
 					"【新版说明】\n\n"
@@ -170,7 +176,7 @@ INT WINAPI WinMain(
 					"【提示】你可以在右下角托盘菜单“其他选项”中设置是否检查更新。",
 					systemMgr.cloudVersion.c_str(), systemMgr.cloudVersionDetail.c_str());
 
-				if (IDYES == MessageBox(0, buf, "检测到新版本", MB_YESNO)) {
+				if (IDYES == MessageBox(0, msg, "检测到新版本", MB_YESNO)) {
 					ShellExecute(0, "open", systemMgr.cloudUpdateLink.c_str(), 0, 0, SW_SHOW);
 				}
 			}
@@ -178,6 +184,7 @@ INT WINAPI WinMain(
 			// show notice if exists.
 			if (!systemMgr.cloudShowNotice.empty()) {
 				MessageBox(0, systemMgr.cloudShowNotice.c_str(), "公告", MB_OK);
+				configMgr.writeConfig(); // show only once
 			}
 		});
 		t.detach();

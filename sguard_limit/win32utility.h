@@ -106,7 +106,6 @@ public:
 
 
 private:
-	ATOM       _registerMyClass(WNDPROC WndProc, DWORD iconRcNum);
 	void       _log(DWORD code, const char* logbuf);
 	void       _panic(DWORD code, const char* showbuf);
 
@@ -117,7 +116,6 @@ public:
 
 
 public:
-	
 	struct BanInfo {
 		using str = std::string;
 		str qq, id, detail;

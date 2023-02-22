@@ -49,7 +49,7 @@ static void ShowAbout() {
 		"            708641149，708413375\n"
 		"更新链接/源代码：见右键菜单→其他选项。\n\n"
 		"点击“确定”翻到下一页；点击“取消”结束查看说明。",
-		"SGuard限制器 " VERSION "  by: @H3d9",
+		"SGUARD限制器 " VERSION "  by: @H3d9",
 		MB_OKCANCEL)) {
 
 		if (IDOK == MessageBox(0,
@@ -76,7 +76,7 @@ static void ShowAbout() {
 			"【说明】该模式需要临时装载一次驱动，修改内存后会立即卸载驱动。\n"
 			" 若你使用时出现问题，可以去更新链接下载证书。\n\n\n"
 			"点击“确定”翻到下一页；点击“取消”结束查看说明。",
-			"SGuard限制器 " VERSION "  by: @H3d9",
+			"SGUARD限制器 " VERSION "  by: @H3d9",
 			MB_OKCANCEL)) {
 
 			if (IDOK == MessageBox(0,
@@ -87,7 +87,7 @@ static void ShowAbout() {
 				"【注】“时间切分”设置的值越大，则约束等级越高；设置的值越小，则越稳定。\n"
 				"【注】根据统计反馈，目前该模式中最好用的选项为【弱锁定-rr】。\n\n\n"
 				"点击“确定”翻到下一页；点击“取消”结束查看说明。",
-				"SGuard限制器 " VERSION "  by: @H3d9",
+				"SGUARD限制器 " VERSION "  by: @H3d9",
 				MB_OKCANCEL)) {
 
 				MessageBox(0,
@@ -95,7 +95,7 @@ static void ShowAbout() {
 					"时间片轮转（21.2.6）（已弃用）：\n\n"
 					"该模式原理与BES相同，不建议使用（可能出上报异常和重新连接）。\n\n"
 					"【注】时间转轮无法限制扫硬盘，只能限制cpu使用。",
-					"SGuard限制器 " VERSION "  by: @H3d9",
+					"SGUARD限制器 " VERSION "  by: @H3d9",
 					MB_OK);
 			}
 		}
@@ -316,11 +316,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			if (g_Mode == 0) {
 
 				if (!limitMgr.limitEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 用户手动暂停");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGUARD限制器 - 用户手动暂停");
 				} else if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 等待游戏运行");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGUARD限制器 - 等待游戏运行");
 				} else {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 侦测到SGuard");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGUARD限制器 - 侦测到SGUARD");
 				}
 				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "当前模式：时间片轮转  [点击切换]");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
@@ -346,14 +346,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			} else if (g_Mode == 1) {
 
 				if (!traceMgr.lockEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuard限制器 - 用户手动暂停");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGUARD限制器 - 用户手动暂停");
 				} else if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGuard限制器 - 等待游戏运行");
+					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGUARD限制器 - 等待游戏运行");
 				} else {
 					if (traceMgr.lockPid == 0) {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 正在分析");
+						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGUARD限制器 - 正在分析");
 					} else {
-						sprintf(buf, "SGuard限制器 - ");
+						sprintf(buf, "SGUARD限制器 - ");
 						switch (traceMgr.lockMode) {
 						case 0:
 							for (auto i = 0; i < 3; i++) {
@@ -409,10 +409,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			} else { // if (g_Mode == 2) 
 
 				if (!driver.driverReady) {
-					AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGuard限制器 - 模式无效（驱动初始化失败）");
+					AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGUARD限制器 - 模式无效（驱动初始化失败）");
 				} else {
 					if (g_HijackThreadWaiting) {
-						AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGuard限制器 - 等待游戏运行");
+						AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGUARD限制器 - 等待游戏运行");
 					} else {
 						int total =
 							patchMgr.patchSwitches.NtQueryVirtualMemory +
@@ -433,9 +433,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							patchMgr.patchStatus.DeviceIoControl_2;
 
 						if (finished == 0) {
-							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGuard限制器 - 请等待");
+							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGUARD限制器 - 请等待");
 						} else {
-							sprintf(buf, "SGuard限制器 - 已提交  [%d/%d]", finished, total);
+							sprintf(buf, "SGUARD限制器 - 已提交  [%d/%d]", finished, total);
 							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
 						}
 					}

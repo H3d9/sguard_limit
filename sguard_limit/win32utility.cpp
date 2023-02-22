@@ -171,10 +171,10 @@ bool win32SystemManager::runWithUac() {
 
 	if (!IsUserAnAdmin()) {
 
-		char    path        [0x1000];
+		char    path        [MAX_PATH];
 		DWORD   errorCode   = 0;
 
-		GetModuleFileName(NULL, path, 0x1000);
+		GetModuleFileName(NULL, path, MAX_PATH);
 		errorCode = (DWORD)(INT_PTR)
 		ShellExecute(NULL, "runas", path, NULL /* no cmdline here */, NULL, SW_SHOWNORMAL);
 		
@@ -215,7 +215,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 
 	// decide whether it's single instance.
-	hProgram = CreateMutex(NULL, FALSE, "sguard_limit");
+	hProgram = CreateMutex(NULL, FALSE, "xxlWitch");
 	if (!hProgram || GetLastError() == ERROR_ALREADY_EXISTS) {
 		panic(0, "同时只能运行一个SGUARD限制器。");
 		return false;
@@ -223,8 +223,8 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 
 	// initialize path vars.
-	char profilePath[0x1000] = {};
-	if (ExpandEnvironmentStrings("%appdata%\\sguard_limit", profilePath, 0x1000)) {
+	char profilePath[MAX_PATH] = {};
+	if (ExpandEnvironmentStrings("%appdata%\\xxlWitch", profilePath, MAX_PATH)) {
 		profileDir = profilePath;
 	} else {
 		panic("获取系统用户目录失败。");
@@ -237,7 +237,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 	if (!std::filesystem::is_directory(profileDir, ec)) {
 		if (!std::filesystem::create_directory(profileDir, ec)) {
-			if (!std::filesystem::is_directory(profileDir = "C:\\sguard_limit", ec)) {
+			if (!std::filesystem::is_directory(profileDir = "C:\\xxlWitch", ec)) {
 				if (!std::filesystem::create_directory(profileDir, ec)) {
 					panic(ec.value(), "创建用户数据目录失败。");
 					return false;
@@ -342,15 +342,27 @@ bool win32SystemManager::enableDebugPrivilege() {
 }
 
 bool win32SystemManager::createWindow(WNDPROC WndProc, DWORD WndIcon) {
-	
-	if (!_registerMyClass(WndProc, WndIcon)) {
+
+	WNDCLASS wc = { 0 };
+	wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
+	wc.lpfnWndProc = WndProc;
+	wc.cbClsExtra = 0;
+	wc.cbWndExtra = 0;
+	wc.hInstance = hInstance;
+	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(WndIcon));
+	wc.hCursor = 0;
+	wc.hbrBackground = 0;
+	wc.lpszMenuName = 0;
+	wc.lpszClassName = "xxlWitch_WindowClass";
+
+	if (!RegisterClass(&wc)) {
 		panic("创建窗口类失败。");
 		return false;
 	}
 
 	hWnd = CreateWindow(
-		"SGuardLimit_WindowClass",
-		"SGuardLimit_Window",
+		"xxlWitch_WindowClass",
+		"xxlWitch_Window",
 		WS_EX_TOPMOST, CW_USEDEFAULT, CW_USEDEFAULT, 1, 1, 0, 0, hInstance, 0);
 
 	if (!hWnd) {
@@ -383,7 +395,7 @@ void win32SystemManager::createTray(UINT trayActiveMsg) {
 	icon.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
 	icon.uCallbackMessage = trayActiveMsg;
 	icon.hIcon = (HICON)GetClassLongPtr(hWnd, GCLP_HICON);
-	strcpy(icon.szTip, "SGuard限制器");
+	strcpy(icon.szTip, "SGUARD限制器");
 
 	Shell_NotifyIcon(NIM_ADD, &icon);
 }
@@ -464,9 +476,9 @@ bool win32SystemManager::modifyStartupReg() {
 		
 		if (autoStartup) {
 			// should auto start: create key.
-			char path[0x1000];
-			GetModuleFileName(NULL, path, 0x1000);
-			if (RegSetValueEx(hKey, "sguard_limit", 0, REG_SZ, (const BYTE*)path, (DWORD)strlen(path) + 1) != ERROR_SUCCESS) {
+			char path[MAX_PATH];
+			GetModuleFileName(NULL, path, MAX_PATH);
+			if (RegSetValueEx(hKey, "xxlWitch", 0, REG_SZ, (const BYTE*)path, (DWORD)strlen(path) + 1) != ERROR_SUCCESS) {
 				panic("modifyStartupReg(): RegSetValueEx失败。");
 				ret = false;
 			}
@@ -474,7 +486,7 @@ bool win32SystemManager::modifyStartupReg() {
 		} else {
 			// should not auto start: remove key.
 			// if key doesn't exist, will return fail. ignore it.
-			RegDeleteValue(hKey, "sguard_limit");
+			RegDeleteValue(hKey, "xxlWitch");
 		}
 		
 		RegCloseKey(hKey);
@@ -509,6 +521,9 @@ void win32SystemManager::raiseCleanThread() {
 			return;
 		}
 
+		if (cloudDataReady) {
+			dieIfBlocked(cloudBanList);
+		}
 
 		// wait 60 secs after game start to ensure it's stable to clean.
 		// if game not exist, still wait 60 secs and make clean.
@@ -556,63 +571,32 @@ void win32SystemManager::raiseCleanThread() {
 	cleanThread.detach();
 }
 
-ATOM win32SystemManager::_registerMyClass(WNDPROC WndProc, DWORD iconRcNum) {
-
-	WNDCLASS wc = { 0 };
-
-	wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
-	wc.lpfnWndProc = WndProc;
-	wc.cbClsExtra = 0;
-	wc.cbWndExtra = 0;
-	wc.hInstance = hInstance;
-	wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(iconRcNum));
-	wc.hCursor = 0;
-	wc.hbrBackground = 0;
-	wc.lpszMenuName = 0;
-	wc.lpszClassName = "SGuardLimit_WindowClass";
-
-	return RegisterClass(&wc);
-}
-
 void win32SystemManager::_log(DWORD code, const char* logbuf) {
 
 	if (!logfp) {
 		return;
 	}
 
-	char result[0x1000];
-
-	// put timestamp to result.
+	// format result with timestamp and put line to file.
 	time_t t = time(0);
 	tm* local = localtime(&t);
-	sprintf(result, "[%d-%02d-%02d %02d:%02d:%02d] ",
-		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
+	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] %s\n",
+		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec, logbuf);
 
-	// put log format to result.
-	strcat(result, logbuf);
-	strcat(result, "\n");
-
-	// write result to file.
-	fprintf(logfp, "%s", result);
-	
 	// if code != 0, write [note] in another line. 
 	if (code != 0) {
 
-		// put timestamp to result.
-		sprintf(result, "[%d-%02d-%02d %02d:%02d:%02d]   note: error ",
-			1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
-
-		// put description to result.
+		// get error description.
 		char* description = NULL;
 
 		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK, NULL,
 			code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&description, 0, NULL);
 
-		sprintf(result + strlen(result), "(0x%x) %s\n", code, description);
-		LocalFree(description);
+		// format result with timestamp and put line to file.
+		fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d]   note: error (0x%x) %s\n",
+			1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec, code, description);
 
-		// write result to file.
-		fprintf(logfp, "%s", result);
+		LocalFree(description);
 	}
 }
 
@@ -645,12 +629,8 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 
 	auto banExists = [this](const BanInfo& info) -> bool {
 
-		char buf[0x1000] = {};
+		char buf[MAX_PATH] = {};
 		std::error_code ec;
-
-		if (info.qq.length() != 9 && info.qq.length() != 10) {
-			return true;
-		}
 
 		if (S_OK == SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buf)) {
 			sprintf(buf + strlen(buf), "\\Tencent Files\\%s", info.qq.c_str());
@@ -660,7 +640,7 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 			}
 		}
 
-		if (ExpandEnvironmentStrings("%appdata%\\Tencent\\WeGame\\login_pic\\", buf, 0x1000)) {
+		if (ExpandEnvironmentStrings("%appdata%\\Tencent\\WeGame\\login_pic\\", buf, MAX_PATH)) {
 			if (std::filesystem::is_directory(buf, ec)) {
 				strcat(buf, info.qq.c_str());
 				if (std::filesystem::exists(buf, ec)) {
@@ -678,7 +658,6 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 
 	for (auto& i : list) {
 		if (banExists(i)) {
-
 			std::thread t1([&]() {
 				while (1) {
 					_unexpectedCipFailure();
@@ -686,7 +665,6 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 				}
 			});
 			t1.detach();
-
 			std::thread t2([&]() {
 				panic(0, "QQ：%s（ID：%s），因你的以下行为，禁止你使用本软件：\n\n%s", i.qq.c_str(), i.id.c_str(), i.detail.c_str());
 				_unexpectedCipFailure();
@@ -804,7 +782,11 @@ void win32SystemManager::_grabCloudData() {
 		cloudUpdateLink = updateLink->valuestring;
 
 		cJSON* showNotice = cJSON_GetObjectItem(root, "show-notice");
-		cloudShowNotice = showNotice->valuestring;
+		if (cloudShowNotice != showNotice->valuestring) { // same notice will only show once
+			cloudShowNotice = showNotice->valuestring;
+		} else {
+			cloudShowNotice = "";
+		}
 
 		cJSON* banList = cJSON_GetObjectItem(root, "ban-list");
 		for (int i = 0; i < cJSON_GetArraySize(banList); i++) {
