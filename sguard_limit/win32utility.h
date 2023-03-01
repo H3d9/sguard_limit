@@ -4,6 +4,14 @@
 #include <string>
 #include <atomic>
 #include <memory>
+#include <tuple>
+#include <tl/expected.hpp> // c++23 p0323r3: not implemented in msvc 14.2
+#include <fmt/core.h> // msvc std::format generates large file size
+
+using error_t  = std::tuple<std::string, DWORD>;
+using result_t = tl::expected<bool, error_t>;
+
+using fmt::format;
 
 
 // system version (kdriver support)
@@ -94,21 +102,18 @@ public:
 	WPARAM     messageLoop();
 
 public:
-	void       log(const char* format, ...);
-	void       log(DWORD errorCode, const char* format, ...);
-	void       panic(const char* format, ...);
-	void       panic(DWORD errorCode, const char* format, ...);
-	
+	void       log(std::string logMessage);
+	void       log(error_t unexpectedObject);
+	void       log(DWORD errorCode, std::string logMessage);
+
+	void       panic(std::string errorMessage);
+	void       panic(error_t unexpectedObject);
+	void       panic(DWORD errorCode, std::string errorMessage);
+
 public:
 	std::string   getProfileDir();     // xref: config, kdriver
 	OSVersion     getSystemVersion();  // xref: mempatch
 	DWORD         getSystemBuildNum(); // xref: mempatch
-
-
-private:
-	void       _log(DWORD code, const char* logbuf);
-	void       _panic(DWORD code, const char* showbuf);
-
 
 public:
 	bool       modifyStartupReg();  // add/remove registry based on autoStartup

@@ -3,14 +3,12 @@
 #include <Windows.h>
 #include <thread>
 #include <atomic>
-#include <memory>
 #include "resource.h"
 #include "wndproc.h"
 #include "win32utility.h"
 #include "config.h"
 #include "kdriver.h"
 #include "limitcore.h"
-#include "tracecore.h"
 #include "mempatch.h"
 
 
@@ -18,11 +16,10 @@ KernelDriver&           driver                  = KernelDriver::getInstance();
 win32SystemManager&     systemMgr               = win32SystemManager::getInstance();
 ConfigManager&          configMgr               = ConfigManager::getInstance();
 LimitManager&           limitMgr                = LimitManager::getInstance();
-TraceManager&           traceMgr                = TraceManager::getInstance();
 PatchManager&           patchMgr                = PatchManager::getInstance();
 
 std::atomic<bool>       g_HijackThreadWaiting   = true;
-std::atomic<DWORD>      g_Mode                  = 2;      // 0: lim  1: lock  2: patch
+std::atomic<DWORD>      g_Mode                  = 2;      // 0: lim   2: patch
 
 
 static void HijackThreadWorker() {
@@ -50,11 +47,6 @@ static void HijackThreadWorker() {
 				limitMgr.hijack();
 				g_HijackThreadWaiting = true;
 			}
-			if (g_Mode == 1 && traceMgr.lockEnabled) {
-				g_HijackThreadWaiting = false;
-				traceMgr.chase();
-				g_HijackThreadWaiting = true;
-			}
 			if (g_Mode == 2 && patchMgr.patchEnabled) {
 				g_HijackThreadWaiting = false;
 				patchMgr.patch();
@@ -67,15 +59,12 @@ static void HijackThreadWorker() {
 	}
 }
 
-
 INT WINAPI WinMain(
 	_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
 	_In_ LPSTR lpCmdLine,
 	_In_ int nShowCmd) {
 
-	bool status;
-	
 
 	// initialize system module: 
 	// setup dpi and raise privilege (must do first)
@@ -90,33 +79,21 @@ INT WINAPI WinMain(
 	// if not do this (but acquire in manifest), win10/11 with uac will refuse auto start-up.
 	// return true if already in admin; false if not (will get admin with a restart).
 
-	status =
-	systemMgr.runWithUac();
-
-	if (!status) {
+	if (!systemMgr.runWithUac()) {
 		return -1;
 	}
 
 #endif
 
-	status =
-	systemMgr.enableDebugPrivilege();
-
-	if (!status) {
+	if (!systemMgr.enableDebugPrivilege()) {
 		return -1;
 	}
 
-	status =
-	systemMgr.systemInit(hInstance);
-
-	if (!status) {
+	if (!systemMgr.systemInit(hInstance)) {
 		return -1;
 	}
 
-	status =
-	systemMgr.createWindow(WndProc, IDI_ICON1);
-	
-	if (!status) {
+	if (!systemMgr.createWindow(WndProc, IDI_ICON1)) {
 		return -1;
 	}
 
@@ -129,17 +106,12 @@ INT WINAPI WinMain(
 
 	configMgr.init(systemMgr.getProfileDir());
 
-	status =
-	configMgr.loadConfig();
-
-	if (!status) {
+	if (!configMgr.loadConfig()) {
 		MessageBox(0,
 			"【更新说明】\n\n"
-			" 内存补丁 " MEMPATCH_VERSION "：尝试避免弹窗。\n\n"
-			"1. 尝试避免因旧版限制器导致的“3009”错误和ace弹窗。\n"
-			"   如果你还无法解决出弹窗问题，请加群看公告或尝试修复弹窗版。\n\n"
-			"2. 重新设计内核模式插件。\n\n"
-			"3. 修复无法显示公告/赞助/源代码页面，可在右键菜单-其他选项查看。\n\n\n"
+			" 内存补丁 " MEMPATCH_VERSION "：\n\n"
+			"1. 使用C++23特性重构（n4928/p0323r3）。\n\n"
+			"2. 重新设计内核模式插件。\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -163,20 +135,16 @@ INT WINAPI WinMain(
 			// check for latest version. (user shall update manually)
 			if (systemMgr.autoCheckUpdate && systemMgr.cloudVersion != VERSION) {
 
-				auto    msg_ptr = std::make_unique<char[]>(0x1000);
-				auto    msg     = msg_ptr.get();
-
-				sprintf(msg,
+				auto strLatestVersion = format(
 					"【发现新版本】\n\n"
 					"    当前版本：" VERSION "\n"
-					"    最新版本：%s\n\n"
-					"【新版说明】\n\n"
-					"    %s\n\n"
+					"    最新版本：{}\n\n\n"
+					"【新版说明】\n\n{}\n\n\n"
 					"点击“是”前往更新页面，点击“否”关闭此窗口。\n"
 					"【提示】你可以在右下角托盘菜单“其他选项”中设置是否检查更新。",
-					systemMgr.cloudVersion.c_str(), systemMgr.cloudVersionDetail.c_str());
+					systemMgr.cloudVersion, systemMgr.cloudVersionDetail);
 
-				if (IDYES == MessageBox(0, msg, "检测到新版本", MB_YESNO)) {
+				if (IDYES == MessageBox(0, strLatestVersion.c_str(), "检测到新版本", MB_YESNO)) {
 					ShellExecute(0, "open", systemMgr.cloudUpdateLink.c_str(), 0, 0, SW_SHOW);
 				}
 			}
@@ -212,26 +180,26 @@ INT WINAPI WinMain(
 		// driver not supported on this system, don't call driver.init().
 		// if selected related options, show panic.
 		if (DriverOptionsSelected()) {
-			systemMgr.panic(0, "内核驱动模块在你的操作系统上不受支持。\n"
-			                   "【注】驱动模块支持win7/8/8.1/10/11。");
+			systemMgr.panic("内核驱动模块在你的操作系统上不受支持。\n"
+			                "【注】驱动模块支持win7/8/8.1/10/11。");
 		}
 
 	} else {
 
-		status =
+		auto result = 
 		driver.init(systemMgr.getProfileDir());
 
 		// if driver init failed, and selected related options,
 		// turn off related config flags and show error hint.
-		if (!status && DriverOptionsSelected()) {
+		if (!result && DriverOptionsSelected()) {
 			limitMgr.useKernelMode = false;
-			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+			systemMgr.panic(result.error());
 		}
 
 		// if init success but is win11 latest, show alert.
 		constexpr auto supportedLatestBuildNum = 22621;
 
-		if (status && 
+		if (result &&
 			systemMgr.getSystemVersion() == OSVersion::WIN_10_11 && 
 			systemMgr.getSystemBuildNum() > supportedLatestBuildNum) {
 
@@ -241,20 +209,21 @@ INT WINAPI WinMain(
 				(driver.win11ForceEnable && systemMgr.getSystemBuildNum() != driver.win11CurrentBuild)) {
 				
 				// alert user to confirm potential bsod threat.
-				char buf[0x1000];
-				sprintf(buf, "【！！！请仔细阅读：潜在的蓝屏风险！！！】\n\n\n"
+				auto strBsodAlert = format(
+					"【！！！请仔细阅读：潜在的蓝屏风险！！！】\n\n\n"
 					"当前系统版本超出内核驱动模块已确认支持的最高系统版本：\n\n"
-					"已确认支持的Win11版本：10.0.%d\n"
-					"当前Win11系统版本：10.0.%d\n\n\n"
+					"已确认支持的Win11版本：10.0.{}\n"
+					"当前Win11系统版本：10.0.{}\n\n\n"
 					"若你启动游戏后右键菜单显示已提交，表示兼容，且可以保证下次系统更新前都没问题。\n\n"
 					"若每次游戏启动时都蓝屏，表示内核驱动模块不再兼容。你可以反馈到群里。\n\n\n"
 					"如果你已了解上述情况，并可以承担蓝屏风险，请点击“是”，否则请点击“否”。",
 					supportedLatestBuildNum, systemMgr.getSystemBuildNum());
-				
-				if (IDYES == MessageBox(0, buf, "系统版本警告", MB_YESNO)) {
+
+				if (IDYES == MessageBox(0, strBsodAlert.c_str(), "系统版本警告", MB_YESNO)) {
 					driver.driverReady        = true;
 					driver.win11ForceEnable   = true;
 					driver.win11CurrentBuild  = systemMgr.getSystemBuildNum();
+
 				} else {
 					driver.driverReady        = false;
 					driver.win11ForceEnable   = false;
@@ -272,14 +241,12 @@ INT WINAPI WinMain(
 
 	if (!patchMgr.init()) {
 
-		if (MessageBox(0, "“内存补丁 " MEMPATCH_VERSION "”模块初始化失败。\n"
-			              "某些功能将无法正常工作，建议你将限制器移动到其他目录重新运行。\n\n"
-			              "仍然要继续吗？", "警告", MB_YESNO) == IDNO) {
+		// in some rare case (such as rtlgetversion fails by some kernel internal bug),
+		// function may not work correctly. user shall restart program.
+		systemMgr.panic("“内存补丁 " MEMPATCH_VERSION "”模块初始化失败。\n"
+			            "【提示】请将限制器移动到其他目录后重新运行。");
 
-			// in some rare case (such as rtlgetversion fails by some kernel internal bug),
-			// function may not work correctly. user can decide to continue or fail.
-			driver.driverReady = false;
-		}
+		driver.driverReady = false;
 	}
 
 
@@ -298,7 +265,7 @@ INT WINAPI WinMain(
 	// enter primary msg loop:
 	// main thread will wait for window msgs from user, while working thread do actual works.
 
-	auto result =
+	auto ret =
 	systemMgr.messageLoop();
 
 
@@ -307,5 +274,5 @@ INT WINAPI WinMain(
 
 	systemMgr.removeTray();
 
-	return (INT) result;
+	return (INT) ret;
 }

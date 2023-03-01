@@ -2,8 +2,8 @@
 #include <Windows.h>
 
 
-#define VERSION             "23.2.22+ ºúÌÒ±¦±´¸´¿ÌÁôÄî~"
-#define MEMPATCH_VERSION    "V4.10"
+#define VERSION             "23.3.2 ºúÌÒ±¦±´¸´¿Ì¼ÍÄî°æ"
+#define MEMPATCH_VERSION    "V4.11"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 
@@ -20,15 +20,6 @@
 #define IDM_STOPLIMIT       206
 #define IDM_SETPERCENT      207
 #define IDM_KERNELLIMIT     208
-
-
-// trace wndproc button command
-#define IDM_LOCK3           209
-#define IDM_LOCK1           210
-#define IDM_LOCK3RR         211
-#define IDM_LOCK1RR         212
-#define IDM_SETRRTIME       213
-#define IDM_UNLOCK          214
 
 
 // mempatch wndproc button command
@@ -61,7 +52,6 @@
 
 // dialog param macro
 #define DLGPARAM_RRPCT          2001
-#define DLGPARAM_LOCKTIME       2002
 #define DLGPARAM_PATCHWAIT      2003
 #define DLGPARAM_PATCHDELAY1    2004
 #define DLGPARAM_PATCHDELAY2    2005

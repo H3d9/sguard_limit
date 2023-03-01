@@ -60,14 +60,12 @@ public:
 
 
 private:
-	DWORD                     _getSyscallNumber(const char* funcName, const char* libName);
+	DWORD     _getSyscallNumber(const char* funcName, const char* libName);
 
-	bool                      _patch_ntdll(DWORD pid, patchSwitches_t& switches);
-	bool                      _patch_user32(DWORD pid, patchSwitches_t& switches);
+	bool      _patch_ntdll(DWORD pid, patchSwitches_t& switches);
+	bool      _patch_user32(DWORD pid, patchSwitches_t& switches);
 	
-	bool                      _fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, ULONG64 pDetour);
-	std::vector<ULONG64>      _findRip(bool useAll = false);
-	void                      _outVmbuf(ULONG64, const char*);
+	bool      _fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, ULONG64 pDetourStart);
 
 private:
 	std::unordered_map<std::string, DWORD>   syscallTable;  // func name -> native syscall num

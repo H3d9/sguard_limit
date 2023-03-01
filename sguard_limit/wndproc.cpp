@@ -1,16 +1,14 @@
 ﻿#include <Windows.h>
 #include <CommCtrl.h>
-#include <stdio.h>
 #include <atomic>
 #include <random>
-#include "wndproc.h"
 #include "resource.h"
 #include "kdriver.h"
 #include "win32utility.h"
 #include "config.h"
 #include "limitcore.h"
-#include "tracecore.h"
 #include "mempatch.h"
+#include "wndproc.h"
 
 #pragma comment(lib, "Comctl32.lib")
 #pragma comment(linker, "/manifestdependency:\"type='win32' \
@@ -23,7 +21,6 @@ extern KernelDriver&            driver;
 extern win32SystemManager&      systemMgr;
 extern ConfigManager&           configMgr;
 extern LimitManager&            limitMgr;
-extern TraceManager&            traceMgr;
 extern PatchManager&            patchMgr;
 
 extern std::atomic<bool>        g_HijackThreadWaiting;
@@ -114,39 +111,31 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 
 		case WM_INITDIALOG:
 		{
-			char buf [0x1000];
-			dlgParam = (DWORD)lParam;
-			
-			if (dlgParam == DLGPARAM_RRPCT) { // set limit percent.
+			if (lParam == DLGPARAM_RRPCT) { // set limit percent.
 				SetWindowText(hDlg, "输入限制资源的百分比");
-				sprintf(buf, "输入整数1~99，或999（代表99.9）\n（当前值：%u）", limitMgr.limitPercent.load());
-				SetDlgItemText(hDlg, IDC_TEXT1, buf);
+				auto note = format("输入整数1~99，或999（代表99.9）\n（当前值：{}）", limitMgr.limitPercent.load());
+				SetDlgItemText(hDlg, IDC_TEXT1, note.c_str());
 
-			} else if (dlgParam == DLGPARAM_LOCKTIME) { // set time slice.
-				SetWindowText(hDlg, "输入每100ms从目标线程中强制剥夺的时间（单位：ms）");
-				sprintf(buf, "\n输入1~99的整数（当前值：%u）", traceMgr.lockRound.load());
-				SetDlgItemText(hDlg, IDC_TEXT1, buf);
-
-			} else if (dlgParam == DLGPARAM_PATCHWAIT) { // set advanced patch wait for ntdll etc.
+			} else if (lParam == DLGPARAM_PATCHWAIT) { // set advanced patch wait for ntdll etc.
 				SetWindowText(hDlg, "输入开启防扫盘后等待SGUARD稳定的时间（单位：秒）");
-				sprintf(buf, "\n输入一个整数（当前等待时间：%u秒）", patchMgr.patchDelayBeforeNtdlletc.load());
-				SetDlgItemText(hDlg, IDC_TEXT1, buf);
+				auto note = format("\n输入一个整数（当前等待时间：{}秒）", patchMgr.patchDelayBeforeNtdlletc.load());
+				SetDlgItemText(hDlg, IDC_TEXT1, note.c_str());
 				
 			} else { // set patch delay switches.
-				auto id = dlgParam - DLGPARAM_PATCHDELAY1;
 				SetWindowText(hDlg, "输入SGUARD每次执行目标系统调用的强制延迟（单位：ms）");
-				sprintf(buf, "\n输入%u~%u的整数（当前值：%u）", delayRange[id].low, delayRange[id].high, delay[id].load());
-				SetDlgItemText(hDlg, IDC_TEXT1, buf);
+				auto id = lParam - DLGPARAM_PATCHDELAY1;
+				auto note = format("\n输入{}~{}的整数（当前值：{}）", delayRange[id].low, delayRange[id].high, delay[id].load());
+				SetDlgItemText(hDlg, IDC_TEXT1, note.c_str());
 
-				if (dlgParam == DLGPARAM_PATCHDELAY1) {
+				if (lParam == DLGPARAM_PATCHDELAY1) {
 					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：NtQueryVirtualMemory");
-				} else if (dlgParam == DLGPARAM_PATCHDELAY2) {
+				} else if (lParam == DLGPARAM_PATCHDELAY2) {
 					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：GetAsyncKeyState");
-				} else if (dlgParam == DLGPARAM_PATCHDELAY3) {
+				} else if (lParam == DLGPARAM_PATCHDELAY3) {
 					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：NtWaitForSingleObject");
-				} else if (dlgParam == DLGPARAM_PATCHDELAY4) {
+				} else if (lParam == DLGPARAM_PATCHDELAY4) {
 					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：NtDelayExecution");
-				} else if (dlgParam == DLGPARAM_PATCHDELAY5) {
+				} else if (lParam == DLGPARAM_PATCHDELAY5) {
 					SetDlgItemText(hDlg, IDC_TEXT2, "当前设置：指向ACE-BASE的CPL0通信时间");
 				}
 			}
@@ -171,15 +160,6 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 						return (INT_PTR)TRUE;
 					}
 
-				} else if (dlgParam == DLGPARAM_LOCKTIME) {
-					if (!translated || res < 1 || res > 99) {
-						systemMgr.panic("输入1~99的整数");
-					} else {
-						traceMgr.lockRound = res;
-						EndDialog(hDlg, LOWORD(wParam));
-						return (INT_PTR)TRUE;
-					}
-
 				} else if (dlgParam == DLGPARAM_PATCHWAIT) {
 					if (!translated) {
 						systemMgr.panic("输入格式错误");
@@ -192,7 +172,7 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 				} else {
 					auto id = dlgParam - DLGPARAM_PATCHDELAY1;
 					if (!translated || res < delayRange[id].low || res > delayRange[id].high) {
-						systemMgr.panic("输入%u~%u的整数", delayRange[id].low, delayRange[id].high);
+						systemMgr.panic(format("输入{}~{}的整数", delayRange[id].low, delayRange[id].high));
 					} else {
 						patchMgr.patchDelay[id] = res;
 						EndDialog(hDlg, LOWORD(wParam));
@@ -271,15 +251,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 			// for driver-depending options: 
 			// auto select MFT_STRING or MF_GRAYED.
-			auto    drvMenuType    = driver.driverReady ? MFT_STRING : MF_GRAYED;
-			auto    drvPopMenuType = driver.driverReady ? MF_POPUP   : MF_GRAYED;
+			auto    drvMenuType      = driver.driverReady ? MFT_STRING : MF_GRAYED;
+			auto    drvPopMenuType   = driver.driverReady ? MF_POPUP   : MF_GRAYED;
 
 
-			char    buf[0x1000] = {};
-			HMENU   hMenu       = CreatePopupMenu();
-			HMENU   hMenuModes  = CreatePopupMenu();
-			HMENU   hMenuOthers = CreatePopupMenu();
-
+			HMENU        hMenu       = CreatePopupMenu();
+			HMENU        hMenuModes  = CreatePopupMenu();
+			HMENU        hMenuOthers = CreatePopupMenu();
+			std::string  strMenu;
 
 			AppendMenu(hMenuModes, MFT_STRING, IDM_MODE_HIJACK, "切换到：时间片轮转");
 			AppendMenu(hMenuModes, MF_GRAYED,  IDM_MODE_TRACE,  "切换到：线程追踪");
@@ -327,8 +306,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				if (limitMgr.limitPercent == 999) {
 					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, "限制资源：99.9%");
 				} else {
-					sprintf(buf, "限制资源：%u%%", limitMgr.limitPercent.load());
-					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, buf);
+					strMenu = format("限制资源：{}%", limitMgr.limitPercent.load());
+					AppendMenu(hMenu, MFT_STRING, IDM_STARTLIMIT, strMenu.c_str());
 				}
 				AppendMenu(hMenu, MFT_STRING, IDM_STOPLIMIT,    "停止限制");
 				AppendMenu(hMenu, MFT_STRING, IDM_SETPERCENT,   "设置限制资源的百分比");
@@ -343,70 +322,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 					CheckMenuItem(hMenu, IDM_KERNELLIMIT, MF_CHECKED);
 				}
 
-			} else if (g_Mode == 1) {
-
-				if (!traceMgr.lockEnabled) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGUARD限制器 - 用户手动暂停");
-				} else if (g_HijackThreadWaiting) {
-					AppendMenu(hMenu, MFT_STRING, IDM_ABOUT,     "SGUARD限制器 - 等待游戏运行");
-				} else {
-					if (traceMgr.lockPid == 0) {
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGUARD限制器 - 正在分析");
-					} else {
-						sprintf(buf, "SGUARD限制器 - ");
-						switch (traceMgr.lockMode) {
-						case 0:
-							for (auto i = 0; i < 3; i++) {
-								sprintf(buf + strlen(buf), "%x[%c] ", traceMgr.lockedThreads[i].tid.load(), traceMgr.lockedThreads[i].locked ? 'O' : 'X');
-							}
-							break;
-						case 1:
-							for (auto i = 0; i < 3; i++) {
-								sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[i].tid.load());
-							}
-							break;
-						case 2:
-							sprintf(buf + strlen(buf), "%x[%c] ", traceMgr.lockedThreads[0].tid.load(), traceMgr.lockedThreads[0].locked ? 'O' : 'X');
-							break;
-						case 3:
-							sprintf(buf + strlen(buf), "%x[..] ", traceMgr.lockedThreads[0].tid.load());
-							break;
-						}
-						AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
-					}
-				}
-				AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hMenuModes, "当前模式：线程追踪  [点击切换]");
-				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3,   "锁定");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1,   "弱锁定");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK3RR, "锁定-rr");
-				AppendMenu(hMenu, MFT_STRING, IDM_LOCK1RR, "弱锁定-rr");
-				AppendMenu(hMenu, MFT_STRING, IDM_UNLOCK,  "解除锁定");
-				if (traceMgr.lockMode == 1 || traceMgr.lockMode == 3) {
-					AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-					sprintf(buf, "设置时间切分（当前：%d）", traceMgr.lockRound.load());
-					AppendMenu(hMenu, MFT_STRING, IDM_SETRRTIME, buf);
-				}
-				if (traceMgr.lockEnabled) {
-					switch (traceMgr.lockMode) {
-					case 0:
-						CheckMenuItem(hMenu, IDM_LOCK3, MF_CHECKED);
-						break;
-					case 1:
-						CheckMenuItem(hMenu, IDM_LOCK3RR, MF_CHECKED);
-						break;
-					case 2:
-						CheckMenuItem(hMenu, IDM_LOCK1, MF_CHECKED);
-						break;
-					case 3:
-						CheckMenuItem(hMenu, IDM_LOCK1RR, MF_CHECKED);
-						break;
-					}
-				} else {
-					CheckMenuItem(hMenu, IDM_UNLOCK, MF_CHECKED);
-				}
-
-			} else { // if (g_Mode == 2) 
+			}
+			else { // if (g_Mode == 2) 
 
 				if (!driver.driverReady) {
 					AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGUARD限制器 - 模式无效（驱动初始化失败）");
@@ -433,10 +350,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 							patchMgr.patchStatus.DeviceIoControl_2;
 
 						if (finished == 0) {
-							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, "SGUARD限制器 - 请等待");
+							AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGUARD限制器 - 请等待");
 						} else {
-							sprintf(buf, "SGUARD限制器 - 已提交  [%d/%d]", finished, total);
-							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, buf);
+							strMenu = format("SGUARD限制器 - 已提交  [{}/{}]", finished, total);
+							AppendMenu(hMenu, MFT_STRING, IDM_ABOUT, strMenu.c_str());
 						}
 					}
 				}
@@ -475,26 +392,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				AppendMenu(hMenu, drvMenuType, IDM_PATCHSWITCH8, "[R0] 限制System进程占用CPU（data_hijack）");
 				AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 				AppendMenu(hMenu, drvMenuType, IDM_ADVMEMSEARCH, "启用高级内存搜索");
-				sprintf(buf, "设置延迟（当前：0/%u", patchMgr.patchDelayBeforeNtdlletc.load());
-				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
-					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[0].load());
-				}
-				if (patchMgr.patchSwitches.GetAsyncKeyState) {
-					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[1].load());
-				}
-				if (patchMgr.patchSwitches.NtWaitForSingleObject) {
-					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[2].load());
-				}
-				if (patchMgr.patchSwitches.NtDelayExecution) {
-					sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[3].load());
-				}
-				if (patchMgr.patchSwitches.DeviceIoControl_1) {
-					if (patchMgr.patchSwitches.DeviceIoControl_1x) {
-						sprintf(buf + strlen(buf), "/%u", patchMgr.patchDelay[4].load());
-					}
-				}
-				strcat(buf, "）");
-				AppendMenu(hMenu, drvMenuType, IDM_SETDELAY, buf);
+				strMenu = format("设置延迟（当前：0/{}{}{}{}{}{}）",
+					patchMgr.patchDelayBeforeNtdlletc.load(),
+					patchMgr.patchSwitches.NtQueryVirtualMemory  ? format("/{}", patchMgr.patchDelay[0].load()) : "",
+					patchMgr.patchSwitches.GetAsyncKeyState      ? format("/{}", patchMgr.patchDelay[1].load()) : "",
+					patchMgr.patchSwitches.NtWaitForSingleObject ? format("/{}", patchMgr.patchDelay[2].load()) : "",
+					patchMgr.patchSwitches.NtDelayExecution      ? format("/{}", patchMgr.patchDelay[3].load()) : "",
+					patchMgr.patchSwitches.DeviceIoControl_1 && patchMgr.patchSwitches.DeviceIoControl_1x
+					                                             ? format("/{}", patchMgr.patchDelay[4].load()) : "");
+				AppendMenu(hMenu, drvMenuType, IDM_SETDELAY, strMenu.c_str());
 
 				CheckMenuItem(hMenu, IDM_DOPATCH, MF_CHECKED);
 				if (patchMgr.patchSwitches.NtQueryVirtualMemory) {
@@ -526,7 +432,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			AppendMenuW(hMenu, MFT_STRING, IDM_DONATE,          L"✨ 赞助一下，爱你哦~");
 			AppendMenuW(hMenu, MFT_STRING, IDM_EXIT,            L"退出");
 
-
 			POINT pt;
 			GetCursorPos(&pt);
 			SetForegroundWindow(hWnd);
@@ -537,10 +442,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	break;
 	case WM_COMMAND:
 	{
-		char  buf[0x1000];
-		UINT  id = LOWORD(wParam);
+		std::string message;
 
-		switch (id) {
+		switch (LOWORD(wParam)) {
 
 			// general
 		case IDM_ABOUT:
@@ -550,8 +454,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			if (g_Mode == 0 && limitMgr.limitEnabled) {
 				limitMgr.disable();
 				g_HijackThreadWaiting.wait(false); // block till hijack release target.
-			} else if (g_Mode == 1 && traceMgr.lockEnabled) {
-				traceMgr.disable();
 			} else if (g_Mode == 2 && patchMgr.patchEnabled) {
 				patchMgr.disable();
 			}
@@ -561,25 +463,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			// mode
 		case IDM_MODE_HIJACK:
 			if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n仅在“内存补丁”模式无法使用时，才能使用该选项。要继续么？", "警告：功能已弃用！", MB_YESNO)) {
-				traceMgr.disable();
 				patchMgr.disable();
 				limitMgr.enable();
 				g_Mode = 0;
 				configMgr.writeConfig();
 			}
 			break;
-		case IDM_MODE_TRACE:
-			/*if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
-				limitMgr.disable();
-				patchMgr.disable();
-				traceMgr.enable();
-				g_Mode = 1;
-				configMgr.writeConfig();
-			}*/
-			break;
 		case IDM_MODE_PATCH:
 			limitMgr.disable();
-			traceMgr.disable();
 			patchMgr.enable();
 			g_Mode = 2;
 			configMgr.writeConfig();
@@ -600,31 +491,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			limitMgr.useKernelMode = !limitMgr.useKernelMode;
 			configMgr.writeConfig();
 			MessageBox(0, "切换该选项需要你重启限制器。", "注意", MB_OK);
-			break;
-
-			// lock
-		case IDM_LOCK3:
-			traceMgr.setMode(0);
-			configMgr.writeConfig();
-			break;
-		case IDM_LOCK3RR:
-			traceMgr.setMode(1);
-			configMgr.writeConfig();
-			break;
-		case IDM_LOCK1:
-			traceMgr.setMode(2);
-			configMgr.writeConfig();
-			break;
-		case IDM_LOCK1RR:
-			traceMgr.setMode(3);
-			configMgr.writeConfig();
-			break;
-		case IDM_SETRRTIME:
-			DialogBoxParam(systemMgr.hInstance, MAKEINTRESOURCE(IDD_DIALOG), hWnd, DlgProc, DLGPARAM_LOCKTIME);
-			configMgr.writeConfig();
-			break;
-		case IDM_UNLOCK:
-			traceMgr.disable();
 			break;
 
 			// patch
@@ -747,17 +613,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				MessageBox(0, "重启游戏后生效", "注意", MB_OK);
 			}
 			break;
-		case IDM_PATCHSWITCH6_2: // strong ioctl_1
-			/*if (!(patchMgr.patchSwitches.DeviceIoControl_1 && !patchMgr.patchSwitches.DeviceIoControl_1x)) {
-				if (IDYES == MessageBox(0, "警告：该选项已废弃！\n\n不要启用这一选项，除非你知道你在做什么，要继续么？", "警告：功能已弃用！", MB_YESNO)) {
-					patchMgr.patchSwitches.DeviceIoControl_1 = true;
-					patchMgr.patchSwitches.DeviceIoControl_1x = false;
-
-					configMgr.writeConfig();
-					MessageBox(0, "重启游戏后生效", "注意", MB_OK);
-				}
-			}*/
-			break;
 		case IDM_PATCHSWITCH6_3: // close ioctl_1
 			if (patchMgr.patchSwitches.DeviceIoControl_1) {
 				if (IDYES == MessageBox(0, "点击“是”将关闭[防扫盘1]开关。\n若你不知道如何选择，请回答“否”。", "注意", MB_YESNO)) {
@@ -811,8 +666,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			// more options
 		case IDM_AUTOSTARTUP:
 		{
-			sprintf(buf, "点击“是”将%s限制器开机自启。", systemMgr.autoStartup ? "禁用" : "启用");
-			if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
+			message = format("点击“是”将{}限制器开机自启。", systemMgr.autoStartup ? "禁用" : "启用");
+			if (IDYES == MessageBox(0, message.c_str(), "提示", MB_YESNO)) {
 
 				// set flag and modify registry. set back if modify fail.
 				systemMgr.autoStartup = !systemMgr.autoStartup;
@@ -827,8 +682,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		break;
 		case IDM_AUTOCHECKUPDATE:
 		{
-			sprintf(buf, "点击“是”将%s自动检查更新。", systemMgr.autoCheckUpdate ? "禁用" : "启用");
-			if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
+			message = format("点击“是”将{}自动检查更新。", systemMgr.autoCheckUpdate ? "禁用" : "启用");
+			if (IDYES == MessageBox(0, message.c_str(), "提示", MB_YESNO)) {
 
 				systemMgr.autoCheckUpdate = !systemMgr.autoCheckUpdate;
 				configMgr.writeConfig();
@@ -837,8 +692,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		break;
 		case IDM_KILLACELOADER:
 		{
-			sprintf(buf, "点击“是”将%s自动结束ace-loader功能。", systemMgr.killAceLoader ? "禁用" : "启用");
-			if (IDYES == MessageBox(0, buf, "提示", MB_YESNO)) {
+			message = format("点击“是”将{}自动结束ace-loader功能。", systemMgr.killAceLoader ? "禁用" : "启用");
+			if (IDYES == MessageBox(0, message.c_str(), "提示", MB_YESNO)) {
 
 				systemMgr.killAceLoader = !systemMgr.killAceLoader;
 				configMgr.writeConfig();

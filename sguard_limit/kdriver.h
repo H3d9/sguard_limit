@@ -1,13 +1,17 @@
 #pragma once
-#include <Windows.h>
+#include <winnt.h>
 #include <string>
 #include <vector>
-#include <memory>
 #include <atomic>
 #include <mutex>
+#include <tuple>
+#include <tl/expected.hpp> // c++23 p0323r3: not implemented in msvc 14.2
+
+using error_t  = std::tuple<std::string, DWORD>;
+using result_t = tl::expected<bool, error_t>;
 
 
-// driver io module (sington)
+// kernel driver module (sington)
 class KernelDriver {
 
 private:
@@ -23,39 +27,46 @@ private:
 
 public:
 	static KernelDriver& getInstance();
-	
+
 
 public:
-	bool     init(std::string loadPath);
+	result_t   init(std::string loadPath);
 	
-	bool     load();
-	void     unload(bool shouldStopSvc = false);
-	bool     readVM(DWORD pid, PVOID out, PVOID targetAddress);
-	bool     writeVM(DWORD pid, PVOID in, PVOID targetAddress);
-	bool     allocVM(DWORD pid, PVOID* pAllocatedAddress);
-	bool     suspend(DWORD pid);
-	bool     resume(DWORD pid);
-	bool     searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t* moduleName);
-	bool     restoreVad(/* param in kernel */);
-	bool     patchAceBase();
+	result_t   load();
+	void       unload();
+	result_t   readVM(DWORD pid, PVOID out, PVOID targetAddress);
+	result_t   writeVM(DWORD pid, PVOID in, PVOID targetAddress);
+	result_t   allocVM(DWORD pid, PVOID* pAllocatedAddress);
+	result_t   suspend(DWORD pid);
+	result_t   resume(DWORD pid);
+	result_t   searchVad(DWORD pid, std::vector<ULONG64>& out, const wchar_t* moduleName);
+	result_t   restoreVad(/* param in kernel */);
+	result_t   patchAceBase();
+
 
 public:
-	bool     driverReady;         // [out] whether kdriver is ready to use.
-	                              // flag returned from init(); decide accessibility to some menu options.
-	bool     win11ForceEnable;    // [xref] assert use same kernel offset, despite of the risk of bsod.
-								  // flag read from config; decide if win11 latest check is ignored.
-	DWORD    win11CurrentBuild;   // [xref] current win11 build number.
-								  // num read from config; decide if win11 has updated.
+	// [out] whether kdriver is ready to use.
+	// flag returned from init(); decide accessibility to some menu options.
+	bool       driverReady;
+
+	// [xref] assert use same kernel offset, despite of the risk of bsod.
+	// flag read from config; decide if win11 latest check is ignored.
+	bool       win11ForceEnable;
+
+	// [xref] current win11 build number.
+	// num read from config; decide if win11 has updated.
+	DWORD      win11CurrentBuild;
+
 
 private:
-	bool     _extractFile();
-	bool     _startService();
-	void     _endService();
-	bool     _checkSysVersion();
+	result_t     _checkVersion();
+	result_t     _extractResource();
+	std::string  _strUserManual();
 
+private:
 	struct service_guard {
 		SC_HANDLE hSCManager = NULL;
-		SC_HANDLE hService   = NULL;
+		SC_HANDLE hService = NULL;
 
 		~service_guard() {
 			if (hService) {
@@ -67,7 +78,9 @@ private:
 		}
 	};
 
-	
+	result_t   _startService();
+	void       _endService();
+
 private:
 	struct VMIO_REQUEST {
 		HANDLE   pid;
@@ -91,25 +104,11 @@ private:
 	static constexpr DWORD	 VM_VADRESTORE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0707, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 	static constexpr DWORD	 PATCH_ACEBASE  = CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0708, METHOD_BUFFERED, FILE_SPECIAL_ACCESS);
 
-
 private:
 	std::string         sysfile_LoadPath;
 	std::string         sysfile_CurPath;
 	HANDLE              hDriver;
 
-	std::atomic<int>    loadCount;  // multi-thread call sync
+	std::atomic<DWORD>  loadCount;  // thread sync for: load/unload
 	std::mutex          loadLock;
-	
-
-private:
-	std::unique_ptr<char[]>  errorMessage_ptr;
-
-public:
-	std::atomic<DWORD>  errorCode;     // module's errors recorded here (if method returns false).
-	const char*         errorMessage;  // caller can decide to log, panic, or ignore.
-
-private:
-	void            _resetError();  // thread unsafe
-	void            _recordError(DWORD errorCode, const char* msg, ...);
-	std::string     _getSolutionString();
 };

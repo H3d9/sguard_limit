@@ -5,12 +5,10 @@
 // 大城市的郊区有着明亮的月亮。明天的露水在墙上凝结。
 // 2022.11.2 21:00 雨
 // 她对我说：『我等你好久了。』
+// 2023.3.1 23:10
+// 『三千世界中，又有小小世界。所有命运，皆在此间沸腾。』
+// 『我逐渐明白，这些不可被描述而又恒久变化之物，才是世间最深奥的东西。』
 #include <Windows.h>
-#include <stdio.h>
-#include <time.h>
-#include <vector>
-#include <unordered_map>
-#include <algorithm>   // std::sort
 #include <memory>      // std::unique_ptr
 #include "mempatch.h"
 
@@ -69,9 +67,9 @@ bool PatchManager::init() {
 
 	// check if there's any fail while getting syscall numbers.
 	for (auto& it : syscallTable) {
-		systemMgr.log("patch::init(): Native system call acquired: %s -> 0x%x", it.first.c_str(), it.second);
+		systemMgr.log(format("patch::init(): Native system call acquired: {} -> 0x{:x}", it.first, it.second));
 		if (it.second == 0) {
-			systemMgr.panic(0, "patch::init(): 从函数 %s 中获取本地系统调用编号失败。", it.first.c_str());
+			systemMgr.panic(format("patch::init(): 从函数 {} 中获取本地系统调用编号失败。", it.first));
 			ret = false;
 		}
 	}
@@ -83,11 +81,8 @@ DWORD PatchManager::_getSyscallNumber(const char* funcName, const char* libName)
 
 	DWORD callNumber = 0;
 
-	auto hModule = LoadLibrary(libName);
-	if (hModule) {
-
-		auto procAddr = (char*)GetProcAddress(hModule, funcName);
-		if (procAddr) {
+	if (auto hModule = LoadLibrary(libName)) {
+		if (auto procAddr = (char*)GetProcAddress(hModule, funcName)) {
 
 			// if is Nt/Zw func (__kernelentry), pattern is at header+0.
 			// otherwise, walk nearby (win7/8/8.1, in user32; ignore win10 <= 10586).
@@ -110,16 +105,16 @@ void PatchManager::patch() {
 
 	win32ThreadManager     threadMgr;
 	auto                   pid          = threadMgr.getTargetPid();
-	
-	
+	result_t               result;
+
+	systemMgr.log("patch(): entering.");
+
+
 	// check if kernel driver is initialized.
 	if (!driver.driverReady) {
 		systemMgr.log("patch(): kdriver is not initialized correctly, quit.");
 		return;
 	}
-
-
-	systemMgr.log("patch(): entering.");
 
 	if (pid != 0         /* target exist */ &&
 		pid != patchPid  /* target is not current */) {
@@ -137,8 +132,8 @@ void PatchManager::patch() {
 
 
 		// start driver.
-		if (!driver.load()) {
-			systemMgr.panic(driver.errorCode, "patch(): driver.load(): %s", driver.errorMessage);
+		if (!(result = driver.load())) {
+			systemMgr.panic(result.error());
 			return;
 		}
 
@@ -161,7 +156,7 @@ void PatchManager::patch() {
 
 
 		// wait if adv search: before patch ntdll etc.
-		systemMgr.log("patch(): waiting %us before manip ntdll etc.", patchDelayBeforeNtdlletc.load());
+		systemMgr.log(format("patch(): waiting {}s before manip ntdll etc.", patchDelayBeforeNtdlletc.load()));
 
 		for (DWORD time = 0; patchEnabled && time < patchDelayBeforeNtdlletc; time++) {
 			Sleep(1000);
@@ -174,8 +169,8 @@ void PatchManager::patch() {
 
 
 		// restart driver.
-		if (!driver.load()) {
-			systemMgr.panic(driver.errorCode, "patch(): driver.load(): %s", driver.errorMessage);
+		if (!(result = driver.load())) {
+			systemMgr.panic(result.error());
 			return;
 		}
 
@@ -206,7 +201,7 @@ void PatchManager::patch() {
 			}
 		}
 
-		// release ace(...) handle.
+		// all done.
 		driver.unload();
 
 
@@ -234,19 +229,23 @@ void PatchManager::patch() {
 
 bool PatchManager::patch_r0() {
 
-	if (!driver.load()) {
-		systemMgr.panic(driver.errorCode, "patch_r0(): driver.load(): %s", driver.errorMessage);
+	result_t result;
+
+	if (!(result = driver.load())) {
+		systemMgr.panic(result.error());
 		return false;
 	}
 
-	if (driver.patchAceBase()) {
+	result = driver.patchAceBase();
+
+	driver.unload();
+
+	if (result) {
 		systemMgr.log("patch_r0(): patch nt!ACE-BASE complete.");
-		driver.unload();
 		return true;
 
 	} else {
-		systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
-		driver.unload();
+		systemMgr.panic(result.error());
 		return false;
 	}
 }
@@ -261,26 +260,29 @@ void PatchManager::disable(bool forceRecover) {
 
 struct kdriver_guard {
 
-	bool   VadChanged    = false;
-	DWORD  PidSuspended  = 0;
+	bool      VadChanged    = false;
+	DWORD     PidSuspended  = 0;
+	result_t  execStatus;  // (std::)excepted default ctor = use expected value's default initialize.
 
 	~kdriver_guard() {
 
-		// record driver error if exists.
-		DWORD        errorCode  = driver.errorCode;
-		std::string  errorMsg   = driver.errorMessage;
-
 		// release target.
+		result_t exitStatus;
+
 		if (VadChanged) {
-			driver.restoreVad();
+			if (!(exitStatus = driver.restoreVad())) {
+				systemMgr.panic(execStatus.error());
+			}
 		}
 		if (PidSuspended != 0) {
-			driver.resume(PidSuspended);
+			if (!(exitStatus = driver.resume(PidSuspended))) {
+				systemMgr.panic(execStatus.error());
+			}
 		}
 
 		// show driver error if exists.
-		if (errorCode != 0) {
-			systemMgr.panic(errorCode, "%s", errorMsg.c_str());
+		if (!execStatus) {
+			systemMgr.panic(execStatus.error());
 		}
 	}
 };
@@ -298,9 +300,9 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 	auto                   vmalloc           = vmalloc_ptr.get();
 
 	kdriver_guard          cxx_guard         = {}; // raii: ensure target state when func leave.
+	auto&                  status            = cxx_guard.execStatus;
 	
 	patchStatus_t          patchedNow;
-	bool                   status;
 
 
 	// assert: driver loaded.
@@ -348,7 +350,8 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 		// read memory.
 		status = driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 		if (!status) {
-			systemMgr.log(driver.errorCode, "patch_ntdll() warning: load memory failed at 0x%llx : %s", vmStartAddress, driver.errorMessage);
+			const auto& [msg, ec] = status.error();
+			systemMgr.log(ec, format("patch_ntdll() warning: load memory failed at 0x{:x} : {}", vmStartAddress, msg));
 			continue;
 		}
 
@@ -392,7 +395,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 						offset0 = offset - 0x10 * syscall_num;
 					}
 
-					systemMgr.log("patch_ntdll(): offset0 found at +0x%x (from: syscall 0x%x)", offset0, syscall_num);
+					systemMgr.log(format("patch_ntdll(): offset0 found at +0x{:x} (from: syscall 0x{:x})", offset0, syscall_num));
 					break;
 				}
 			}
@@ -401,7 +404,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 		if (offset0 < 0 /* offset0 == -1: not found || offset0 < 0: out of page range */) {
 			continue;
 		} else {
-			systemMgr.log("patch_ntdll(): trait found from %%block = %llx", *block);
+			systemMgr.log(format("patch_ntdll(): trait found from %block = {:x}", *block));
 			break;
 		}
 	}
@@ -1175,7 +1178,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 				"\x48\xC7\x02\xE0\x43\x41\xFF\xB8\x31\x00\x00\x00\x0F\x05\xC3";
 			/*
 				0:  48 c7 02 e0 43 41 ff    mov    QWORD PTR [rdx], 0xffffffffff4143e0
-				7:  b8 31 00 00 00          mov    eax, 0x34
+				7:  b8 31 00 00 00          mov    eax, 0x31
 				c:  0f 05                   syscall
 				e:  c3                      ret
 			*/
@@ -1398,8 +1401,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 
 
 	// write memory.
-	status =
-	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
+	status = driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
 		return false;
 	}
@@ -1421,7 +1423,7 @@ bool PatchManager::_patch_ntdll(DWORD pid, patchSwitches_t& switches) {
 		return false;
 	}
 
-	// execute target in new state.
+	// execute target in our new state.
 	status = driver.resume(pid);
 	cxx_guard.PidSuspended = 0;
 	
@@ -1456,9 +1458,9 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 	auto                     vmalloc           = vmalloc_ptr.get();
 
 	kdriver_guard            cxx_guard         = {};
+	auto&                    status            = cxx_guard.execStatus;
 	
 	patchStatus_t            patchedNow;
-	bool                     status;
 
 
 	// assert: driver loaded.
@@ -1505,11 +1507,10 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 
 
 		// read memory.
-		status =
-			driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
-
+		status = driver.readVM(pid, vmbuf, (PVOID)vmStartAddress);
 		if (!status) {
-			systemMgr.log(driver.errorCode, "patch_user32() warning: load memory failed at 0x%llx : %s", vmStartAddress, driver.errorMessage);
+			const auto& [msg, ec] = status.error();
+			systemMgr.log(ec, format("patch_user32() warning: load memory failed at 0x{:x} : {}", vmStartAddress, msg)); 
 			continue;
 		}
 
@@ -1524,7 +1525,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 			if (0 == memcmp(vmbuf + offset, traits, 8)) { // if strict: 4c 8b d1 b8 XX 10 00 00
 
 				target_offset = offset;
-				systemMgr.log("patch_user32(): strict search: target_offset found at +0x%x (syscall 0x%x)", target_offset, *(LONG*)(traits + 4));
+				systemMgr.log(format("patch_user32(): strict search: target_offset found at +0x{:x} (syscall 0x{:x})", target_offset, *(LONG*)(traits + 4)));
 				break;
 			}
 		}
@@ -1544,7 +1545,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 					LONG found_call_num = *(LONG*)(vmbuf + offset + 4);
 					LONG real_call_num  = *(LONG*)(traits + 4);
 					target_offset = offset - (found_call_num - 0x1000) * 0x20 + (real_call_num - 0x1000) * 0x20;
-					systemMgr.log("patch_user32(): fuzzy search: target_offset found at +0x%x (from syscall 0x%x)", target_offset, found_call_num);
+					systemMgr.log(format("patch_user32(): fuzzy search: target_offset found at +0x{:x} (from syscall 0x{:x})", target_offset, found_call_num));
 					break;
 				}
 			}
@@ -1576,18 +1577,18 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 					auto relative_shift = *(LONG*)(vmbuf + offset + 0x3);
 					auto vaddress_ptr   = vmStartAddress + offset + 0x7 + relative_shift;
 
-					if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_ptr & ~0xfff) - 0x1000))) {
-						systemMgr.log(driver.errorCode, "patch_user32(): read *vaddress_ptr (%llx) failed.", vaddress_ptr);
-						systemMgr.log("  note: %s", driver.errorMessage);
+					if (!(status = driver.readVM(pid, vmrelate, (PVOID)((vaddress_ptr & ~0xfff) - 0x1000)))) {
+						const auto& [msg, ec] = status.error();
+						systemMgr.log(ec, format("patch_user32(): read *vaddress_ptr ({:x}) failed.", vaddress_ptr));
 						continue;
 					}
 
 					// since rex.w call -> vaddress_entry, load memory vaddress_entry points to.
 					auto vaddress_entry = *(ULONG64*)(vmrelate + 0x1000 + vaddress_ptr % 0x1000);
 
-					if (!driver.readVM(pid, vmrelate, (PVOID)((vaddress_entry & ~0xfff) - 0x1000))) {
-						systemMgr.log(driver.errorCode, "patch_user32(): load pages at vaddress_entry = 0x%llx failed.", vaddress_entry);
-						systemMgr.log("  note: %s", driver.errorMessage);
+					if (!(status = driver.readVM(pid, vmrelate, (PVOID)((vaddress_entry & ~0xfff) - 0x1000)))) {
+						const auto& [msg, ec] = status.error();
+						systemMgr.log(ec, format("patch_user32(): load pages at vaddress_entry = 0x{:x} failed.", vaddress_entry));
 						continue;
 					}
 
@@ -1607,9 +1608,9 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 					auto target_entry = vaddress_entry - (LONG64)call_number_found * 0x20 + (LONG64)call_number_target * 0x20;
 
 					// switch to target_entry memory, 
-					if (!driver.readVM(pid, vmrelate, (PVOID)((target_entry & ~0xfff) - 0x1000))) {
-						systemMgr.log(driver.errorCode, "patch_user32(): switch win32u pages to vaddress_entry = 0x%llx failed.", vaddress_entry);
-						systemMgr.log("  note: %s", driver.errorMessage);
+					if (!(status = driver.readVM(pid, vmrelate, (PVOID)((target_entry & ~0xfff) - 0x1000)))) {
+						const auto& [msg, ec] = status.error();
+						systemMgr.log(ec, format("patch_user32(): switch win32u pages to vaddress_entry = 0x{:x} failed.", vaddress_entry));
 						continue;
 					}
 
@@ -1621,9 +1622,9 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 					memcpy(vmbuf, vmrelate, 0x4000);
 
 
-					systemMgr.log("patch_user32(): relative search: catched target_offset at +0x%llx, after %d fake traps.", target_offset, fake_entries);
-					systemMgr.log("patch_user32():   >> search path: [rip+0x%x] ~ 0x%llx => 0x%llx (syscall 0x%x) => 0x%llx (syscall 0x%x)",
-						relative_shift, vaddress_ptr, vaddress_entry, call_number_found, target_entry, call_number_target);
+					systemMgr.log(format("patch_user32(): relative search: catched target_offset at +0x{:x}, after {} fake traps.", target_offset, fake_entries));
+					systemMgr.log(format("patch_user32():   >> search path: [rip+0x{:x}] ~ 0x{:x} => 0x{:x} (syscall 0x{:x}) => 0x{:x} (syscall 0x{:x})",
+						relative_shift, vaddress_ptr, vaddress_entry, call_number_found, target_entry, call_number_target));
 
 					break;
 				}
@@ -1633,7 +1634,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 		if (target_offset == -1) {
 			continue;
 		} else {
-			systemMgr.log("patch_user32(): trait found from %%block = %llx.", *block);
+			systemMgr.log(format("patch_user32(): trait found from %block = {:x}.", *block));
 			break;
 		}
 	}
@@ -1860,8 +1861,7 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 
 
 	// write memory.
-	status =
-	driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
+	status = driver.writeVM(pid, vmbuf, (PVOID)vmStartAddress);
 	if (!status) {
 		return false;
 	}
@@ -1899,14 +1899,14 @@ bool PatchManager::_patch_user32(DWORD pid, patchSwitches_t& switches) {
 	return true;
 }
 
-bool PatchManager::_fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, ULONG64 pDetour) {
+bool PatchManager::_fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, ULONG64 pDetourStart) {
 
 	// if some thread(s) are executing patching area, relocate it's Pc.
 	// assert: driver loaded && target suspended.
 	
-	win32ThreadManager                  threadMgr;
-	auto&                               threadList    = threadMgr.threadList;
-	CONTEXT                             context;
+	win32ThreadManager     threadMgr;
+	auto&                  threadList  = threadMgr.threadList;
+	CONTEXT                context;
 	context.ContextFlags = CONTEXT_CONTROL;
 
 
@@ -1928,7 +1928,7 @@ bool PatchManager::_fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, U
 				
 				DWORD64 newPc;
 
-				// assert: pDetour = [mov rcx, r10; mov eax, <imm32>; syscall;]
+				// assert: pDetourStart = [mov rcx, r10; mov eax, <imm32>; syscall;]
 				// assert: NT 10.0.10586 and later, pOrginalStart = [mov rax, <imm64>; jmp rax;] (0xb)
 				/*
 					+0:  mov r10, rcx
@@ -1947,16 +1947,16 @@ bool PatchManager::_fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, U
 				*/
 
 				// in summary:
-				// if Pc is at [+0, +8]: move to pDetour+offset.
+				// if Pc is at [+0, +8]: move to pDetourStart+offset.
 				// if Pc is after +8: only long inline (10586+), move to syscall.
 
 				if (context.Rip - pOrginalStart <= 8) {
-					newPc = pDetour + (context.Rip - pOrginalStart);
-					systemMgr.log("_fixThreadContext(): thrd 0x%x: relocating Pc before trap: 0x%llx -> 0x%llx", thread.tid, context.Rip, newPc);
+					newPc = pDetourStart + (context.Rip - pOrginalStart);
+					systemMgr.log(format("_fixThreadContext(): thrd 0x{:x}: relocating Pc before trap: 0x{:x} -> 0x{:x}", thread.tid, context.Rip, newPc));
 
 				} else {
-					newPc = pDetour + 8;
-					systemMgr.log("_fixThreadContext(): thrd 0x%x: relocating Pc to trap: 0x%llx -> 0x%llx", thread.tid, context.Rip, newPc);
+					newPc = pDetourStart + 8;
+					systemMgr.log(format("_fixThreadContext(): thrd 0x{:x}: relocating Pc to trap: 0x{:x} -> 0x{:x}", thread.tid, context.Rip, newPc));
 				}
 				
 				context.Rip = newPc;
@@ -1966,134 +1966,4 @@ bool PatchManager::_fixThreadContext(ULONG64 pOrginalStart, ULONG64 patchSize, U
 	}
 
 	return true;
-}
-
-
-std::vector<ULONG64>
-PatchManager::_findRip(bool useAll) { // unused: deprecated
-
-	win32ThreadManager                  threadMgr;
-	auto&                               threadList   = threadMgr.threadList;
-	constexpr auto                      sampleSecs   = 5;
-	std::unordered_map<ULONG64, DWORD>  contextMap;  // rip -> visit times
-	CONTEXT                             context;
-	context.ContextFlags = CONTEXT_CONTROL;
-
-	char                                logBuf      [0x1000];
-	std::vector<ULONG64>                result       = {};
-	
-
-	// open thread.
-	if (!threadMgr.getTargetPid()) {
-		systemMgr.log("_findRip(): pid not found, quit.");
-		return result;
-	}
-
-	if (!threadMgr.enumTargetThread()) {
-		systemMgr.log("_findRip(): open thread failed, quit.");
-		return result;
-	}
-
-
-	// find out most consuming threads.
-	// 1. sample cycles for first time to get previous cycles, to calc delta.
-	for (auto& item : threadList) {
-		QueryThreadCycleTime(item.handle, &item.cycles);
-	}
-	// 2. sample cycles for sampleSecs secs.
-	for (auto time = 1; time <= sampleSecs; time++) {
-		Sleep(1000);
-		for (auto& item : threadList) {
-			ULONG64 cycles;
-			QueryThreadCycleTime(item.handle, &cycles);
-			item.cycleDelta = cycles - item.cycles;
-			item.cycles = cycles;
-			// put delta together here; then divide by secs.
-			item.cycleDeltaAvg += item.cycleDelta;
-		}
-	}
-	// calc avg cycledelta.
-	for (auto& item : threadList) {
-		item.cycleDeltaAvg /= sampleSecs;
-	}
-
-
-	// sort by cycleDeltaAvg in decending order.
-	std::sort(threadList.begin(), threadList.end(),
-		[](auto& a, auto& b) { return a.cycleDeltaAvg > b.cycleDeltaAvg; });
-
-	strcpy(logBuf, "_findRip(): top 3 threads: ");
-	for (auto i = 0; i < threadList.size() && i < 3; i++) {
-		sprintf(logBuf + strlen(logBuf), " %u(%llu)", threadList[i].tid, threadList[i].cycleDeltaAvg);
-	}
-	systemMgr.log(logBuf);
-
-
-	// sample rip in top 3 threads. 
-	for (auto i = 0; i < threadList.size() && i < 3; i++) { // i: thread No.
-
-		contextMap.clear();
-
-		// sample 4 rounds. each round sample .5sec and wait .5sec.
-		for (auto round = 1; round <= 4; round++) {
-			for (auto time = 1; time <= 50; time++) {
-				driver.suspend(threadMgr.pid); // warning: API SuspendThread is blocked.
-				if (GetThreadContext(threadList[i].handle, &context)) {
-					contextMap[context.Rip] ++;
-				}
-				driver.resume(threadMgr.pid);
-				Sleep(10);
-			}
-			Sleep(500);
-		}
-
-
-		systemMgr.log("_findRip(): context of thread %u:", threadList[i].tid);
-
-		// if sample complete successfully, record visited rip in each thread in decending order.
-		if (!contextMap.empty()) {
-
-			for (auto& it : contextMap)
-				systemMgr.log("_findRip(): > rip %llx -> cnt %u", it.first, it.second);
-
-			auto ripneed = useAll ? contextMap.size() : 5;
-			for (auto ripcount = 0; !contextMap.empty() && ripcount < ripneed; ripcount++) {
-				ULONG64 rip =
-					std::max_element(
-						contextMap.begin(), contextMap.end(),
-						[](auto& a, auto& b) { return a.second < b.second; })
-					->first;
-				contextMap.erase(rip);
-				result.push_back(rip);
-			}
-		} else {
-			systemMgr.log("_findRip(): > (empty)");
-		}
-	}
-
-	systemMgr.log("_findRip(): find result: vector to be returned contains %u elements.", result.size());
-	
-	return result;
-}
-
-void PatchManager::_outVmbuf(ULONG64 vmStart, const char* vmbuf) {  // unused: for dbg only
-
-	char title[0x1000];
-	time_t t = time(0);
-	tm* local = localtime(&t);
-	sprintf(title, "[%d-%02d-%02d %02d.%02d.%02d]",
-		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec);
-	sprintf(title + strlen(title), "at_%llx.txt", vmStart);
-
-	FILE* fp = fopen(title, "w");
-	if (fp) {
-		for (auto i = 0; i < 0x4000; i++) {
-			fprintf(fp, "%02X", (UCHAR)vmbuf[i]);
-			if (i % 32 == 31) fprintf(fp, "\n");
-		}
-		fclose(fp);
-	}
-	else {
-		systemMgr.panic("创建Vmbuf文件失败。");
-	}
 }

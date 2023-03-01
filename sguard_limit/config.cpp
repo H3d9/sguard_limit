@@ -1,14 +1,14 @@
 #include <Windows.h>
-#include <stdio.h>
+#include <cstdio>
 #include <memory>
 #include <atomic>
+#include <algorithm> // std::replace
 #include "config.h"
 
 #include "wndproc.h"       // macro VERSION
 #include "win32utility.h"  // global options
 #include "kdriver.h"       // win11 kdriver options
 #include "limitcore.h"     // class LimitManager
-#include "tracecore.h"     // class TraceManager
 #include "mempatch.h"      // class PatchManager
 
 // objects to write
@@ -17,7 +17,6 @@ extern std::atomic<DWORD>      g_Mode;
 extern win32SystemManager&     systemMgr;
 extern KernelDriver&           driver;
 extern LimitManager&           limitMgr;
-extern TraceManager&           traceMgr;
 extern PatchManager&           patchMgr;
 
 
@@ -36,14 +35,17 @@ void ConfigManager::init(const std::string& profileDir) {
 
 bool ConfigManager::loadConfig() {  // executes only when program is initalizing.
 
-	auto     profile       = this->profile.c_str();
-	char     buf  [0x1000] = {};
-	bool     result        = true;
-
+	auto         profile  = this->profile.c_str();
+	std::string  str;
+	bool         result   = true;
 
 	// check version & load configurations.
-	GetPrivateProfileString("Global", "Version", NULL, buf, 0x1000, profile);
-	if (strcmp(buf, VERSION) != 0) {
+	str.resize(0x1000);
+	GetPrivateProfileString("Global", "Version", NULL, str.data(), 0x1000, profile);
+	str.resize(str.find_first_of('\0'));
+
+	if (strcmp(str.c_str(), VERSION) != 0) {
+		DeleteFile(profile);
 		WritePrivateProfileString("Global", "Version", VERSION, profile);
 		result = false;
 	}
@@ -54,8 +56,12 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	systemMgr.killAceLoader   = GetPrivateProfileInt("Global", "KillAceLoader",   TRUE,  profile);
 	systemMgr.autoCheckUpdate = GetPrivateProfileInt("Global", "autoCheckUpdate", TRUE,  profile);
 
-	GetPrivateProfileString("Global", "cloudShowNotice", "", buf, 0x1000, profile);
-	systemMgr.cloudShowNotice = buf;
+	str.resize(0x1000);  // read notice
+	GetPrivateProfileString("Global", "cloudShowNotice", "", str.data(), 0x1000, profile);
+	str.resize(str.find_first_of('\0'));
+
+	std::replace(str.begin(), str.end(), '|', '\n');  // ini file cannot contain \n, replace it with |
+	systemMgr.cloudShowNotice = str;
 
 	// kdriver config
 	driver.win11ForceEnable   = GetPrivateProfileInt("kdriver", "win11ForceEnable",   FALSE, profile);
@@ -64,10 +70,6 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	// limit config
 	limitMgr.limitPercent  = GetPrivateProfileInt("Limit", "Percent",       90,   profile);
 	limitMgr.useKernelMode = GetPrivateProfileInt("Limit", "useKernelMode", TRUE, profile);
-
-	// lock config
-	traceMgr.lockMode  = GetPrivateProfileInt("Lock", "Mode",  0,  profile);
-	traceMgr.lockRound = GetPrivateProfileInt("Lock", "Round", 95, profile);
 
 	// patch config
 	patchMgr.patchDelayBeforeNtdlletc = GetPrivateProfileInt("Patch", "DelayBeforeNtdlletc", 20, profile);
@@ -150,7 +152,9 @@ void ConfigManager::writeConfig() {
 	sprintf(buf, systemMgr.autoCheckUpdate ? "1" : "0");
 	WritePrivateProfileString("Global", "autoCheckUpdate", buf, profile);
 
-	WritePrivateProfileString("Global", "cloudShowNotice", systemMgr.cloudShowNotice.c_str(), profile);
+	auto str = systemMgr.cloudShowNotice;  // write notice
+	std::replace(str.begin(), str.end(), '\n', '|');  // ini file cannot contain \n, replace it with |
+	WritePrivateProfileString("Global", "cloudShowNotice", str.c_str(), profile);
 
 	// kdriver config
 	sprintf(buf, driver.win11ForceEnable ? "1" : "0");
@@ -165,13 +169,6 @@ void ConfigManager::writeConfig() {
 
 	sprintf(buf, limitMgr.useKernelMode ? "1" : "0");
 	WritePrivateProfileString("Limit", "useKernelMode", buf, profile);
-
-	// lock config
-	sprintf(buf, "%u", traceMgr.lockMode.load());
-	WritePrivateProfileString("Lock", "Mode", buf, profile);
-
-	sprintf(buf, "%u", traceMgr.lockRound.load());
-	WritePrivateProfileString("Lock", "Round", buf, profile);
 
 	// patch config
 	sprintf(buf, "%u", patchMgr.patchDelayBeforeNtdlletc.load());

@@ -151,7 +151,6 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="limitcore.cpp" />
     <ClCompile Include="mempatch.cpp" />
-    <ClCompile Include="tracecore.cpp" />
     <ClCompile Include="win32utility.cpp" />
     <ClCompile Include="wndproc.cpp" />
   </ItemGroup>
@@ -161,7 +160,6 @@
     <ClInclude Include="limitcore.h" />
     <ClInclude Include="mempatch.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="tracecore.h" />
     <ClInclude Include="win32utility.h" />
     <ClInclude Include="wndproc.h" />
   </ItemGroup>

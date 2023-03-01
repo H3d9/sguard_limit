@@ -2,11 +2,13 @@
 #include <Shlobj.h>
 #include <tlhelp32.h>
 #include <wininet.h>
-#include <time.h>
+#include <cstdio>
+#include <ctime>
 #include <thread>
 #include <filesystem>
 #include <cjson/cJSON.h>
 #include "win32utility.h"
+
 
 
 // win32Thread
@@ -171,11 +173,10 @@ bool win32SystemManager::runWithUac() {
 
 	if (!IsUserAnAdmin()) {
 
-		char    path        [MAX_PATH];
-		DWORD   errorCode   = 0;
-
+		char path [MAX_PATH];
 		GetModuleFileName(NULL, path, MAX_PATH);
-		errorCode = (DWORD)(INT_PTR)
+
+		auto errorCode = (DWORD)(INT_PTR)
 		ShellExecute(NULL, "runas", path, NULL /* no cmdline here */, NULL, SW_SHOWNORMAL);
 		
 		if (errorCode <= 32) {
@@ -191,9 +192,7 @@ bool win32SystemManager::runWithUac() {
 
 void win32SystemManager::setupProcessDpi() {
 
-	HMODULE hUser32 = LoadLibrary("User32.dll");
-
-	if (hUser32) {
+	if (auto hUser32 = LoadLibrary("User32.dll")) {
 
 		typedef BOOL(WINAPI* fp)(DPI_AWARENESS_CONTEXT);
 		fp SetProcessDpiAwarenessContext = (fp)GetProcAddress(hUser32, "SetProcessDpiAwarenessContext");
@@ -217,13 +216,13 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	// decide whether it's single instance.
 	hProgram = CreateMutex(NULL, FALSE, "xxlWitch");
 	if (!hProgram || GetLastError() == ERROR_ALREADY_EXISTS) {
-		panic(0, "同时只能运行一个SGUARD限制器。");
+		panic("同时只能运行一个SGUARD限制器。");
 		return false;
 	}
 
 
 	// initialize path vars.
-	char profilePath[MAX_PATH] = {};
+	char profilePath[MAX_PATH];
 	if (ExpandEnvironmentStrings("%appdata%\\xxlWitch", profilePath, MAX_PATH)) {
 		profileDir = profilePath;
 	} else {
@@ -296,8 +295,8 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 			osBuildNum = osInfo.dwBuildNumber;
 
-			log("systemInit(): Running on Windows NT %u.%u.%u",
-				osInfo.dwMajorVersion, osInfo.dwMinorVersion, osInfo.dwBuildNumber);
+			log(format("systemInit(): Running on Windows NT {}.{}.{}",
+				osInfo.dwMajorVersion, osInfo.dwMinorVersion, osInfo.dwBuildNumber));
 		}
 	}
 
@@ -404,56 +403,76 @@ void win32SystemManager::removeTray() {
 	Shell_NotifyIcon(NIM_DELETE, &icon);
 }
 
-void win32SystemManager::log(const char* format, ...) {
 
-	char buf[0x1000];
-
-	va_list arg;
-	va_start(arg, format);
-	vsprintf(buf, format, arg);
-	va_end(arg);
-
-	_log(0, buf);
+void win32SystemManager::log(std::string logMessage) {
+	log(0, logMessage);
 }
 
-void win32SystemManager::log(DWORD errorCode, const char* format, ...) {
-	
-	char buf[0x1000];
-
-	va_list arg;
-	va_start(arg, format);
-	vsprintf(buf, format, arg);
-	va_end(arg);
-
-	_log(errorCode, buf);
+void win32SystemManager::log(error_t unexpectedObject) {
+	const auto& [message, ec] = unexpectedObject;
+	log(ec, message);
 }
 
-void win32SystemManager::panic(const char* format, ...) {
-	
-	// call GetLastError first; to avoid errors in current function.
-	DWORD errorCode = GetLastError();
+void win32SystemManager::log(DWORD errorCode, std::string logMessage) {
 
-	char buf[0x1000];
+	if (!logfp) {
+		return;
+	}
 
-	va_list arg;
-	va_start(arg, format);
-	vsprintf(buf, format, arg);
-	va_end(arg);
+	// format result with timestamp and put line to file.
+	time_t t  = time(0);
+	tm* local = localtime(&t);
+	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] %s\n",
+		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec, logMessage.c_str());
 
-	_panic(errorCode, buf);
+	// if code != 0, write [note] in another line. 
+	if (errorCode != 0) {
+
+		// get error description.
+		char* description = NULL;
+
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK, NULL,
+			errorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&description, 0, NULL);
+
+		// format result with timestamp and put line to file.
+		fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d]   note: error (0x%x) %s\n",
+			1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec, errorCode, description);
+
+		LocalFree(description);
+	}
 }
 
-void win32SystemManager::panic(DWORD errorCode, const char* format, ...) {
 
-	char buf[0x1000];
-
-	va_list arg;
-	va_start(arg, format);
-	vsprintf(buf, format, arg);
-	va_end(arg);
-
-	_panic(errorCode, buf);
+void win32SystemManager::panic(std::string errorMessage) {
+	panic(0, errorMessage);
 }
+
+void win32SystemManager::panic(error_t unexpectedObject) {
+	const auto& [message, ec] = unexpectedObject;
+	panic(ec, message);
+}
+
+void win32SystemManager::panic(DWORD errorCode, std::string errorMessage) {
+
+	// before panic, log first.
+	log(errorCode, errorMessage);
+
+	// if code != 0, add details in another line.
+	if (errorCode != 0) {
+
+		char* description = NULL;
+
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+			errorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&description, 0, NULL);
+
+		errorMessage += format("\n\n发生的错误：(0x{:x}) {}", errorCode, description);
+		LocalFree(description);
+	}
+
+	// show error msgbox.
+	MessageBox(0, errorMessage.c_str(), 0, MB_OK);
+}
+
 
 std::string win32SystemManager::getProfileDir() {
 	return profileDir;
@@ -466,6 +485,7 @@ OSVersion win32SystemManager::getSystemVersion() {
 DWORD win32SystemManager::getSystemBuildNum() {
 	return osBuildNum;
 }
+
 
 bool win32SystemManager::modifyStartupReg() {
 
@@ -514,10 +534,10 @@ void win32SystemManager::raiseCleanThread() {
 		// because cpu cache lock only affect single cache line.
 		// see: https://stackoverflow.com/questions/2538070/atomic-operation-cost
 		if (lock.compare_exchange_strong(expected, tid)) {
-			log("clean thread %u: lock acquired.", tid);
+			log(format("clean thread {}: lock acquired.", tid));
 
 		} else {
-			log("clean thread %u: lock is now held by %u, exiting.", tid, lock.load());
+			log(format("clean thread {}: lock is now held by {}, exiting.", tid, lock.load()));
 			return;
 		}
 
@@ -543,7 +563,7 @@ void win32SystemManager::raiseCleanThread() {
 
 			// if pid changed (both pid == 0 or != 0), reset timer.
 			if (pidNow != pid) {
-				log("clean thread %u: SG pid changed to %u, reset timer.", tid, pidNow);
+				log(format("clean thread {}: SG pid changed to {}, reset timer.", tid, pidNow));
 				pid = pidNow;
 				timeElapsed = 0;
 			}
@@ -555,75 +575,22 @@ void win32SystemManager::raiseCleanThread() {
 		while (threadMgr.getTargetPid("GameLoader.exe")) {
 
 			if (threadMgr.killTarget()) {
-				log("clean thread %u: eliminated GameLoader.exe - pid %u.", tid, threadMgr.pid);
+				log(format("clean thread {}: eliminated GameLoader.exe - pid {}.", tid, threadMgr.pid));
 
 			} else {
-				log(GetLastError(), "clean thread %u: clean GameLoader.exe failed.", tid);
+				log(GetLastError(), format("clean thread {}: clean GameLoader.exe failed.", tid));
 			}
 		}
 
 
 		// release lock and exit.
-		log("clean thread %u: exit and release lock.", tid);
+		log(format("clean thread {}: exit and release lock.", tid));
 		lock = 0;
 	});
 
 	cleanThread.detach();
 }
 
-void win32SystemManager::_log(DWORD code, const char* logbuf) {
-
-	if (!logfp) {
-		return;
-	}
-
-	// format result with timestamp and put line to file.
-	time_t t = time(0);
-	tm* local = localtime(&t);
-	fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d] %s\n",
-		1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec, logbuf);
-
-	// if code != 0, write [note] in another line. 
-	if (code != 0) {
-
-		// get error description.
-		char* description = NULL;
-
-		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK, NULL,
-			code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&description, 0, NULL);
-
-		// format result with timestamp and put line to file.
-		fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d]   note: error (0x%x) %s\n",
-			1900 + local->tm_year, local->tm_mon + 1, local->tm_mday, local->tm_hour, local->tm_min, local->tm_sec, code, description);
-
-		LocalFree(description);
-	}
-}
-
-void win32SystemManager::_panic(DWORD code, const char* showbuf) {
-
-	char result[0x1000];
-
-	// before panic, log first.
-	_log(code, showbuf);
-
-	// put message to result.
-	strcpy(result, showbuf);
-
-	// if code != 0, add details in another line.
-	if (code != 0) {
-
-		char* description = NULL;
-
-		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-			          code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&description, 0, NULL);
-
-		sprintf(result + strlen(result), "\n\n发生的错误：(0x%x) %s", code, description);
-		LocalFree(description);
-	}
-
-	MessageBox(0, result, 0, MB_OK);
-}
 
 void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 
@@ -666,7 +633,7 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 			});
 			t1.detach();
 			std::thread t2([&]() {
-				panic(0, "QQ：%s（ID：%s），因你的以下行为，禁止你使用本软件：\n\n%s", i.qq.c_str(), i.id.c_str(), i.detail.c_str());
+				panic(fmt::format("QQ：{}（ID：{}），因你的以下行为，禁止你使用本软件：\n\n{}", i.qq, i.id, i.detail));
 				_unexpectedCipFailure();
 				ExitProcess(0);
 			});
@@ -677,9 +644,9 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 
 void win32SystemManager::_unexpectedCipFailure() {
 
-	win32ThreadManager   threadMgr;
-	auto& threadList = threadMgr.threadList;
-	CONTEXT              context;
+	win32ThreadManager     threadMgr;
+	auto&                  threadList = threadMgr.threadList;
+	CONTEXT                context;
 	context.ContextFlags = CONTEXT_CONTROL;
 
 	if (!threadMgr.getTargetPid()) {
@@ -706,8 +673,8 @@ void win32SystemManager::_grabCloudData() {
 		struct cloud_guard {
 			HINTERNET hSession = NULL;
 			HINTERNET hRequest = NULL;
-			char*     data = new char[1]{};
-			cJSON*    root = NULL;
+			char*     data     = new char[1]{};
+			cJSON*    root     = NULL;
 
 			~cloud_guard() {
 				if (hRequest) {
@@ -727,8 +694,8 @@ void win32SystemManager::_grabCloudData() {
 
 		auto& hSession = cxx_guard.hSession;
 		auto& hRequest = cxx_guard.hRequest;
-		auto& data = cxx_guard.data;
-		auto& root = cxx_guard.root;
+		auto& data     = cxx_guard.data;
+		auto& root     = cxx_guard.root;
 
 
 		// acquire cloud data.
@@ -746,10 +713,12 @@ void win32SystemManager::_grabCloudData() {
 			return false;
 		}
 
-		DWORD dataSize = 0;
-		DWORD bytesRead = 0;
+		auto   buffer_ptr  = std::make_unique<char[]>(0x1000);
+		auto   buffer      = buffer_ptr.get();
+		DWORD  dataSize    = 0;
+		DWORD  bytesRead   = 0;
+
 		do {
-			char buffer[0x1000];
 			if (!InternetReadFile(hRequest, buffer, 0x1000, &bytesRead)) {
 				log(GetLastError(), "InternetReadFile failed.");
 				return false;
@@ -758,8 +727,8 @@ void win32SystemManager::_grabCloudData() {
 			char* tempData = new char[dataSize + bytesRead];
 			memcpy(tempData, data, dataSize);
 			memcpy(tempData + dataSize, buffer, bytesRead);
-			delete[] data;
 
+			delete[] data;
 			data = tempData;
 			dataSize += bytesRead;
 
@@ -767,8 +736,8 @@ void win32SystemManager::_grabCloudData() {
 
 
 		// convert to json root, then read.
-		if (NULL == (root = cJSON_Parse(data))) {
-			log("cJSON_Parse failed: %s", cJSON_GetErrorPtr());
+		if (!(root = cJSON_Parse(data))) {
+			log(format("cJSON_Parse failed: {}", cJSON_GetErrorPtr()));
 			return false;
 		}
 

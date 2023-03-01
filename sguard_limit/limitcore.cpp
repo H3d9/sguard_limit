@@ -28,7 +28,9 @@ void LimitManager::hijack() {
 	// user is expected to get non-time_critical thread at next start-up.
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 
-	if (useKernelMode) { 
+	if (useKernelMode) {
+
+		result_t status;
 		
 		// check if kernel driver is initialized.
 		if (!driver.driverReady) {
@@ -36,8 +38,8 @@ void LimitManager::hijack() {
 			return;
 		}
 
-		if (!driver.load()) {
-			systemMgr.panic(driver.errorCode, "%s", driver.errorMessage);
+		if (!(status = driver.load())) {
+			systemMgr.panic(status.error());
 			return;
 		}
 
@@ -60,20 +62,21 @@ void LimitManager::hijack() {
 				}
 
 				
-				if (!driver.suspend(pid)) {
-					// nt!pssuspend failed if only proc not exist.
-					// in that case, do not log.
-					if (driver.errorCode != 0x5 /* access denied */) {
-						systemMgr.log(driver.errorCode, "%s", driver.errorMessage);
+				if (!(status = driver.suspend(pid))) {
+					const auto& [message, ec] = status.error();
+					// nt!pssuspend failed if only proc not exist. in that case, do not log.
+					if (ec != 0x5 /* access denied */) {
+						systemMgr.log(ec, message);
 					}
 				}
 
 				Sleep(TimeRed);
 				msElapsed += TimeRed;
 
-				if (!driver.resume(pid)) {
-					if (driver.errorCode != 0x5) {
-						systemMgr.log(driver.errorCode, "%s", driver.errorMessage);
+				if (!(status = driver.resume(pid))) {
+					const auto& [message, ec] = status.error();
+					if (ec != 0x5 /* access denied */) {
+						systemMgr.log(ec, message);
 					}
 				}
 
