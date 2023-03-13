@@ -140,7 +140,7 @@ IDB_DONATE              BITMAP                  "donate.bmp"
 // RES
 //
 
-DRIVER                  RES                     "..\\x64\\Release\\xxlWitch.sys"
+DRIVER                  RES                     "..\\x64\\Release\\Hutao.sys"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

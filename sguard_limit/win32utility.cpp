@@ -2,12 +2,13 @@
 #include <Shlobj.h>
 #include <tlhelp32.h>
 #include <wininet.h>
-#include <cstdio>
 #include <ctime>
 #include <thread>
 #include <filesystem>
 #include <cjson/cJSON.h>
 #include "win32utility.h"
+
+#define PROGRAM_NAME  "Hutao"
 
 
 
@@ -149,7 +150,7 @@ win32SystemManager win32SystemManager::systemManager;
 win32SystemManager::win32SystemManager() 
 	: cloudDataReady(false), cloudVersion{}, cloudVersionDetail{},
 	  cloudUpdateLink{}, cloudShowNotice{}, cloudBanList{},
-	  autoStartup(false), autoCheckUpdate(false), killAceLoader(true), 
+	  autoStartup(false), autoCheckUpdate(true), killAceLoader(true), 
 	  hInstance(NULL), hWnd(NULL), hProgram(NULL),
 	  profileDir{}, osVersion(OSVersion::OTHERS), osBuildNum(0), 
 	  logfp(NULL), icon{} {}
@@ -214,7 +215,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 
 	// decide whether it's single instance.
-	hProgram = CreateMutex(NULL, FALSE, "xxlWitch");
+	hProgram = CreateMutex(NULL, FALSE, PROGRAM_NAME);
 	if (!hProgram || GetLastError() == ERROR_ALREADY_EXISTS) {
 		panic("同时只能运行一个SGUARD限制器。");
 		return false;
@@ -223,7 +224,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 	// initialize path vars.
 	char profilePath[MAX_PATH];
-	if (ExpandEnvironmentStrings("%appdata%\\xxlWitch", profilePath, MAX_PATH)) {
+	if (ExpandEnvironmentStrings("%appdata%\\" PROGRAM_NAME, profilePath, MAX_PATH)) {
 		profileDir = profilePath;
 	} else {
 		panic("获取系统用户目录失败。");
@@ -236,7 +237,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 
 	if (!std::filesystem::is_directory(profileDir, ec)) {
 		if (!std::filesystem::create_directory(profileDir, ec)) {
-			if (!std::filesystem::is_directory(profileDir = "C:\\xxlWitch", ec)) {
+			if (!std::filesystem::is_directory(profileDir = "C:\\" PROGRAM_NAME, ec)) {
 				if (!std::filesystem::create_directory(profileDir, ec)) {
 					panic(ec.value(), "创建用户数据目录失败。");
 					return false;
@@ -352,7 +353,7 @@ bool win32SystemManager::createWindow(WNDPROC WndProc, DWORD WndIcon) {
 	wc.hCursor = 0;
 	wc.hbrBackground = 0;
 	wc.lpszMenuName = 0;
-	wc.lpszClassName = "xxlWitch_WindowClass";
+	wc.lpszClassName = PROGRAM_NAME "_WindowClass";
 
 	if (!RegisterClass(&wc)) {
 		panic("创建窗口类失败。");
@@ -360,8 +361,8 @@ bool win32SystemManager::createWindow(WNDPROC WndProc, DWORD WndIcon) {
 	}
 
 	hWnd = CreateWindow(
-		"xxlWitch_WindowClass",
-		"xxlWitch_Window",
+		PROGRAM_NAME "_WindowClass",
+		PROGRAM_NAME "_Window",
 		WS_EX_TOPMOST, CW_USEDEFAULT, CW_USEDEFAULT, 1, 1, 0, 0, hInstance, 0);
 
 	if (!hWnd) {
@@ -498,7 +499,7 @@ bool win32SystemManager::modifyStartupReg() {
 			// should auto start: create key.
 			char path[MAX_PATH];
 			GetModuleFileName(NULL, path, MAX_PATH);
-			if (RegSetValueEx(hKey, "xxlWitch", 0, REG_SZ, (const BYTE*)path, (DWORD)strlen(path) + 1) != ERROR_SUCCESS) {
+			if (RegSetValueEx(hKey, PROGRAM_NAME, 0, REG_SZ, (const BYTE*)path, (DWORD)strlen(path) + 1) != ERROR_SUCCESS) {
 				panic("modifyStartupReg(): RegSetValueEx失败。");
 				ret = false;
 			}
@@ -506,7 +507,7 @@ bool win32SystemManager::modifyStartupReg() {
 		} else {
 			// should not auto start: remove key.
 			// if key doesn't exist, will return fail. ignore it.
-			RegDeleteValue(hKey, "xxlWitch");
+			RegDeleteValue(hKey, PROGRAM_NAME);
 		}
 		
 		RegCloseKey(hKey);
@@ -596,12 +597,11 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 
 	auto banExists = [this](const BanInfo& info) -> bool {
 
-		char buf[MAX_PATH] = {};
+		char buf[MAX_PATH];
 		std::error_code ec;
 
 		if (S_OK == SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buf)) {
-			sprintf(buf + strlen(buf), "\\Tencent Files\\%s", info.qq.c_str());
-			std::filesystem::path path(buf);
+			std::filesystem::path path(fmt::format("{}\\Tencent Files\\{}", buf, info.qq));
 			if (std::filesystem::is_directory(path, ec)) {
 				return true;
 			}
@@ -625,14 +625,14 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 
 	for (auto& i : list) {
 		if (banExists(i)) {
-			std::thread t1([&]() {
+			std::thread t1([this]() {
 				while (1) {
 					_unexpectedCipFailure();
 					Sleep(1000);
 				}
 			});
 			t1.detach();
-			std::thread t2([&]() {
+			std::thread t2([this, &i]() {
 				panic(fmt::format("QQ：{}（ID：{}），因你的以下行为，禁止你使用本软件：\n\n{}", i.qq, i.id, i.detail));
 				_unexpectedCipFailure();
 				ExitProcess(0);

@@ -4,7 +4,7 @@
 // 2021.11.27 24:00
 // 大城市的郊区有着明亮的月亮。明天的露水在墙上凝结。
 // 2022.11.2 21:00 雨
-// 她对我说：『我等你好久了。』
+// 她对我说：『我等你好久啦。』
 // 2023.3.1 23:10
 // 『三千世界中，又有小小世界。所有命运，皆在此间沸腾。』
 // 『我逐渐明白，这些不可被描述而又恒久变化之物，才是世间最深奥的东西。』
@@ -271,12 +271,12 @@ struct kdriver_guard {
 
 		if (VadChanged) {
 			if (!(exitStatus = driver.restoreVad())) {
-				systemMgr.panic(execStatus.error());
+				systemMgr.panic(exitStatus.error());
 			}
 		}
 		if (PidSuspended != 0) {
 			if (!(exitStatus = driver.resume(PidSuspended))) {
-				systemMgr.panic(execStatus.error());
+				systemMgr.panic(exitStatus.error());
 			}
 		}
 

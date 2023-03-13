@@ -58,7 +58,7 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 
 	str.resize(0x1000);  // read notice
 	GetPrivateProfileString("Global", "cloudShowNotice", "", str.data(), 0x1000, profile);
-	str.resize(str.find_first_of('\0'));
+	str.resize(str.find('\0'));
 
 	std::replace(str.begin(), str.end(), '|', '\n');  // ini file cannot contain \n, replace it with |
 	systemMgr.cloudShowNotice = str;

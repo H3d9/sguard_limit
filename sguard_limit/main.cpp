@@ -110,8 +110,8 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：\n\n"
-			"1. 使用C++23特性重构（n4928/p0323r3）。\n\n"
-			"2. 重新设计内核模式插件。\n\n\n"
+			"“一份Vodka，加冰、青柠汁、姜汁啤酒。\n\n"
+			" 哦，最重要的...再来点爱。”     —— Jackie Welles\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -171,7 +171,7 @@ INT WINAPI WinMain(
 	// initialize kdriver module:
 	// (if os supported) set registry, copy sys file, check sys version.
 	
-	auto DriverOptionsSelected = [&] ()->bool {
+	auto DriverOptionsSelected = [] ()->bool {
 		return g_Mode == 2 || (g_Mode == 0 && limitMgr.useKernelMode);
 	};
 

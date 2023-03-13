@@ -1,12 +1,11 @@
 #include <Windows.h>
-#include <filesystem>
 #include <functional>
-#include <fmt/core.h>
+#include <fmt/core.h> // msvc std::format generates large file size
 #include "resource.h"
 #include "kdriver.h"
 
-#define DRIVER_NAME       "xxlWitch"
-#define DRIVER_VERSION    "23.2.21"
+#define DRIVER_NAME       "Hutao"
+#define DRIVER_VERSION    "23.3.13"
 
 using fmt::format;
 using unexpected_error = tl::unexpected<error_t>;
@@ -45,7 +44,7 @@ result_t KernelDriver::init(std::string loadPath) {
 		sysfile_CurPath = curPath;
 
 	} else {
-		return unexpected_error(__FUNCTION__ "(): 获取当前目录失败。", 0);
+		return unexpected_error(__FUNCTION__ "(): 获取当前目录失败。", GetLastError());
 	}
 
 
@@ -226,7 +225,7 @@ result_t KernelDriver::readVM(DWORD pid, PVOID out, PVOID targetAddress) {
 			return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 		}
 		if (request.errorCode != 0) {
-			return unexpected_error(__FUNCTION__ "(): " + std::string(request.errorFunc), request.errorCode);
+			return unexpected_error(format(__FUNCTION__ "(): {}", request.errorFunc), request.errorCode);
 		}
 
 		memcpy((PVOID)((ULONG64)out + page * 0x1000), request.data, 0x1000);
@@ -245,14 +244,13 @@ result_t KernelDriver::writeVM(DWORD pid, PVOID in, PVOID targetAddress) {
 	for (auto page = 0; page < 4; page++) {
 
 		request.address = (PVOID)((ULONG64)targetAddress + page * 0x1000);
-
 		memcpy(request.data, (PVOID)((ULONG64)in + page * 0x1000), 0x1000);
 
 		if (!DeviceIoControl(hDriver, VMIO_WRITE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
 			return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 		}
 		if (request.errorCode != 0) {
-			return unexpected_error(__FUNCTION__ "(): " + std::string(request.errorFunc), request.errorCode);
+			return unexpected_error(format(__FUNCTION__ "(): {}", request.errorFunc), request.errorCode);
 		}
 	}
 
@@ -269,7 +267,7 @@ result_t KernelDriver::allocVM(DWORD pid, PVOID* pAllocatedAddress) {
 		return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 	}
 	if (request.errorCode != 0) {
-		return unexpected_error(__FUNCTION__ "(): " + std::string(request.errorFunc), request.errorCode);
+		return unexpected_error(format(__FUNCTION__ "(): {}", request.errorFunc), request.errorCode);
 	}
 
 	*pAllocatedAddress = request.address;
@@ -287,7 +285,7 @@ result_t KernelDriver::suspend(DWORD pid) {
 		return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 	}
 	if (request.errorCode != 0) {
-		return unexpected_error(__FUNCTION__ "(): " + std::string(request.errorFunc), request.errorCode);
+		return unexpected_error(format(__FUNCTION__ "(): {}", request.errorFunc), request.errorCode);
 	}
 
 	return true;
@@ -303,7 +301,7 @@ result_t KernelDriver::resume(DWORD pid) {
 		return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 	}
 	if (request.errorCode != 0) {
-		return unexpected_error(__FUNCTION__ "(): " + std::string(request.errorFunc), request.errorCode);
+		return unexpected_error(format(__FUNCTION__ "(): {}", request.errorFunc), request.errorCode);
 	}
 
 	return true;
@@ -321,7 +319,7 @@ result_t KernelDriver::searchVad(DWORD pid, std::vector<ULONG64>& out, const wch
 		return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 	}
 	if (request.errorCode != 0) {
-		return unexpected_error(__FUNCTION__ "(): " + std::string(request.errorFunc), request.errorCode);
+		return unexpected_error(format(__FUNCTION__ "(): {}", request.errorFunc), request.errorCode);
 	}
 
 	out.clear();
@@ -347,6 +345,9 @@ result_t KernelDriver::restoreVad() {
 	if (!DeviceIoControl(hDriver, VM_VADRESTORE, &request, sizeof(request), &request, sizeof(request), &Bytes, NULL)) {
 		return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 	}
+	if (request.errorCode != 0) {
+		return unexpected_error(format(__FUNCTION__ "(): {}", request.errorFunc), request.errorCode);
+	}
 	
 	return true;
 }
@@ -363,7 +364,7 @@ result_t KernelDriver::patchAceBase() {
 		return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 	}
 	if (request.errorCode != 0) {
-		return unexpected_error(__FUNCTION__ "(): data_hijack: " + std::string(request.errorFunc), request.errorCode);
+		return unexpected_error(format(__FUNCTION__ "(): data_hijack: {}", request.errorFunc), request.errorCode);
 	}
 
 	return true;
@@ -382,7 +383,7 @@ result_t KernelDriver::_checkVersion() {
 		return unexpected_error(__FUNCTION__ "(): DeviceIoControl失败。", GetLastError());
 	}
 	if (0 != strcmp(request.data, DRIVER_VERSION)) {
-		return unexpected_error(__FUNCTION__ "() : 内核驱动文件“" DRIVER_NAME ".sys”不是最新的。\n\n【提示】请重新打开限制器，或重启电脑再试一次。", 0);
+		return unexpected_error(__FUNCTION__ "() : 内核驱动文件“" DRIVER_NAME ".sys”不是最新的。\n\n【提示】请重新打开限制器或重启电脑。", 0);
 	}
 
 	return true;
@@ -392,45 +393,42 @@ result_t KernelDriver::_extractResource() {
 
 	HRSRC hRsrc = FindResource(NULL, MAKEINTRESOURCE(DRIVER), "RES");
 	if (hRsrc == NULL) {
-		return unexpected_error(__FUNCTION__ "(): FindResource失败。\n\n" + _strUserManual(), GetLastError());
+		return unexpected_error(format(__FUNCTION__ "(): FindResource失败。\n\n{}", _strUserManual()), GetLastError());
 	}
 
 	DWORD rcSize = SizeofResource(NULL, hRsrc);
 	if (rcSize <= 0) {
-		return unexpected_error(__FUNCTION__ "(): SizeofResource失败。\n\n" + _strUserManual(), GetLastError());
+		return unexpected_error(format(__FUNCTION__ "(): SizeofResource失败。\n\n{}", _strUserManual()), GetLastError());
 	}
 
 	HGLOBAL hGlobal = LoadResource(NULL, hRsrc);
 	if (hGlobal == NULL) {
-		return unexpected_error(__FUNCTION__ "(): LoadResource失败。\n\n" + _strUserManual(), GetLastError());
+		return unexpected_error(format(__FUNCTION__ "(): LoadResource失败。\n\n{}", _strUserManual()), GetLastError());
 	}
 
 	LPVOID rcBuf = LockResource(hGlobal);
 	if (rcBuf == NULL) {
-		return unexpected_error(__FUNCTION__ "(): LockResource失败。\n\n" + _strUserManual(), GetLastError());
+		return unexpected_error(format(__FUNCTION__ "(): LockResource失败。\n\n{}", _strUserManual()), GetLastError());
 	}
 
 	if (auto fp = fopen(sysfile_LoadPath.c_str(), "wb")) {
 		fwrite(rcBuf, 1, rcSize, fp);
 		fclose(fp);
 	} else {
-		return unexpected_error(__FUNCTION__ "(): fopen失败。\n\n" + _strUserManual(), errno);
+		return unexpected_error(format(__FUNCTION__ "(): fopen失败。\n\n{}", _strUserManual()), errno);
 	}
 
 	return true;
 }
 
 std::string KernelDriver::_strUserManual() {
-
-	auto curPath = sysfile_CurPath.substr(0, sysfile_CurPath.rfind('\\'));
-	auto loadPath = sysfile_LoadPath.substr(0, sysfile_LoadPath.rfind('\\'));
-
-	return fmt::format(
+	return format(
 		"【解决办法】请重新在更新链接或群文件下载（右键->其他选项中有更新地址），解压后再运行，不要在压缩包中点开。\n"
 		"若还不行：先禁用defender，把限制器目录以及以下2个路径加入杀毒信任区，然后重启电脑再重新下载解压：\n\n"
 		"1. {}\n2. {}\n\n"
 		"【注意】请仔细阅读附带的常见问题文档或群公告。",
-		curPath, loadPath);
+		sysfile_CurPath.substr(0, sysfile_CurPath.rfind('\\')), 
+		sysfile_LoadPath.substr(0, sysfile_LoadPath.rfind('\\')));
 }
 
 
@@ -504,11 +502,11 @@ result_t KernelDriver::_startService() {
 	std::error_code ec;
 
 	if (!std::filesystem::exists(sysfile_CurPath, ec)) {
-		return unexpected_error(__FUNCTION__ "(): 当前目录中未发现" DRIVER_NAME ".sys。\n\n" + _strUserManual(), ec.value());
+		return unexpected_error(format(__FUNCTION__ "(): 当前目录中未发现" DRIVER_NAME ".sys。\n\n{}", _strUserManual()), ec.value());
 	}
 
 	if (!CopyFile(sysfile_CurPath.c_str(), sysfile_LoadPath.c_str(), FALSE)) {
-		return unexpected_error(__FUNCTION__ "(): 无法拷贝sys文件到系统用户目录。\n\n" + _strUserManual(), ec.value());
+		return unexpected_error(format(__FUNCTION__ "(): 无法拷贝sys文件到系统用户目录。\n\n{}", _strUserManual()), ec.value());
 	}
 	*/
 
@@ -523,7 +521,7 @@ result_t KernelDriver::_startService() {
 		auto errorCode = GetLastError();
 		DeleteFile(sysfile_LoadPath.c_str());
 		DeleteService(hService);
-		return unexpected_error(__FUNCTION__ "(): StartService失败。\n\n" + _strUserManual(), errorCode);
+		return unexpected_error(format(__FUNCTION__ "(): StartService失败。\n\n{}", _strUserManual()), errorCode);
 	}
 
 	std::thread t(fn);
@@ -558,5 +556,4 @@ void KernelDriver::_endService() {
 	DeleteService(hService);
 
 	// service will be deleted after we close service handle.
-	DeleteFile(sysfile_LoadPath.c_str());
 }

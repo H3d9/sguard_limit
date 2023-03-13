@@ -2,8 +2,8 @@
 #include <Windows.h>
 
 
-#define VERSION             "23.3.2 ºúÌÒ±¦±´¸´¿Ì¼ÍÄî°æ"
-#define MEMPATCH_VERSION    "V4.11"
+#define VERSION             "23.3.13 ºúÌÒ±¦±´¸´¿Ì¼ÍÄî°æ"
+#define MEMPATCH_VERSION    "V4.12"
 
 #define WM_TRAYACTIVATE     WM_APP + 10U
 
