@@ -111,6 +111,8 @@ static INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 
 		case WM_INITDIALOG:
 		{
+			dlgParam = (DWORD)lParam;
+
 			if (lParam == DLGPARAM_RRPCT) { // set limit percent.
 				SetWindowText(hDlg, "输入限制资源的百分比");
 				auto note = format("输入整数1~99，或999（代表99.9）\n（当前值：{}）", limitMgr.limitPercent.load());
