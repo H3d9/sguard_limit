@@ -110,8 +110,7 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：\n\n"
-			"“一份Vodka，加冰、青柠汁、姜汁啤酒。\n\n"
-			" 哦，最重要的...再来点爱。”     —— Jackie Welles\n\n\n"
+			"1. 修复已知问题。\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"

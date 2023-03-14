@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <cstdio>
 #include <functional>
 #include <fmt/core.h> // msvc std::format generates large file size
 #include "resource.h"
@@ -411,11 +412,13 @@ result_t KernelDriver::_extractResource() {
 		return unexpected_error(format(__FUNCTION__ "(): LockResource ß∞‹°£\n\n{}", _strUserManual()), GetLastError());
 	}
 
+	DeleteFile(sysfile_LoadPath.c_str());
+
 	if (auto fp = fopen(sysfile_LoadPath.c_str(), "wb")) {
 		fwrite(rcBuf, 1, rcSize, fp);
 		fclose(fp);
 	} else {
-		return unexpected_error(format(__FUNCTION__ "(): fopen ß∞‹°£\n\n{}", _strUserManual()), errno);
+		return unexpected_error(format(__FUNCTION__ "(): fopen ß∞‹°£\n\n{}", _strUserManual()), GetLastError());
 	}
 
 	return true;
