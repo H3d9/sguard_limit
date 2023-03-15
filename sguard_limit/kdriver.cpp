@@ -412,6 +412,8 @@ result_t KernelDriver::_extractResource() {
 		return unexpected_error(format(__FUNCTION__ "(): LockResource ß∞‹°£\n\n{}", _strUserManual()), GetLastError());
 	}
 
+	DeleteFile(sysfile_LoadPath.c_str());
+
 	if (auto fp = fopen(sysfile_LoadPath.c_str(), "wb")) {
 		fwrite(rcBuf, 1, rcSize, fp);
 		fclose(fp);
