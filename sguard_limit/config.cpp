@@ -42,10 +42,9 @@ bool ConfigManager::loadConfig() {  // executes only when program is initalizing
 	// check version & load configurations.
 	str.resize(0x1000);
 	GetPrivateProfileString("Global", "Version", NULL, str.data(), 0x1000, profile);
-	str.resize(str.find_first_of('\0'));
+	str.resize(str.find('\0'));
 
 	if (strcmp(str.c_str(), VERSION) != 0) {
-		DeleteFile(profile);
 		WritePrivateProfileString("Global", "Version", VERSION, profile);
 		result = false;
 	}

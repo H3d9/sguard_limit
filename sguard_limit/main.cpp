@@ -110,7 +110,8 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：\n\n"
-			"1. 修复已知问题。\n\n\n"
+			"1. 修复fopen失败。\n\n"
+			"2. 修复特殊情况下可能导致的多线程死锁。\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -151,7 +152,7 @@ INT WINAPI WinMain(
 			// show notice if exists.
 			if (!systemMgr.cloudShowNotice.empty()) {
 				MessageBox(0, systemMgr.cloudShowNotice.c_str(), "公告", MB_OK);
-				configMgr.writeConfig(); // show only once
+				configMgr.writeConfig();
 			}
 		});
 		t.detach();

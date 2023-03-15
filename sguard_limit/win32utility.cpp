@@ -3,6 +3,7 @@
 #include <tlhelp32.h>
 #include <wininet.h>
 #include <ctime>
+#include <cstdio>
 #include <thread>
 #include <filesystem>
 #include <cjson/cJSON.h>
@@ -258,7 +259,7 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	logfp = fopen(logfile.c_str(), "a+");
 
 	if (!logfp) {
-		panic("打开log文件失败。");
+		panic(GetLastError(), "打开log文件失败。");
 		return false;
 	}
 

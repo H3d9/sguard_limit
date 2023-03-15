@@ -412,12 +412,12 @@ result_t KernelDriver::_extractResource() {
 		return unexpected_error(format(__FUNCTION__ "(): LockResource ß∞‹°£\n\n{}", _strUserManual()), GetLastError());
 	}
 
-	DeleteFile(sysfile_LoadPath.c_str());
-
 	if (auto fp = fopen(sysfile_LoadPath.c_str(), "wb")) {
 		fwrite(rcBuf, 1, rcSize, fp);
 		fclose(fp);
 	} else {
+		// we can use GetLastError() rather than errno, on some windows C runtime error handling.
+		// when we call fopen, she will turn to CreateFile(), which will set GetLastError() in win32 mode.
 		return unexpected_error(format(__FUNCTION__ "(): fopen ß∞‹°£\n\n{}", _strUserManual()), GetLastError());
 	}
 
@@ -479,8 +479,7 @@ result_t KernelDriver::_startService() {
 	// if service is running, return true to use it directly.
 	// no need to worry about driver version mismatch, we'll check't later.
 	if (svcStatus.dwCurrentState == SERVICE_RUNNING) {
-		std::thread t(fn);
-		t.detach();
+		fn();
 		return true;
 	}
 
@@ -528,7 +527,7 @@ result_t KernelDriver::_startService() {
 	}
 
 	std::thread t(fn);
-	t.detach();
+	t.join();
 	
 	return true;
 }
