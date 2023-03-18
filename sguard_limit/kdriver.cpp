@@ -33,6 +33,7 @@ KernelDriver& KernelDriver::getInstance() {
 
 result_t KernelDriver::init(std::string loadPath) {
 
+
 	// initialize load path and current path.
 	sysfile_LoadPath = loadPath + "\\" DRIVER_NAME ".sys";
 
@@ -160,7 +161,6 @@ result_t KernelDriver::init(std::string loadPath) {
 	}
 
 	unload();
-
 	return driverReady = true;
 }
 
@@ -412,11 +412,10 @@ result_t KernelDriver::_extractResource() {
 		return unexpected_error(format(__FUNCTION__ "(): LockResource失败。\n\n{}", _strUserManual()), GetLastError());
 	}
 
-	DeleteFile(sysfile_LoadPath.c_str());
-
 	if (auto fp = fopen(sysfile_LoadPath.c_str(), "wb")) {
 		fwrite(rcBuf, 1, rcSize, fp);
 		fclose(fp);
+
 	} else {
 		// we can use GetLastError() rather than errno, on some windows C runtime error handling.
 		// when we call fopen, she will turn to CreateFile(), which will set GetLastError() in win32 mode.
@@ -476,13 +475,17 @@ result_t KernelDriver::_startService() {
 	};
 
 	// check service status.
-	(void)QueryServiceStatus(hService, &svcStatus);
+	if (!QueryServiceStatus(hService, &svcStatus)) {
+		return unexpected_error(__FUNCTION__ "(): QueryServiceStatus失败。", GetLastError());
+	}
 
-	// if service is running, return true to use it directly.
-	// no need to worry about driver version mismatch, we'll check't later.
-	if (svcStatus.dwCurrentState == SERVICE_RUNNING) {
-		fn();
-		return true;
+	// if service is running, stop it to restart. (maybe device is invalid or file cache flushed)
+	if (svcStatus.dwCurrentState != SERVICE_STOPPED && svcStatus.dwCurrentState != SERVICE_STOP_PENDING) {
+		if (!ControlService(hService, SERVICE_CONTROL_STOP, &svcStatus)) {
+			DWORD errorCode = GetLastError();
+			DeleteService(hService);
+			return unexpected_error(__FUNCTION__ "(): 无法停止当前服务，建议重启电脑。", errorCode);
+		}
 	}
 
 	// if service is stopping, wait till it's completely stopped. timeout: 3s
@@ -528,9 +531,8 @@ result_t KernelDriver::_startService() {
 		return unexpected_error(format(__FUNCTION__ "(): StartService失败。\n\n{}", _strUserManual()), errorCode);
 	}
 
-	std::thread t(fn);
-	t.join();
-	
+	fn();
+
 	return true;
 }
 
@@ -540,6 +542,7 @@ void KernelDriver::_endService() {
 	auto&          hSCManager  = cxx_guard.hSCManager;
 	auto&          hService    = cxx_guard.hService;
 	SERVICE_STATUS svcStatus;
+
 
 	// open SCM.
 	hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
