@@ -262,7 +262,7 @@ struct kdriver_guard {
 
 	bool      VadChanged    = false;
 	DWORD     PidSuspended  = 0;
-	result_t  execStatus;  // (std::)excepted default ctor = use expected value's default initialize.
+	result_t  execStatus;  // (std/tl::)expected default ctor = use expected value's default initialize.
 
 	~kdriver_guard() {
 

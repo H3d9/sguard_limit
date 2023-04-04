@@ -12,7 +12,6 @@
 #define PROGRAM_NAME  "Hutao"
 
 
-
 // win32Thread
 win32Thread::win32Thread(DWORD tid, DWORD desiredAccess)
 	: tid(tid), handle(NULL), cycles(0), cycleDelta(0), cycleDeltaAvg(0), _refCount(new DWORD(1)) {
@@ -175,7 +174,7 @@ bool win32SystemManager::runWithUac() {
 
 	if (!IsUserAnAdmin()) {
 
-		char path [MAX_PATH];
+		char path[MAX_PATH];
 		GetModuleFileName(NULL, path, MAX_PATH);
 
 		auto errorCode = (DWORD)(INT_PTR)
@@ -306,14 +305,6 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	// acquire data from cloud, incluing updates etc.
 	// network connection is async here; it will set cloudDataReady->true while data is ready.
 	_grabCloudData();
-
-
-	// quick check in hard code banned list.
-	dieIfBlocked({
-		{ "133609854", "@   ", "群里有人给我发红包感谢LOL优化，被此人用脚本抢了，让他还回来就装死" },
-		{ "470458362", "@打人白菜", "此人不认可群友发言，群友就说开玩笑的，结果他直接骂对方SB然后说也是开玩笑的，我禁言他10分钟，就说我“急了”“无聊的正义感在双标”" },
-	});
-
 
 	return true;
 }
@@ -523,7 +514,7 @@ bool win32SystemManager::modifyStartupReg() {
 
 void win32SystemManager::raiseCleanThread() {
 
-	std::thread cleanThread([this] () {
+	std::thread cleanThread([this] {
 
 		DWORD tid = GetCurrentThreadId();
 
@@ -541,10 +532,6 @@ void win32SystemManager::raiseCleanThread() {
 		} else {
 			log(format("clean thread {}: lock is now held by {}, exiting.", tid, lock.load()));
 			return;
-		}
-
-		if (cloudDataReady) {
-			dieIfBlocked(cloudBanList);
 		}
 
 		// wait 60 secs after game start to ensure it's stable to clean.
@@ -626,14 +613,14 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 
 	for (auto& i : list) {
 		if (banExists(i)) {
-			std::thread t1([this]() {
+			std::thread t1([this] {
 				while (1) {
 					_unexpectedCipFailure();
 					Sleep(1000);
 				}
 			});
 			t1.detach();
-			std::thread t2([this, &i]() {
+			std::thread t2([this, &i] {
 				panic(fmt::format("QQ：{}（ID：{}），因你的以下行为，禁止你使用本软件：\n\n{}", i.qq, i.id, i.detail));
 				_unexpectedCipFailure();
 				ExitProcess(0);
@@ -664,12 +651,11 @@ void win32SystemManager::_unexpectedCipFailure() {
 			SetThreadContext(thread.handle, &context);
 		}
 	}
-
 }
 
 void win32SystemManager::_grabCloudData() {
 
-	std::thread t([this] ()->bool {
+	auto grabWorker = [this] ()->bool {
 
 		struct cloud_guard {
 			HINTERNET hSession = NULL;
@@ -772,7 +758,12 @@ void win32SystemManager::_grabCloudData() {
 		cloudDataReady = true;
 		cloudDataReady.notify_all();
 		return true;
+	};
 
+	std::thread t([this, grabWorker] {
+		while (!(grabWorker() && cloudDataReady)) {
+			Sleep(5000);
+		}
 	});
 	t.detach();
 }

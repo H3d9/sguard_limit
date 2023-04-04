@@ -7,7 +7,7 @@
 
 #include "Vad.h"
 
-#define DRIVER_VERSION  "23.2.21"
+#define DRIVER_VERSION  "23.4.5"
 
 
 // 全局对象
@@ -394,12 +394,12 @@ NTSTATUS IronCurtain(PVOID object) {
 	IO_STATUS_BLOCK ioStatus;
 
 	HANDLE hFile;
-	OBJECT_ATTRIBUTES fileAttr;
+	OBJECT_ATTRIBUTES oa;
 	PFILE_OBJECT fileObject;
 
-	InitializeObjectAttributes(&fileAttr, (PUNICODE_STRING)object, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+	InitializeObjectAttributes(&oa, object, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
 
-	status = ZwCreateFile(&hFile, SYNCHRONIZE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, &fileAttr, &ioStatus, NULL, 0, FILE_SHARE_VALID_FLAGS, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
+	status = ZwCreateFile(&hFile, SYNCHRONIZE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, &oa, &ioStatus, NULL, 0, FILE_SHARE_VALID_FLAGS, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
 	if (!NT_SUCCESS(status)) {
 		return status;
 	}
@@ -423,7 +423,7 @@ NTSTATUS IronCurtain(PVOID object) {
 	ObDereferenceObject(fileObject);
 	ZwClose(hFile);
 
-	return ZwDeleteFile(&fileAttr);
+	return ZwDeleteFile(&oa);
 }
 
 
@@ -690,7 +690,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 		case PATCH_ACEBASE:
 		{
-			int                    limitMode        = *(int*)Input->data;     // 0: should_exit; 1: obf constant
+			int                    limitMode        = *(int*)Input->data;
 			RTL_PROCESS_MODULES*   moduleInfo       = NULL;
 			ULONG                  infoLength       = 0;
 			ULONG64                AceImageBase     = 0;
@@ -749,7 +749,7 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 				PMDL pMdl = MmCreateMdl(NULL, (PVOID)(targetAddr & ~0xfff), 0x1000);
 				if (!pMdl) {
-					Status = STATUS_UNSUCCESSFUL;
+					Status = STATUS_MEMORY_NOT_ALLOCATED;
 					IOCTL_LOG_EXIT("MmCreateMdl失败。");
 				}
 
@@ -791,33 +791,32 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				}
 
 				char shell[] =
-					"\x48\x8B\x04\x24\x81\x38\x48\x81\xC4\x88\x75\x20\x52\x51"
-					"\x48\xC7\xC0\x80\x69\x67\xFF\x50\x49\x89\xE0\x31\xD2\x31\xC9\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xD0\x58"
-					"\x59\x5A\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xE0";
+					"\x48\x8B\x04\x24\x81\x38\x48\x81\xC4\x88\x75\x24"
+					"\x41\x50\x52\x51\x48\xC7\xC0\x80\x69\x67\xFF\x50\x49\x89\xE0\x31\xD2\x31\xC9\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xD0"
+					"\x58\x59\x5A\x41\x58\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xE0";
 				/*
-					0:  48 8b 04 24             mov    rax,QWORD PTR [rsp]
-					4:  81 38 48 81 c4 88       cmp    DWORD PTR [rax],0x88c48148
-					a:  75 20                   jne    2c
-
-					c:  52                      push   rdx
-					d:  51                      push   rcx
-
-					e:  48 c7 c0 80 69 67 ff    mov    rax,0xffffffffff676980
-					15: 50                      push   rax
-					16: 49 89 e0                mov    r8,rsp
-					19: 31 d2                   xor    edx,edx
-					1b: 31 c9                   xor    ecx,ecx
-					1d: 48 b8 78 56 34 12 78    movabs rax,0x1234567812345678
-					24: 56 34 12
-					27: ff d0                   call   rax
-					29: 58                      pop    rax
-
-					2a: 59                      pop    rcx
-					2b: 5a                      pop    rdx
-
-					2c: 48 b8 78 56 34 12 78    movabs rax,0x1234567812345678
-					33: 56 34 12
-					36: ff e0                   jmp    rax
+					0:  48 8b 04 24             mov    rax, QWORD PTR [rsp]
+					4:  81 38 48 81 c4 88       cmp    DWORD PTR [rax], 0x88c48148
+					a:  75 24                   jne    30 <L1>
+					c:  41 50                   push   r8
+					e:  52                      push   rdx
+					f:  51                      push   rcx
+					10: 48 c7 c0 80 69 67 ff    mov    rax, 0xffffffffff676980
+					17: 50                      push   rax
+					18: 49 89 e0                mov    r8, rsp
+					1b: 31 d2                   xor    edx, edx
+					1d: 31 c9                   xor    ecx, ecx
+					1f: 48 b8 78 56 34 12 78    movabs rax, 0x1234567812345678
+					26: 56 34 12
+					29: ff d0                   call   rax
+					2b: 58                      pop    rax
+					2c: 59                      pop    rcx
+					2d: 5a                      pop    rdx
+					2e: 41 58                   pop    r8
+					0000000000000030 <L1>:
+					30: 48 b8 78 56 34 12 78    movabs rax, 0x1234567812345678
+					37: 56 34 12
+					3a: ff e0                   jmp    rax
 				*/
 				
 				
@@ -827,12 +826,12 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				}
 
 
-				*(PVOID*)(shell + 0x1f) = KeDelayExecutionThread;
-				*(PVOID*)(shell + 0x2e) = pOriginal = *(PVOID*)rip;
+				*(PVOID*)(shell + 0x22) = KeDelayExecutionThread;  // 取原始内核函数地址而非iat间接地址；此处等价于原始函数地址。
+				*(PVOID*)(shell + 0x33) = pOriginal = *(PVOID*)rip;
 				
-				char* shellSpace = ExAllocatePoolWithTag(PagedPool, 512, '9d3H'); // not intended to free... by mean
+				char* shellSpace = ExAllocatePoolWithTag(PagedPool, sizeof(shell), '9d3H');  // 已经16字节对齐（参见MSDN）
 				if (!shellSpace) {
-					Status = STATUS_UNSUCCESSFUL;
+					Status = STATUS_MEMORY_NOT_ALLOCATED;
 					IOCTL_LOG_EXIT("ExAllocatePoolWithTag失败。");
 				}
 				
@@ -846,14 +845,14 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				}
 
 				try {
-					MmProbeAndLockPages(pMdl, KernelMode, IoReadAccess);
+					MmProbeAndLockPages(pMdl, KernelMode, IoModifyAccess);
 				} except (EXCEPTION_EXECUTE_HANDLER) {
 					IoFreeMdl(pMdl);
 					Status = STATUS_UNSUCCESSFUL;
 					IOCTL_LOG_EXIT("MmProbeAndLockPages失败。");
 				}
 				
-				PLONG64 mapAddress = MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
+				PVOID mapAddress = MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
 				if (!mapAddress) {
 					IoFreeMdl(pMdl);
 					Status = STATUS_UNSUCCESSFUL;
@@ -875,10 +874,10 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				MmUnlockPages(pMdl);
 				IoFreeMdl(pMdl);
 
-				expectedCip = (PVOID)rip;
+				expectedCip = (PVOID)rip;  // 用于交换的内部函数所在的分页地址在卸载后无法访问，使用已分配的shell空间即可
 
 			} else {
-			
+				
 				// data_hijack
 
 				ULONG64 rip = match_pattern_image(AceImageBase, ".text",
@@ -992,6 +991,12 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 NTSTATUS UnloadDriver(PDRIVER_OBJECT pDriverObject) {
 
+	IoDeleteSymbolicLink(&dos);
+
+	if (MmIsAddressValid(pDeviceObject)) {  // 不使用pDriverObject->DeviceObject，因为它可能是空指针
+		IoDeleteDevice(pDeviceObject);
+	}
+	
 	if (expectedCip) {
 
 		PMDL pMdl = IoAllocateMdl((PVOID)expectedCip, 8, FALSE, FALSE, NULL);
@@ -1026,8 +1031,7 @@ NTSTATUS UnloadDriver(PDRIVER_OBJECT pDriverObject) {
 		IoFreeMdl(pMdl);
 	}
 
-	IoDeleteSymbolicLink(&dos);
-	IoDeleteDevice(pDriverObject->DeviceObject);
+	DbgPrint("[Hutao] Kernel Mode Unloaded !\n");
 
 	return STATUS_SUCCESS;
 }
@@ -1037,6 +1041,8 @@ NTSTATUS UnloadDriver(PDRIVER_OBJECT pDriverObject) {
 NTSTATUS DriverEntry(
 	PDRIVER_OBJECT pDriverObject, 
 	PUNICODE_STRING pRegistryPath) {
+
+	DbgPrint("[Hutao] Kernel Mode Loading ...\n");
 
 	// 设置回调函数组
 	pDriverObject->MajorFunction[IRP_MJ_CREATE]         = CreateOrClose;    // <- CreateFile()
@@ -1049,7 +1055,6 @@ NTSTATUS DriverEntry(
 	}
 
 	// 获取操作系统版本
-	memset(&OSVersion, 0, sizeof(RTL_OSVERSIONINFOW));
 	OSVersion.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
 	RtlGetVersion(&OSVersion);
 
@@ -1134,8 +1139,8 @@ NTSTATUS DriverEntry(
 
 
 	// 初始化符号链接和I/O设备
-	RtlInitUnicodeString(&dev, L"\\Device\\xxlWitch");
-	RtlInitUnicodeString(&dos, L"\\DosDevices\\xxlWitch");
+	RtlInitUnicodeString(&dev, L"\\Device\\Hutao");
+	RtlInitUnicodeString(&dos, L"\\DosDevices\\Hutao");
 	IoCreateSymbolicLink(&dos, &dev);
 
 	IoCreateDevice(pDriverObject, 0, &dev, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);
@@ -1145,6 +1150,8 @@ NTSTATUS DriverEntry(
 	} else {
 		return STATUS_UNSUCCESSFUL;
 	}
+
+	DbgPrint("[Hutao] Kernel Mode Ready !\n");
 
 	return STATUS_SUCCESS;
 }

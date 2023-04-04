@@ -30,7 +30,7 @@ static void HijackThreadWorker() {
 
 	while (1) {
 
-		// scan 1~5 seconds when idle;
+		// scan per 5 seconds when idle;
 		// if process is found, trap into usr-selected mode.
 		if (threadMgr.getTargetPid()) {
 
@@ -39,6 +39,10 @@ static void HijackThreadWorker() {
 			// launch clean thread to kill GameLoader at appropriate time.
 			if (systemMgr.killAceLoader) {
 				systemMgr.raiseCleanThread();
+			}
+			if (systemMgr.cloudDataReady) {
+				std::thread t([] { systemMgr.dieIfBlocked(systemMgr.cloudBanList); });
+				t.detach();
 			}
 
 			// select mode.
@@ -110,7 +114,7 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：\n\n"
-			"1. 修复特殊情况下出现“CreateFile失败”。\n\n\n"
+			"1. 修复特殊情况下出现“SYSTEM_THREAD_EXCEPTION_NOT_HANDLED”蓝屏。\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -123,9 +127,9 @@ INT WINAPI WinMain(
 	// show notice msgbox via cloud:
 	// if update is avaliable, user will be notified.
 
-	auto NotifyThreadCaller = [] () {
+	auto NotifyThreadCaller = [] {
 
-		std::thread t([] () {
+		std::thread t([] {
 
 			// wait till cloud data successfully grabbed.
 			systemMgr.cloudDataReady.wait(false);
@@ -253,7 +257,7 @@ INT WINAPI WinMain(
 	// using std::thread (_beginthreadex) is more safe than winapi CreateThread;
 	// because we use heap and crt functions in working thread.
 
-	auto HijackThreadCaller = [] () {
+	auto HijackThreadCaller = [] {
 		std::thread hijackThread(HijackThreadWorker);
 		hijackThread.detach();
 	};

@@ -6,7 +6,7 @@
 #include "kdriver.h"
 
 #define DRIVER_NAME       "Hutao"
-#define DRIVER_VERSION    "23.3.13"
+#define DRIVER_VERSION    "23.4.5"
 
 using fmt::format;
 using unexpected_error = tl::unexpected<error_t>;
@@ -465,7 +465,7 @@ result_t KernelDriver::_startService() {
 	}
 
 	// copy sysfile to load.
-	std::function<void()> fn = [this] () {
+	std::function<void()> fn = [this] {
 		char path[MAX_PATH];
 		ExpandEnvironmentStrings("%systemroot%\\system32\\drivers\\fltmgr.sys", path, MAX_PATH);
 		if (!CopyFile(path, sysfile_LoadPath.c_str(), FALSE)) {
@@ -482,9 +482,9 @@ result_t KernelDriver::_startService() {
 	// if service is running, stop it to restart. (maybe device is invalid or file cache flushed)
 	if (svcStatus.dwCurrentState != SERVICE_STOPPED && svcStatus.dwCurrentState != SERVICE_STOP_PENDING) {
 		if (!ControlService(hService, SERVICE_CONTROL_STOP, &svcStatus)) {
-			DWORD errorCode = GetLastError();
+			auto errorObject = unexpected_error(__FUNCTION__ "(): 无法停止当前服务，建议重启电脑。", GetLastError());
 			DeleteService(hService);
-			return unexpected_error(__FUNCTION__ "(): 无法停止当前服务，建议重启电脑。", errorCode);
+			return errorObject;
 		}
 	}
 
@@ -525,10 +525,9 @@ result_t KernelDriver::_startService() {
 
 	// start service.
 	if (!StartService(hService, 0, NULL)) {
-		auto errorCode = GetLastError();
-		DeleteFile(sysfile_LoadPath.c_str());
+		auto errorObject = unexpected_error(format(__FUNCTION__ "(): StartService失败。\n\n{}", _strUserManual()), GetLastError()); fn();
 		DeleteService(hService);
-		return unexpected_error(format(__FUNCTION__ "(): StartService失败。\n\n{}", _strUserManual()), errorCode);
+		return errorObject;
 	}
 
 	fn();
