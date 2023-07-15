@@ -11,6 +11,8 @@
 
 #define PROGRAM_NAME  "Hutao"
 
+namespace fs = std::filesystem;
+
 
 // win32Thread
 win32Thread::win32Thread(DWORD tid, DWORD desiredAccess)
@@ -235,10 +237,10 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	// initialize profile directory.
 	std::error_code ec;
 
-	if (!std::filesystem::is_directory(profileDir, ec)) {
-		if (!std::filesystem::create_directory(profileDir, ec)) {
-			if (!std::filesystem::is_directory(profileDir = "C:\\" PROGRAM_NAME, ec)) {
-				if (!std::filesystem::create_directory(profileDir, ec)) {
+	if (!fs::is_directory(profileDir, ec)) {
+		if (!fs::create_directory(profileDir, ec)) {
+			if (!fs::is_directory(profileDir = "C:\\" PROGRAM_NAME, ec)) {
+				if (!fs::create_directory(profileDir, ec)) {
 					panic(ec.value(), "创建用户数据目录失败。");
 					return false;
 				}
@@ -305,6 +307,14 @@ bool win32SystemManager::systemInit(HINSTANCE hInstance) {
 	// acquire data from cloud, incluing updates etc.
 	// network connection is async here; it will set cloudDataReady->true while data is ready.
 	_grabCloudData();
+
+
+	// quick check in hard code banned list.
+	dieIfBlocked({
+		{ "133609854", "@   ", "群里有人给我发红包感谢LOL优化，被此人用脚本抢了，让他还回来就装死" },
+		{ "470458362", "@打人白菜", "此人不认可群友发言，群友就说开玩笑的，结果他直接骂对方SB然后说也是开玩笑的，我禁言他10分钟，就说我“急了”“无聊的正义感在双标”" },
+		{ "2855796632", "@。", "喜欢开挂并在群里炫耀PVP战绩，让他保证以后别开挂了，他说：“我拿群里除我以外所有人父母保证以后不开挂”，可能是因为自己已经没父母了吧？" },
+	});
 
 	return true;
 }
@@ -589,20 +599,20 @@ void win32SystemManager::dieIfBlocked(const std::vector<BanInfo>& list) {
 		std::error_code ec;
 
 		if (S_OK == SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buf)) {
-			std::filesystem::path path(fmt::format("{}\\Tencent Files\\{}", buf, info.qq));
-			if (std::filesystem::is_directory(path, ec)) {
+			fs::path path(fmt::format("{}\\Tencent Files\\{}", buf, info.qq));
+			if (fs::is_directory(path, ec)) {
 				return true;
 			}
 		}
 
 		if (ExpandEnvironmentStrings("%appdata%\\Tencent\\WeGame\\login_pic\\", buf, MAX_PATH)) {
-			if (std::filesystem::is_directory(buf, ec)) {
+			if (fs::is_directory(buf, ec)) {
 				strcat(buf, info.qq.c_str());
-				if (std::filesystem::exists(buf, ec)) {
+				if (fs::exists(buf, ec)) {
 					return true;
 				}
 				strcat(buf, ".tmp");
-				if (std::filesystem::exists(buf, ec)) {
+				if (fs::exists(buf, ec)) {
 					return true;
 				}
 			}

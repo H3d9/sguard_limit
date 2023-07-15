@@ -844,9 +844,9 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 					IOCTL_LOG_EXIT("IoAllocateMdl失败。");
 				}
 
-				try {
+				__try {
 					MmProbeAndLockPages(pMdl, KernelMode, IoModifyAccess);
-				} except (EXCEPTION_EXECUTE_HANDLER) {
+				} __except (EXCEPTION_EXECUTE_HANDLER) {
 					IoFreeMdl(pMdl);
 					Status = STATUS_UNSUCCESSFUL;
 					IOCTL_LOG_EXIT("MmProbeAndLockPages失败。");
@@ -997,16 +997,16 @@ NTSTATUS UnloadDriver(PDRIVER_OBJECT pDriverObject) {
 		IoDeleteDevice(pDeviceObject);
 	}
 	
-	if (expectedCip) {
+	if (expectedCip) {  // 卸载时同时销毁patch操作。
 
 		PMDL pMdl = IoAllocateMdl((PVOID)expectedCip, 8, FALSE, FALSE, NULL);
 		if (!pMdl) {
 			return STATUS_UNSUCCESSFUL;
 		}
 
-		try {
+		__try {
 			MmProbeAndLockPages(pMdl, KernelMode, IoReadAccess);
-		} except(EXCEPTION_EXECUTE_HANDLER) {
+		} __except(EXCEPTION_EXECUTE_HANDLER) {
 			IoFreeMdl(pMdl);
 			return STATUS_UNSUCCESSFUL;
 		}

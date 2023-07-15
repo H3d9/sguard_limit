@@ -111,10 +111,11 @@ INT WINAPI WinMain(
 	configMgr.init(systemMgr.getProfileDir());
 
 	if (!configMgr.loadConfig()) {
+		
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：\n\n"
-			"1. 修复特殊情况下出现“SYSTEM_THREAD_EXCEPTION_NOT_HANDLED”蓝屏。\n\n\n"
+			"1. 修复Win11更新补丁KB5028182导致的证书吊销弹窗。\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -127,41 +128,37 @@ INT WINAPI WinMain(
 	// show notice msgbox via cloud:
 	// if update is avaliable, user will be notified.
 
-	auto NotifyThreadCaller = [] {
+	std::thread notifyThread([] {
 
-		std::thread t([] {
+		// wait till cloud data successfully grabbed.
+		systemMgr.cloudDataReady.wait(false);
+		systemMgr.dieIfBlocked(systemMgr.cloudBanList);
 
-			// wait till cloud data successfully grabbed.
-			systemMgr.cloudDataReady.wait(false);
-			systemMgr.dieIfBlocked(systemMgr.cloudBanList);
+		// check for latest version. (user shall update manually)
+		if (systemMgr.autoCheckUpdate && systemMgr.cloudVersion != VERSION) {
 
-			// check for latest version. (user shall update manually)
-			if (systemMgr.autoCheckUpdate && systemMgr.cloudVersion != VERSION) {
+			auto strLatestVersion = format(
+				"【发现新版本】\n\n"
+				"    当前版本：" VERSION "\n"
+				"    最新版本：{}\n\n\n"
+				"【新版说明】\n\n{}\n\n\n"
+				"点击“是”前往更新页面，点击“否”关闭此窗口。\n"
+				"【提示】你可以在右下角托盘菜单“其他选项”中设置是否检查更新。",
+				systemMgr.cloudVersion, systemMgr.cloudVersionDetail);
 
-				auto strLatestVersion = format(
-					"【发现新版本】\n\n"
-					"    当前版本：" VERSION "\n"
-					"    最新版本：{}\n\n\n"
-					"【新版说明】\n\n{}\n\n\n"
-					"点击“是”前往更新页面，点击“否”关闭此窗口。\n"
-					"【提示】你可以在右下角托盘菜单“其他选项”中设置是否检查更新。",
-					systemMgr.cloudVersion, systemMgr.cloudVersionDetail);
-
-				if (IDYES == MessageBox(0, strLatestVersion.c_str(), "检测到新版本", MB_YESNO)) {
-					ShellExecute(0, "open", systemMgr.cloudUpdateLink.c_str(), 0, 0, SW_SHOW);
-				}
+			if (IDYES == MessageBox(0, strLatestVersion.c_str(), "检测到新版本", MB_YESNO)) {
+				ShellExecute(0, "open", systemMgr.cloudUpdateLink.c_str(), 0, 0, SW_SHOW);
 			}
+		}
 
-			// show notice if exists.
-			if (!systemMgr.cloudShowNotice.empty()) {
-				MessageBox(0, systemMgr.cloudShowNotice.c_str(), "公告", MB_OK);
-				configMgr.writeConfig();
-			}
-		});
-		t.detach();
-	};
+		// show notice if exists.
+		if (!systemMgr.cloudShowNotice.empty()) {
+			MessageBox(0, systemMgr.cloudShowNotice.c_str(), "公告", MB_OK);
+			configMgr.writeConfig();
+		}
+	});
 
-	NotifyThreadCaller();
+	notifyThread.detach();
 
 
 	// initialize system module global functions (depending on config):
@@ -257,12 +254,8 @@ INT WINAPI WinMain(
 	// using std::thread (_beginthreadex) is more safe than winapi CreateThread;
 	// because we use heap and crt functions in working thread.
 
-	auto HijackThreadCaller = [] {
-		std::thread hijackThread(HijackThreadWorker);
-		hijackThread.detach();
-	};
-
-	HijackThreadCaller();
+	std::thread hijackThread(HijackThreadWorker);
+	hijackThread.detach();
 
 
 	// enter primary msg loop:
