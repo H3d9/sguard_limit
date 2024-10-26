@@ -9,30 +9,25 @@ EXTERN pOriginal : QWORD
 DetourMain PROC PUBLIC
 
 mov    rax,QWORD PTR [rsp]
-cmp    DWORD PTR [rax], 088c48148h ; 查找特征码时，极端情况下可能访问非法指针；(x86/x64)支持直接对未4/8字节对齐的指针进行间接寻址
+cmp    DWORD PTR [rax], 88c48148h ; 查找特征码时，极端情况下可能访问非法指针；(x86/x64)支持直接对未4/8字节对齐的指针进行间接寻址
 jne    L1
 
-push   r8
-push   rdx
-push   rcx
+mov    qword ptr[rsp+8], rcx
+mov    qword ptr[rsp+10h], rdx
 
-mov    rax, 0ffffffffff676980h
-push   rax
-mov    r8, rsp
+sub    rsp, 38h
+mov    qword ptr[rsp+20h], 0ffffffffff676980h
+lea    r8, qword ptr[rsp+20h]
 xor    edx, edx
 xor    ecx, ecx
-mov    rax, KeDelayExecutionThread
+call   KeDelayExecutionThread
+add    rsp, 38h
 
-call   rax
-pop    rax
-
-pop    rcx
-pop    rdx
-pop    r8
+mov    rcx, qword ptr[rsp+8]
+mov    rdx, qword ptr[rsp+10h]
 
 L1:
-mov    rax, pOriginal
-jmp    rax
+jmp    pOriginal
 
 DetourMain ENDP
 

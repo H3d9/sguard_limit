@@ -115,7 +115,7 @@ INT WINAPI WinMain(
 		MessageBox(0,
 			"【更新说明】\n\n"
 			" 内存补丁 " MEMPATCH_VERSION "：\n\n"
-			"1. 修复Win11更新补丁KB5028182导致的证书吊销弹窗。\n\n\n"
+			"1. 已兼容Win11 24H2的操作系统内核。\n\n\n"
 
 			"【重要提示】\n\n"
 			"1. 本工具是免费软件，任何出售本工具的人都是骗子哦！\n\n"
@@ -197,7 +197,7 @@ INT WINAPI WinMain(
 		}
 
 		// if init success but is win11 latest, show alert.
-		constexpr auto supportedLatestBuildNum = 22621;
+		constexpr auto supportedLatestBuildNum = 26100;
 
 		if (result &&
 			systemMgr.getSystemVersion() == OSVersion::WIN_10_11 && 
@@ -214,6 +214,7 @@ INT WINAPI WinMain(
 					"当前系统版本超出内核驱动模块已确认支持的最高系统版本：\n\n"
 					"已确认支持的Win11版本：10.0.{}\n"
 					"当前Win11系统版本：10.0.{}\n\n\n"
+					"驱动模块依赖于未记录的特定内核结构，而这些结构可能随Windows更新而发生改变。\n\n"
 					"若你启动游戏后右键菜单显示已提交，表示兼容，且可以保证下次系统更新前都没问题。\n\n"
 					"若每次游戏启动时都蓝屏，表示内核驱动模块不再兼容。你可以反馈到群里。\n\n\n"
 					"如果你已了解上述情况，并可以承担蓝屏风险，请点击“是”，否则请点击“否”。",

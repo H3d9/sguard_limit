@@ -7,7 +7,7 @@
 
 #include "Vad.h"
 
-#define DRIVER_VERSION  "23.4.5"
+#define DRIVER_VERSION  "24.10.26"
 
 
 // 全局对象
@@ -134,6 +134,7 @@ void SearchVad_NT61(PSEARCH_RESULT result, PMMVAD_7 pVad) { // assert: pVad != N
 
 
 	// 若当前Vad节点类型为ImageMap
+	// 由于pVad有效，故pVad指向的结构有效，所以VadType始终位于合法的内存（仅解一次引用）。
 	if (pVad->u.VadFlags.VadType == VadImageMap) {
 
 		// 若当前节点的FileObject存在
@@ -791,34 +792,33 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				}
 
 				char shell[] =
-					"\x48\x8B\x04\x24\x81\x38\x48\x81\xC4\x88\x75\x24"
-					"\x41\x50\x52\x51\x48\xC7\xC0\x80\x69\x67\xFF\x50\x49\x89\xE0\x31\xD2\x31\xC9\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xD0"
-					"\x58\x59\x5A\x41\x58\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xE0";
+					"\x48\x8B\x04\x24\x81\x38\x48\x81\xC4\x88\x75\x3A"
+					"\x48\x89\x4C\x24\x08\x48\x89\x54\x24\x10"
+					"\x48\x83\xEC\x38\x48\xC7\x44\x24\x20\x80\x69\x67\xFF\x4C\x8D\x44\x24\x20\x31\xD2\x31\xC9"
+					"\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xD0\x48\x83\xC4\x38"
+					"\x48\x8B\x4C\x24\x08\x48\x8B\x54\x24\x10\x48\xB8\x78\x56\x34\x12\x78\x56\x34\x12\xFF\xE0";
 				/*
-					0:  48 8b 04 24             mov    rax, QWORD PTR [rsp]
-					4:  81 38 48 81 c4 88       cmp    DWORD PTR [rax], 0x88c48148
-					a:  75 24                   jne    30 <L1>
-					c:  41 50                   push   r8
-					e:  52                      push   rdx
-					f:  51                      push   rcx
-					10: 48 c7 c0 80 69 67 ff    mov    rax, 0xffffffffff676980
-					17: 50                      push   rax
-					18: 49 89 e0                mov    r8, rsp
-					1b: 31 d2                   xor    edx, edx
-					1d: 31 c9                   xor    ecx, ecx
-					1f: 48 b8 78 56 34 12 78    movabs rax, 0x1234567812345678
-					26: 56 34 12
-					29: ff d0                   call   rax
-					2b: 58                      pop    rax
-					2c: 59                      pop    rcx
-					2d: 5a                      pop    rdx
-					2e: 41 58                   pop    r8
-					0000000000000030 <L1>:
-					30: 48 b8 78 56 34 12 78    movabs rax, 0x1234567812345678
-					37: 56 34 12
-					3a: ff e0                   jmp    rax
+					0:  48 8b 04 24              mov     rax, QWORD PTR [rsp]
+					4:  81 38 48 81 c4 88        cmp     DWORD PTR [rax], 0x88c48148
+					a:  75 3a                    jne     46
+					c:  48 89 4c 24 08           mov     QWORD PTR [rsp+0x8], rcx
+					11: 48 89 54 24 10           mov     QWORD PTR [rsp+0x10], rdx
+					16: 48 83 ec 38              sub     rsp, 0x38
+					1a: 48 c7 44 24 20 80 69     mov     QWORD PTR [rsp+0x20], 0xffffffffff676980
+					21: 67 ff					 		 
+					23: 4c 8d 44 24 20           lea     r8, [rsp+0x20]
+					28: 31 d2                    xor     edx, edx
+					2a: 31 c9                    xor     ecx, ecx
+					2c: 48 b8 78 56 34 12 78     movabs  rax, 0x1234567812345678
+					33: 56 34 12				 		 
+					36: ff d0                    call    rax
+					38: 48 83 c4 38              add     rsp, 0x38
+					3c: 48 8b 4c 24 08           mov     rcx, QWORD PTR [rsp+0x8]
+					41: 48 8b 54 24 10           mov     rdx, QWORD PTR [rsp+0x10]
+					46: 48 b8 78 56 34 12 78     movabs  rax, 0x1234567812345678
+					4d: 56 34 12				 		 
+					50: ff e0                    jmp     rax
 				*/
-				
 				
 				if (0 == memcmp(DetourMain, *(const PVOID*)rip, 0xb)) {
 					Status = STATUS_UNSUCCESSFUL;
@@ -826,8 +826,8 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 				}
 
 
-				*(PVOID*)(shell + 0x22) = KeDelayExecutionThread;  // 取原始内核函数地址而非iat间接地址；此处等价于原始函数地址。
-				*(PVOID*)(shell + 0x33) = pOriginal = *(PVOID*)rip;
+				*(PVOID*)(shell + 0x2e) = KeDelayExecutionThread;  // 取原始内核函数地址而非iat间接地址；此处等价于原始函数地址。
+				*(PVOID*)(shell + 0x48) = pOriginal = *(PVOID*)rip;
 				
 				char* shellSpace = ExAllocatePoolWithTag(PagedPool, sizeof(shell), '9d3H');  // 已经16字节对齐（参见MSDN）
 				if (!shellSpace) {
@@ -1092,12 +1092,15 @@ NTSTATUS DriverEntry(
 				VadRoot = 0x7D8;
 				break;
 			}
-			if (OSVersion.dwBuildNumber > 19044) { // Win 10 latest (22.6.24 beta, 19045)
+			if (OSVersion.dwBuildNumber > 19044) {  // Win 10 latest (22.6.24 beta, 19045)
 				VadRoot = 0x7D8;
 			}
 
-		} else { // if (OSVersion.dwBuildNumber <= 22621)  Win 11 latest (22.6.28 beta branch)
+		} else if (OSVersion.dwBuildNumber < 26058) {  // Win 11 < 24H2
 			VadRoot = 0x7D8;
+
+		} else {  // Win 11 24H2
+			VadRoot = 0x558;
 		}
 	}
 
@@ -1138,7 +1141,7 @@ NTSTATUS DriverEntry(
 	}
 
 
-	// 初始化符号链接和I/O设备
+	// 创建符号链接和虚拟io设备
 	RtlInitUnicodeString(&dev, L"\\Device\\Hutao");
 	RtlInitUnicodeString(&dos, L"\\DosDevices\\Hutao");
 	IoCreateSymbolicLink(&dos, &dev);

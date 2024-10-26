@@ -6,7 +6,7 @@
 #include "kdriver.h"
 
 #define DRIVER_NAME       "Hutao"
-#define DRIVER_VERSION    "23.4.5"
+#define DRIVER_VERSION    "24.10.26"
 
 using fmt::format;
 using unexpected_error = tl::unexpected<error_t>;

@@ -328,7 +328,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			else { // if (g_Mode == 2) 
 
 				if (!driver.driverReady) {
-					AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGUARD限制器 - 模式无效（驱动初始化失败）");
+					AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGUARD限制器 - 驱动未初始化");
 				} else {
 					if (g_HijackThreadWaiting) {
 						AppendMenuW(hMenu, MFT_STRING, IDM_ABOUT, L"SGUARD限制器 - 等待游戏运行");
